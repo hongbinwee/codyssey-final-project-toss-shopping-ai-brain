@@ -19,4 +19,13 @@ export const config = {
   llmBaseUrl: process.env.LLM_BASE_URL ?? "https://api.openai.com/v1",
   llmApiKey: process.env.LLM_API_KEY ?? "",
   llmModel: process.env.LLM_MODEL ?? "",
+  // "code=auth_subject" 쌍, 콤마 구분. 코드는 서버 비밀 설정이다.
+  testUserCodes: Object.fromEntries(
+    (process.env.TEST_USER_CODES ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map((p) => p.split("=")),
+  ),
+  // 키가 없으면 조회만 수행하는 로컬 stub provider로 동작한다.
+  llmProvider: process.env.LLM_PROVIDER ?? (process.env.LLM_API_KEY ? "live" : "stub"),
 };

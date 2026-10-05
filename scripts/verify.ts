@@ -6,8 +6,11 @@ const STEPS: Record<number, string[][]> = {
     ["node", "node_modules/typescript/bin/tsc", "--noEmit"],
     ["node", "scripts/build-web.ts"],
     ["node", "--test", "tests/unit/*.test.ts"],
-    ["node", "--test", "tests/integration/*.test.ts"],
+    ["node", "--test", "--test-concurrency=1", "tests/integration/*.test.ts"],
     ["node", "node_modules/playwright/cli.js", "test"],
+  ],
+  1: [
+    ["node", "scripts/eval.ts", "--mode=stub", "--split=dev"],
   ],
 };
 

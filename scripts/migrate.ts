@@ -7,6 +7,9 @@ import { readdirSync, readFileSync } from "node:fs";
 await ensureDevDb();
 connectDb(process.env.DATABASE_URL!);
 
+// 동시 실행(병렬 테스트 파일) 시 커밋 전 CREATE TABLE 경합을 막는다.
+await sql.unsafe("SELECT pg_advisory_lock(727272)");
+
 const PHASE_MIGRATIONS: Record<number, string[]> = {
   0: [],
   1: ["001_catalog_cart_actions.sql"],

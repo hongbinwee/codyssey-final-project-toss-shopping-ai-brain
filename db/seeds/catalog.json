@@ -1,0 +1,16 @@
+{
+  "products": [
+    { "id": "p-a", "name": "코드뷰 모니터 A", "brand": "코드뷰", "category": "monitor", "description": "개발용 입문 모니터", "image_urls": [], "specs": { "panel": "IPS", "ports": "HDMI x2" } },
+    { "id": "p-b", "name": "코드뷰 모니터 B", "brand": "코드뷰", "category": "monitor", "description": "가성비 보급형 모니터", "image_urls": [], "specs": { "panel": "VA", "ports": "HDMI x1, D-Sub" } },
+    { "id": "p-c", "name": "코드뷰 모니터 C", "brand": "코드뷰", "category": "monitor", "description": "고주사율 프리미엄 모니터", "image_urls": [], "specs": { "panel": "IPS", "ports": "HDMI x1, DP x1, USB-C" } }
+  ],
+  "variants": [
+    { "id": "v-a-24", "product_id": "p-a", "option_values": { "size": "24인치" }, "spec_overrides": { "size": "24인치", "resolution": "FHD", "refresh_rate": "75Hz" }, "unit_price_won": 180000, "stock_qty": 5 },
+    { "id": "v-a-27", "product_id": "p-a", "option_values": { "size": "27인치" }, "spec_overrides": { "size": "27인치", "resolution": "QHD", "refresh_rate": "75Hz" }, "unit_price_won": 220000, "stock_qty": 0 },
+    { "id": "v-b-24", "product_id": "p-b", "option_values": { "size": "24인치" }, "spec_overrides": { "size": "24인치", "resolution": "FHD", "refresh_rate": "60Hz" }, "unit_price_won": 149000, "stock_qty": 8 },
+    { "id": "v-b-27", "product_id": "p-b", "option_values": { "size": "27인치" }, "spec_overrides": { "size": "27인치", "resolution": "FHD", "refresh_rate": "75Hz" }, "unit_price_won": 189000, "stock_qty": 3 },
+    { "id": "v-c-27", "product_id": "p-c", "option_values": { "size": "27인치" }, "spec_overrides": { "size": "27인치", "resolution": "QHD", "refresh_rate": "165Hz" }, "unit_price_won": 289000, "stock_qty": 4 },
+    { "id": "v-c-32", "product_id": "p-c", "option_values": { "size": "32인치" }, "spec_overrides": { "size": "32인치", "resolution": "UHD", "refresh_rate": "60Hz" }, "unit_price_won": 349000, "stock_qty": 2 }
+  ]
+}
+

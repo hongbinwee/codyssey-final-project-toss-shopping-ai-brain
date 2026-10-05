@@ -10,8 +10,9 @@
     "db:migrate": "node scripts/migrate.ts",
     "db:seed": "node scripts/seed.ts",
     "test:unit": "node --test tests/unit/*.test.ts",
-    "test:integration": "node --test tests/integration/*.test.ts",
+    "test:integration": "node --test --test-concurrency=1 tests/integration/*.test.ts",
     "test:e2e": "playwright test",
+    "eval": "node scripts/eval.ts",
     "verify": "node scripts/verify.ts"
   },
   "dependencies": {

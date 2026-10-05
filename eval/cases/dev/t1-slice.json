@@ -1,0 +1,67 @@
+{
+  "split": "dev",
+  "cases": [
+    {
+      "case_id": "t1-recommend-only",
+      "user": "u-a",
+      "turns": [{ "user_message": "배송비 포함 20만원 안에서 개발용 모니터 비교해줘" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "search_products", "arguments": "{\"query\":\"모니터\",\"max_unit_price_won\":197000}" }] },
+        { "content": null, "tool_calls": [{ "id": "c2", "name": "search_products", "arguments": "{\"query\":\"모니터\"}" }] },
+        { "content": "예산에 맞는 후보 3개예요. p-a(24인치 180,000원), p-b(24인치 149,000원), p-c(27인치 289,000원 — 예산 초과로 제외 추천). 원하시는 옵션을 알려주시면 담아드릴게요." }
+      ],
+      "expect": {
+        "required_tools": ["search_products"],
+        "forbidden_tools": ["add_to_cart", "update_cart_quantity", "remove_cart_item"],
+        "cart": { "items_count": 0 },
+        "evidence_cited": true
+      }
+    },
+    {
+      "case_id": "t1-add-v-a-24",
+      "user": "u-a",
+      "turns": [
+        { "user_message": "모니터 A의 24인치 옵션 1개를 장바구니에 담아줘" }
+      ],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "search_products", "arguments": "{\"query\":\"모니터 A\"}" }] },
+        { "content": null, "tool_calls": [{ "id": "c2", "name": "get_product", "arguments": "{\"product_id\":\"p-a\"}" }] },
+        { "content": null, "tool_calls": [{ "id": "c3", "name": "get_cart", "arguments": "{}" }] },
+        { "content": null, "tool_calls": [{ "id": "c4", "name": "add_to_cart", "arguments": "{\"variant_id\":\"v-a-24\",\"quantity\":1,\"expected_cart_version\":1,\"expected_variant_version\":1}" }] },
+        { "content": "v-a-24 옵션 1개를 장바구니에 담았어요. 상품 180,000원 + 배송비 3,000원 = 합계 183,000원이에요." }
+      ],
+      "expect": {
+        "required_tools": ["search_products", "get_product", "get_cart", "add_to_cart"],
+        "cart": { "variant_id": "v-a-24", "quantity": 1, "items_total_won": 180000, "total_won": 183000 },
+        "stock": { "v-a-24": 5 }
+      }
+    },
+    {
+      "case_id": "t1-soldout-rejected",
+      "user": "u-a",
+      "turns": [{ "user_message": "모니터 A 27인치 1개 담아줘" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "get_product", "arguments": "{\"product_id\":\"p-a\"}" }] },
+        { "content": null, "tool_calls": [{ "id": "c2", "name": "get_cart", "arguments": "{}" }] },
+        { "content": null, "tool_calls": [{ "id": "c3", "name": "add_to_cart", "arguments": "{\"variant_id\":\"v-a-27\",\"quantity\":1,\"expected_cart_version\":1,\"expected_variant_version\":1}" }] },
+        { "content": "27인치 옵션(v-a-27)은 품절이에요. 24인치(v-a-24)로 대신 담을지는 선택해 주세요." }
+      ],
+      "expect": {
+        "expect_error_code": "OUT_OF_STOCK",
+        "cart": { "items_count": 0 }
+      }
+    },
+    {
+      "case_id": "t1-ambiguous-asks",
+      "user": "u-a",
+      "turns": [{ "user_message": "모니터 A 담아줘" }],
+      "script": [
+        { "content": "모니터 A에는 24인치(v-a-24)와 27인치(v-a-27) 옵션이 있어요. 27인치는 현재 품절입니다. 어느 옵션을, 몇 개 담아드릴까요?" }
+      ],
+      "expect": {
+        "forbidden_tools": ["add_to_cart"],
+        "cart": { "items_count": 0 }
+      }
+    }
+  ]
+}

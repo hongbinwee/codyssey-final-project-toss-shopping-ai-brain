@@ -1,0 +1,11 @@
+[
+  { "id": "r-01", "product_id": "p-a", "variant_id": "v-a-24", "rating": 5, "body": "24인치라 책상에 딱 맞고 텍스트 선명도가 좋아요. 개발용으로 충분합니다.", "source_kind": "SYNTHETIC", "source_ref": "seed-synth-01", "written_at": "2026-09-20T09:00:00Z" },
+  { "id": "r-02", "product_id": "p-a", "variant_id": "v-a-24", "rating": 4, "body": "가격 대비 만족스럽습니다. 다만 스탠드가 조금 흔들려요.", "source_kind": "SYNTHETIC", "source_ref": "seed-synth-02", "written_at": "2026-09-21T09:00:00Z" },
+  { "id": "r-03", "product_id": "p-a", "variant_id": "v-a-27", "rating": 3, "body": "27인치 QHD 화질은 좋은데 가격이 좀 있어요. 장시간 봐도 눈 피로는 적은 편입니다.", "source_kind": "SYNTHETIC", "source_ref": "seed-synth-03", "written_at": "2026-09-22T09:00:00Z" },
+  { "id": "r-04", "product_id": "p-a", "variant_id": null, "rating": 4, "body": "배송이 빠르고 패널에 불량화소가 없었어요.", "source_kind": "SYNTHETIC", "source_ref": "seed-synth-04", "written_at": "2026-09-23T09:00:00Z" },
+  { "id": "r-05", "product_id": "p-b", "variant_id": "v-b-24", "rating": 4, "body": "가성비는 최고예요. 60Hz라 스크롤이 조금 덜 부드러운 점만 아쉽습니다.", "source_kind": "SYNTHETIC", "source_ref": "seed-synth-05", "written_at": "2026-09-20T09:00:00Z" },
+  { "id": "r-06", "product_id": "p-b", "variant_id": "v-b-27", "rating": 2, "body": "모서리 빛샘이 있어서 야간 작업할 때 거슬립니다.", "source_kind": "SYNTHETIC", "source_ref": "seed-synth-06", "written_at": "2026-09-24T09:00:00Z" },
+  { "id": "r-07", "product_id": "p-c", "variant_id": "v-c-27", "rating": 5, "body": "165Hz라 개발과 게임 겸용으로 아주 좋아요. 색감도 훌륭합니다.", "source_kind": "SYNTHETIC", "source_ref": "seed-synth-07", "written_at": "2026-09-25T09:00:00Z" },
+  { "id": "r-08", "product_id": "p-c", "variant_id": "v-c-32", "rating": 4, "body": "32인치 UHD는 정말 선명하지만 책상 공간을 많이 차지해요.", "source_kind": "SYNTHETIC", "source_ref": "seed-synth-08", "written_at": "2026-09-26T09:00:00Z" }
+]
+

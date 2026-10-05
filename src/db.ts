@@ -11,3 +11,6 @@ export function connectDb(url: string): postgres.Sql {
 // 모든 업무 변경은 이 트랜잭션 헬퍼 하나로 묶는다.
 export const tx = <T>(fn: (q: postgres.Sql) => Promise<T>): Promise<T> =>
   sql.begin(fn as never) as Promise<T>;
+
+// 트랜잭션 q와 전역 sql 모두에 맞는 최소 쿼리 인터페이스
+export type Q = Pick<postgres.ISql, "unsafe">;

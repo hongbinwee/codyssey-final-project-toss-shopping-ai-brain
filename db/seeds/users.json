@@ -1,0 +1,15 @@
+[
+  {
+    "id": "u-a",
+    "auth_subject": "u-a",
+    "display_name": "김데모",
+    "test_address": { "name": "김데모", "phone": "010-0000-0001", "address": "서울 테스트구 테스트로 1", "detail": "101호" }
+  },
+  {
+    "id": "u-b",
+    "auth_subject": "u-b",
+    "display_name": "이격리",
+    "test_address": { "name": "이격리", "phone": "010-0000-0002", "address": "서울 테스트구 테스트로 2", "detail": "202호" }
+  }
+]
+

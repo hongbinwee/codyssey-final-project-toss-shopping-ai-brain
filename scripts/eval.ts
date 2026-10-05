@@ -1,0 +1,133 @@
+// eval/cases/<split>/*.json을 실행한다.
+// mode=stub: 케이스의 script를 재생해 runtime/Tool 경계 평가.
+// mode=live: 실제 LLM 호출. 키 없으면 BLOCKED.
+import { readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { ensureTestDb, cleanUserData } from "../tests/helpers/testdb.ts";
+import { runAgentTurn, resetHistory } from "../src/agent.ts";
+import { liveProvider, scriptedProvider, type ChatResponse, type Provider } from "../src/llm.ts";
+import { getCart } from "../src/cart.ts";
+import { sql } from "../src/db.ts";
+import { config } from "../src/config.ts";
+
+const arg = (k: string, d?: string) =>
+  process.argv.find((a) => a.startsWith(k + "="))?.split("=")[1] ?? d;
+
+const mode = arg("mode", "stub")!;
+const split = arg("split", "dev")!;
+
+if (mode === "live" && !config.llmApiKey) {
+  console.log("BLOCKED: LLM_API_KEY not set — live eval skipped (stub PASS로 대체하지 않음)");
+  process.exit(2);
+}
+
+type Expect = {
+  required_tools?: string[];
+  forbidden_tools?: string[];
+  cart?: {
+    items_count?: number;
+    variant_id?: string;
+    quantity?: number;
+    items_total_won?: number;
+    total_won?: number;
+  };
+  stock?: Record<string, number>;
+  expect_error_code?: string;
+  evidence_cited?: boolean;
+};
+type Case = {
+  case_id: string;
+  user: string;
+  turns: { user_message: string }[];
+  script?: ChatResponse[];
+  expect: Expect;
+};
+
+const dir = "eval/cases/" + split;
+const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+const results: { case_id: string; pass: boolean; failures: string[] }[] = [];
+
+await ensureTestDb(1);
+
+for (const f of files) {
+  const cases = JSON.parse(readFileSync(dir + "/" + f, "utf8")).cases as Case[];
+  for (const c of cases) {
+    const failures: string[] = [];
+    await cleanUserData();
+    resetHistory(c.user);
+    const provider: Provider =
+      mode === "live" ? liveProvider() : scriptedProvider(c.script ?? []);
+    const ctx = { actorUserId: c.user, origin: "AGENT" as const };
+    const turns = [];
+    for (const [i, t] of c.turns.entries()) {
+      const r = await runAgentTurn(
+        { user_message: t.user_message, client_action_id: "eval-" + c.case_id + "-" + i },
+        ctx,
+        provider,
+      );
+      turns.push(r);
+    }
+    const last = turns[turns.length - 1];
+    const used = new Set(turns.flatMap((t) => t.tool_calls.map((c2) => c2.name)));
+    for (const t of c.expect.required_tools ?? [])
+      if (!used.has(t)) failures.push("required tool missing: " + t);
+    for (const t of c.expect.forbidden_tools ?? [])
+      if (used.has(t)) failures.push("forbidden tool used: " + t);
+    if (c.expect.expect_error_code) {
+      const hit = turns.some((t) =>
+        t.tool_calls.some((c2) => c2.code === c.expect.expect_error_code),
+      );
+      if (!hit) failures.push("expected error code not observed: " + c.expect.expect_error_code);
+    }
+    if (c.expect.cart) {
+      const cartRes = await getCart(ctx);
+      if (!cartRes.ok) failures.push("cart read failed");
+      else {
+        const cart = cartRes.data;
+        if (c.expect.cart.items_count !== undefined && cart.items.length !== c.expect.cart.items_count)
+          failures.push("cart items_count=" + cart.items.length + " expected " + c.expect.cart.items_count);
+        if (c.expect.cart.variant_id) {
+          const it = cart.items.find((i) => i.variant_id === c.expect.cart!.variant_id);
+          if (!it) failures.push("cart item missing: " + c.expect.cart.variant_id);
+          else if (c.expect.cart.quantity !== undefined && it.quantity !== c.expect.cart.quantity)
+            failures.push("cart qty=" + it.quantity + " expected " + c.expect.cart.quantity);
+        }
+        if (c.expect.cart.items_total_won !== undefined && cart.items_total_won !== c.expect.cart.items_total_won)
+          failures.push("items_total=" + cart.items_total_won);
+        if (c.expect.cart.total_won !== undefined && cart.total_won !== c.expect.cart.total_won)
+          failures.push("total=" + cart.total_won);
+      }
+    }
+    for (const [vid, want] of Object.entries(c.expect.stock ?? {})) {
+      const [v] = await sql.unsafe<{ stock_qty: number }[]>(
+        "SELECT stock_qty FROM product_variants WHERE id=$1", [vid],
+      );
+      if (v?.stock_qty !== want) failures.push("stock " + vid + "=" + v?.stock_qty + " expected " + want);
+    }
+    if (c.expect.evidence_cited) {
+      const cited = new Set(
+        [...last.message.matchAll(/\b(r-\d+|v-[a-z0-9-]+|p-[a-z0-9-]+)\b/g)].map((m) => m[1]),
+      );
+      const have = new Set([
+        ...last.evidence_refs.products,
+        ...last.evidence_refs.variants,
+        ...last.evidence_refs.reviews,
+      ]);
+      for (const id of cited)
+        if (!have.has(id)) failures.push("cited id not in tool results: " + id);
+    }
+    results.push({ case_id: c.case_id, pass: failures.length === 0, failures });
+  }
+}
+
+mkdirSync("eval/results", { recursive: true });
+writeFileSync(
+  "eval/results/" + split + "-" + mode + ".json",
+  JSON.stringify({ mode, split, provider: mode, at: new Date().toISOString(), results }, null, 2),
+);
+for (const r of results)
+  console.log((r.pass ? "PASS" : "FAIL") + " " + r.case_id + (r.failures.length ? " — " + r.failures.join("; ") : ""));
+const failed = results.filter((r) => !r.pass).length;
+console.log("eval " + mode + "/" + split + ": " + (results.length - failed) + "/" + results.length + " passed");
+await sql.end();
+process.exit(failed ? 1 : 0);
+

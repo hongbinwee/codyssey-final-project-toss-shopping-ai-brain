@@ -6,3 +6,4 @@ web/app.js
 test-results/
 playwright-report/
 blob-report/
+eval/results/
