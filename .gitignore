@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+web/app.js
+.pgdata/
+test-results/
+playwright-report/
+blob-report/

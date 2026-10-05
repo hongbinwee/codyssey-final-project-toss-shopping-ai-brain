@@ -1,0 +1,31 @@
+{
+  "name": "ai-commerce-p0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.ts",
+    "start": "node src/server.ts",
+    "check": "tsc --noEmit",
+    "build": "node scripts/build-web.ts",
+    "db:migrate": "node scripts/migrate.ts",
+    "db:seed": "node scripts/seed.ts",
+    "test:unit": "node --test tests/unit/*.test.ts",
+    "test:integration": "node --test tests/integration/*.test.ts",
+    "test:e2e": "playwright test",
+    "verify": "node scripts/verify.ts"
+  },
+  "dependencies": {
+    "postgres": "^3.4.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,44 @@
+/* 토스쇼핑 레퍼런스 방향: 다크 톤, 둥근 카드, 파란 CTA. 수치는 프로젝트 값. */
+:root {
+  --bg: #17171c;
+  --surface: #1f1f26;
+  --card: #26262e;
+  --text: #f2f2f5;
+  --muted: #9c9ca8;
+  --cta: #3182f6;
+  --radius: 16px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+}
+.shell { max-width: 720px; margin: 0 auto; padding: 0 16px 96px; }
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+}
+.top h1 { font-size: 18px; margin: 0; }
+.top nav { display: flex; gap: 14px; }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px; }
+.cta {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--cta);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+}
