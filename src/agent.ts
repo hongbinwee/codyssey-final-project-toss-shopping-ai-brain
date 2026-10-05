@@ -4,9 +4,12 @@ import {
   getProduct, getReviews, searchProducts,
   type SearchProductsInput,
 } from "./catalog.ts";
-import { addToCart, getCart, type AddToCartInput } from "./cart.ts";
+import {
+  addToCart, getCart, removeCartItem, updateCartQuantity,
+  type AddToCartInput, type RemoveCartItemInput, type UpdateCartQtyInput,
+} from "./cart.ts";
 import { payloadHash } from "./actions.ts";
-import { err, fail, type ToolResult } from "./contracts.ts";
+import { err, fail, type CompareCard, type ToolResult } from "./contracts.ts";
 import type { Provider, ChatMsg } from "./llm.ts";
 import type { RequestContext } from "./session.ts";
 import { createHash } from "node:crypto";
@@ -86,6 +89,35 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     run: async (i, ctx, key) =>
       addToCart(i as unknown as AddToCartInput, ctx, key),
   },
+  update_cart_quantity: {
+    description: "카트 항목의 최종 수량을 바꾼다. 최신 카트 버전과 옵션 버전이 필요하다.",
+    risk: "LOW-RISK WRITE", write: true,
+    parameters: {
+      type: "object",
+      properties: {
+        cart_item_id: str, quantity: int,
+        expected_cart_version: int, expected_variant_version: int,
+      },
+      required: ["cart_item_id", "quantity", "expected_cart_version", "expected_variant_version"],
+    },
+    allowed: ["cart_item_id", "quantity", "expected_cart_version", "expected_variant_version"],
+    required: ["cart_item_id", "quantity", "expected_cart_version", "expected_variant_version"],
+    run: async (i, ctx, key) =>
+      updateCartQuantity(i as unknown as UpdateCartQtyInput, ctx, key),
+  },
+  remove_cart_item: {
+    description: "카트 항목을 삭제한다. 품절/판매중단 항목도 삭제할 수 있다.",
+    risk: "LOW-RISK WRITE", write: true,
+    parameters: {
+      type: "object",
+      properties: { cart_item_id: str, expected_cart_version: int },
+      required: ["cart_item_id", "expected_cart_version"],
+    },
+    allowed: ["cart_item_id", "expected_cart_version"],
+    required: ["cart_item_id", "expected_cart_version"],
+    run: async (i, ctx, key) =>
+      removeCartItem(i as unknown as RemoveCartItemInput, ctx, key),
+  },
 };
 
 export const toolDefs = () =>
@@ -143,6 +175,7 @@ export interface ToolCallRecord {
 export interface AgentTurnResult {
   message: string;
   evidence_refs: { products: string[]; variants: string[]; reviews: string[] };
+  compare?: CompareCard;
   tool_calls: ToolCallRecord[];
   trace_id: string;
   limit_reached?: boolean;
@@ -182,6 +215,96 @@ function evidenceFrom(calls: { resultJson?: string }[]): AgentTurnResult["eviden
   };
 }
 
+// 최종 답변에 인용된 id가 실제 Tool 조회 결과에 있었는지 검사한다. eval과 공용.
+export function ungroundedCitations(
+  message: string,
+  refs: AgentTurnResult["evidence_refs"],
+): string[] {
+  const cited = new Set(
+    [...message.matchAll(/(?<![a-z0-9-])(r-[0-9]+|v-[a-z0-9-]+|p-[a-z0-9-]+)(?![a-z0-9-])/g)].map((m) => m[1]),
+  );
+  const have = new Set([...refs.products, ...refs.variants, ...refs.reviews]);
+  return [...cited].filter((id) => !have.has(id));
+}
+
+// A01 비교 카드: Tool 결과에 실제로 등장한 상품만 모아 최대 3개로 만든다.
+// 모델이 쓴 텍스트가 아니라 조회 데이터 기준 — 조회 안 한 상품/근거를 꾸며 넣을 수 없다.
+function buildCompare(calls: { resultJson?: string }[]): CompareCard | undefined {
+  type Acc = {
+    product_id: string; name: string;
+    min: number; max: number;
+    rating_summary: { avg: number | null; count: number };
+    availability: string;
+    review_ids: Set<string>;
+  };
+  const byId = new Map<string, Acc>();
+  let sawPartial = false;
+  const merge = (
+    p: { product_id: string; name?: string; rating_summary?: Acc["rating_summary"]; availability?: string },
+    variants: { unit_price_won: number }[],
+  ) => {
+    const prices = variants.map((v) => v.unit_price_won).filter((n) => Number.isFinite(n));
+    const a = byId.get(p.product_id) ?? {
+      product_id: p.product_id,
+      name: p.name ?? p.product_id,
+      min: Infinity, max: 0,
+      rating_summary: p.rating_summary ?? { avg: null, count: 0 },
+      availability: p.availability ?? "UNAVAILABLE",
+      review_ids: new Set<string>(),
+    };
+    if (p.name) a.name = p.name;
+    if (p.rating_summary) a.rating_summary = p.rating_summary;
+    if (p.availability) a.availability = p.availability;
+    for (const pr of prices) { if (pr < a.min) a.min = pr; if (pr > a.max) a.max = pr; }
+    byId.set(p.product_id, a);
+  };
+  for (const c of calls) {
+    if (!c.resultJson) continue;
+    let d: Record<string, unknown>;
+    try { d = JSON.parse(c.resultJson); } catch { continue; }
+    const data = (d.data ?? d) as Record<string, unknown>;
+    if (data.has_more === true) sawPartial = true;
+    if (Array.isArray(data.items))
+      for (const it of data.items as Record<string, never>[])
+        merge(it as never, (it.matched_variants as never) ?? []);
+    if (data.product && typeof data.product === "object") {
+      const p = data.product as { id: string; name?: string; availability?: string };
+      merge(
+        { product_id: p.id, name: p.name, availability: p.availability },
+        (data.variants as never) ?? [],
+      );
+    }
+    if (Array.isArray(data.reviews))
+      for (const r of data.reviews as { id?: string; product_id?: string }[]) {
+        const a = r.product_id ? byId.get(r.product_id) : undefined;
+        if (a && r.id) a.review_ids.add(r.id);
+      }
+  }
+  const products = [...byId.values()];
+  if (products.length < 2) return undefined;
+  const limitations: string[] = [];
+  const shown = products.slice(0, 3);
+  if (products.length > 3)
+    limitations.push("후보가 더 있지만 상위 " + shown.length + "개만 비교했어요");
+  if (sawPartial) limitations.push("검색 결과가 더 있어요(조회된 범위만 비교)");
+  if (shown.some((p) => p.review_ids.size === 0))
+    limitations.push("리뷰 근거가 부족한 상품이 있어요");
+  if (shown.some((p) => p.availability !== "AVAILABLE"))
+    limitations.push("품절/판매중단 옵션을 포함한 상품이 있어요");
+  return {
+    products: shown.map((p) => ({
+      product_id: p.product_id,
+      name: p.name,
+      min_price_won: Number.isFinite(p.min) ? p.min : 0,
+      max_price_won: p.max,
+      rating_summary: p.rating_summary,
+      availability: p.availability as CompareCard["products"][number]["availability"],
+      evidence_review_ids: [...p.review_ids],
+    })),
+    limitations,
+  };
+}
+
 export async function runAgentTurn(
   req: AgentTurnRequest,
   ctx: RequestContext,
@@ -205,6 +328,7 @@ export async function runAgentTurn(
         return {
           message: "처리 한도에 도달했어요. 요청을 더 작게 나눠서 다시 시도해 주세요.",
           evidence_refs: evidenceFrom(calls),
+          compare: buildCompare(calls),
           tool_calls: calls.map(({ resultJson: _r, ...c }) => c),
           trace_id,
           limit_reached: true,
@@ -255,6 +379,7 @@ export async function runAgentTurn(
       const result: AgentTurnResult = {
         message: text,
         evidence_refs: evidenceFrom(calls),
+        compare: buildCompare(calls),
         tool_calls,
         trace_id,
       };

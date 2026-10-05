@@ -1,13 +1,63 @@
 // A01 공통 AI 대화·비교 패널
 import { useState } from "react";
-import { api, newActionKey } from "../api.ts";
+import { api, fmtWon, newActionKey } from "../api.ts";
+import type { CompareCard } from "../../contracts.ts";
 
 export interface AgentReply {
   role: "user" | "ai";
   text: string;
   evidence?: { products: string[]; variants: string[]; reviews: string[] };
+  compare?: CompareCard;
   toolCalls?: string[];
   error?: boolean;
+}
+
+// 카트에 영향을 주는 쓰기 Tool — 성공 시 헤더 카트를 갱신한다.
+const CART_WRITE_TOOLS = ["add_to_cart", "update_cart_quantity", "remove_cart_item"];
+
+function CompareCardView({
+  card,
+  onOpenProduct,
+}: {
+  card: CompareCard;
+  onOpenProduct: (id: string) => void;
+}) {
+  return (
+    <div className="compare-card">
+      {card.products.map((p) => (
+        <div key={p.product_id} className="compare-row">
+          <div className="compare-head">
+            <b>{p.name}</b>
+            {p.availability !== "AVAILABLE" && <span className="badge-soldout">품절/중단</span>}
+          </div>
+          <div className="muted sm">
+            {fmtWon(p.min_price_won)}
+            {p.max_price_won > p.min_price_won && " ~ " + fmtWon(p.max_price_won)}
+            {" · "}
+            {p.rating_summary.avg === null
+              ? "평점 없음"
+              : "★" + p.rating_summary.avg + " (" + p.rating_summary.count + ")"}
+          </div>
+          <div className="muted sm">
+            근거 리뷰:{" "}
+            {p.evidence_review_ids.length > 0
+              ? p.evidence_review_ids.join(", ")
+              : "없음"}
+          </div>
+          <button className="link" onClick={() => onOpenProduct(p.product_id)}>
+            상품 보기
+          </button>
+        </div>
+      ))}
+      {card.limitations.length > 0 && (
+        <div className="muted sm compare-limit">
+          {card.limitations.map((l) => (
+            <div key={l}>· {l}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function AgentPanel({
@@ -38,6 +88,7 @@ export function AgentPanel({
     const r = await api<{
       message: string;
       evidence_refs: { products: string[]; variants: string[]; reviews: string[] };
+      compare?: CompareCard;
       tool_calls: { name: string; ok: boolean; code?: string }[];
       limit_reached?: boolean;
       error?: string;
@@ -55,13 +106,14 @@ export function AgentPanel({
       return;
     }
     const d = r.data;
-    if (d.tool_calls.some((c) => c.ok && ["add_to_cart"].includes(c.name))) onCartChanged();
+    if (d.tool_calls.some((c) => c.ok && CART_WRITE_TOOLS.includes(c.name))) onCartChanged();
     setMessages([
       ...next,
       {
         role: "ai",
         text: d.message,
         evidence: d.evidence_refs,
+        compare: d.compare,
         toolCalls: d.tool_calls.map((c) => c.name + (c.ok ? "" : "✗")),
         error: !!d.error || !!d.limit_reached,
       },
@@ -88,6 +140,9 @@ export function AgentPanel({
             <p>{m.text}</p>
             {m.toolCalls && m.toolCalls.length > 0 && (
               <div className="muted sm">Tool: {m.toolCalls.join(", ")}</div>
+            )}
+            {m.compare && (
+              <CompareCardView card={m.compare} onOpenProduct={onOpenProduct} />
             )}
             {m.evidence && (m.evidence.products.length + m.evidence.reviews.length > 0) && (
               <div className="evidence-chips">
@@ -119,4 +174,3 @@ export function AgentPanel({
     </aside>
   );
 }
-

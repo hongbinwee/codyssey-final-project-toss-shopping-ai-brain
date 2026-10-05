@@ -164,3 +164,132 @@ export async function addToCart(
     );
   });
 }
+
+export type UpdateCartQtyInput = {
+  cart_item_id: string;
+  quantity: number; // 최종 수량
+  expected_cart_version: number;
+  expected_variant_version: number;
+};
+
+export type RemoveCartItemInput = {
+  cart_item_id: string;
+  expected_cart_version: number;
+};
+
+// 카트 행 잠금 + 버전 검사. update/remove가 공유하는 전처리다.
+async function lockCartForWrite(
+  q: Q,
+  ctx: RequestContext,
+  expectedVersion: number,
+  trace_id: string,
+): Promise<ToolResult<{ id: string; version: number }>> {
+  const carts = await q.unsafe<{ id: string; version: number }[]>(
+    "SELECT id, version FROM carts WHERE user_id=$1 FOR UPDATE",
+    [ctx.actorUserId],
+  );
+  const cart = carts[0];
+  if (!cart) return fail(err("NOT_FOUND", "카트가 없습니다"), trace_id);
+  if (cart.version !== expectedVersion)
+    return fail(
+      err("VERSION_CONFLICT", "카트가 변경되었습니다. 최신 상태를 다시 확인하세요.", "REFRESH_AND_RECONFIRM"),
+      trace_id,
+    );
+  return ok(cart, trace_id);
+}
+
+// 카트 항목의 최종 수량을 바꾼다. 재고는 건드리지 않는다(주문 시점 검증은 Phase 3).
+export async function updateCartQuantity(
+  input: UpdateCartQtyInput,
+  ctx: RequestContext,
+  idempotencyKey: string,
+): Promise<ActionResult<{ cart: CartView; changed_item_id: string }>> {
+  return runAction(ctx, "UPDATE_CART", idempotencyKey, input, async (q) => {
+    const trace_id = crypto.randomUUID();
+    if (
+      !input.cart_item_id ||
+      !Number.isInteger(input.quantity) ||
+      input.quantity < 1
+    )
+      return fail(err("VALIDATION", "cart_item_id와 1 이상의 최종 수량이 필요합니다"), trace_id);
+
+    const locked = await lockCartForWrite(q, ctx, input.expected_cart_version, trace_id);
+    if (!locked.ok) return locked;
+    const cart = locked.data;
+
+    const rows = await q.unsafe<
+      {
+        id: string; quantity: number; variant_id: string; variant_version: number;
+        stock_qty: number; variant_active: boolean; product_active: boolean;
+      }[]
+    >(
+      "SELECT ci.id, ci.quantity, v.id AS variant_id, v.version AS variant_version, v.stock_qty, v.active AS variant_active, p.active AS product_active " +
+        "FROM cart_items ci JOIN product_variants v ON v.id=ci.variant_id JOIN products p ON p.id=v.product_id " +
+        "WHERE ci.id=$1 AND ci.cart_id=$2 FOR UPDATE OF ci, v",
+      [input.cart_item_id, cart.id],
+    );
+    const item = rows[0];
+    if (!item) return fail(err("NOT_FOUND", "카트에 없는 항목입니다"), trace_id);
+    if (item.variant_version !== input.expected_variant_version)
+      return fail(
+        err("VERSION_CONFLICT", "옵션 정보가 변경되었습니다. 다시 확인하세요.", "REFRESH_AND_RECONFIRM"),
+        trace_id,
+      );
+    if (input.quantity > item.stock_qty)
+      return fail(
+        err("OUT_OF_STOCK", "재고가 부족합니다 (남은 수량 " + item.stock_qty + ")", "REFRESH_AND_RECONFIRM"),
+        trace_id,
+      );
+
+    await q.unsafe("UPDATE cart_items SET quantity=$2 WHERE id=$1", [
+      input.cart_item_id,
+      input.quantity,
+    ]);
+    await q.unsafe(
+      "UPDATE carts SET version=version+1, updated_at=now() WHERE id=$1",
+      [cart.id],
+    );
+    return ok(
+      {
+        cart: await cartView(q, { id: cart.id, version: cart.version + 1 }),
+        changed_item_id: input.cart_item_id,
+      },
+      trace_id,
+    );
+  });
+}
+
+// 카트 항목 삭제. 품절/비활성 항목도 삭제를 막지 않는다.
+export async function removeCartItem(
+  input: RemoveCartItemInput,
+  ctx: RequestContext,
+  idempotencyKey: string,
+): Promise<ActionResult<{ cart: CartView; removed_item_id: string }>> {
+  return runAction(ctx, "REMOVE_CART", idempotencyKey, input, async (q) => {
+    const trace_id = crypto.randomUUID();
+    if (!input.cart_item_id)
+      return fail(err("VALIDATION", "cart_item_id가 필요합니다"), trace_id);
+
+    const locked = await lockCartForWrite(q, ctx, input.expected_cart_version, trace_id);
+    if (!locked.ok) return locked;
+    const cart = locked.data;
+
+    const deleted = await q.unsafe<{ id: string }[]>(
+      "DELETE FROM cart_items WHERE id=$1 AND cart_id=$2 RETURNING id",
+      [input.cart_item_id, cart.id],
+    );
+    if (!deleted[0]) return fail(err("NOT_FOUND", "카트에 없는 항목입니다"), trace_id);
+
+    await q.unsafe(
+      "UPDATE carts SET version=version+1, updated_at=now() WHERE id=$1",
+      [cart.id],
+    );
+    return ok(
+      {
+        cart: await cartView(q, { id: cart.id, version: cart.version + 1 }),
+        removed_item_id: input.cart_item_id,
+      },
+      trace_id,
+    );
+  });
+}

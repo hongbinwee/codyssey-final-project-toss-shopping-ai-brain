@@ -167,6 +167,20 @@ main { flex: 1; padding: 0 16px 96px; }
 .cart-info { flex: 1; }
 .cart-right { text-align: right; }
 .cart-right b { display: block; }
+.qty-ctrl.sm { margin-top: 8px; gap: 8px; padding: 4px 8px; display: inline-flex; }
+.qty-ctrl.sm .link { margin-left: 4px; }
+
+/* A01 비교 카드 — 서버가 Tool 조회 데이터로만 조립 */
+.compare-card {
+  margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--bg-elev); padding: 10px; display: flex; flex-direction: column; gap: 10px;
+}
+.compare-row {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.compare-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.compare-limit { border-top: 1px dashed var(--line); padding-top: 8px; }
 
 /* A01 패널 */
 .agent-panel {
@@ -212,4 +226,3 @@ main { flex: 1; padding: 0 16px 96px; }
   text-align: center;
 }
 .login h1 { margin: 0; font-size: 24px; }
-

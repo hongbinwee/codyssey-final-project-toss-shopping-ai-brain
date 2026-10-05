@@ -3,7 +3,7 @@
 // mode=live: 실제 LLM 호출. 키 없으면 BLOCKED.
 import { readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { ensureTestDb, cleanUserData } from "../tests/helpers/testdb.ts";
-import { runAgentTurn, resetHistory } from "../src/agent.ts";
+import { runAgentTurn, resetHistory, ungroundedCitations } from "../src/agent.ts";
 import { liveProvider, scriptedProvider, type ChatResponse, type Provider } from "../src/llm.ts";
 import { getCart } from "../src/cart.ts";
 import { sql } from "../src/db.ts";
@@ -33,6 +33,7 @@ type Expect = {
   stock?: Record<string, number>;
   expect_error_code?: string;
   evidence_cited?: boolean;
+  compare_present?: boolean;
 };
 type Case = {
   case_id: string;
@@ -59,10 +60,27 @@ for (const f of files) {
     const ctx = { actorUserId: c.user, origin: "AGENT" as const };
     const turns = [];
     for (const [i, t] of c.turns.entries()) {
+      // scripted 쓰기 케이스용: "$last_changed_item"을 직전 카트 첫 항목 id로 치환한다.
+      const cartBefore = await getCart(ctx);
+      const lastItem = cartBefore.ok ? cartBefore.data.items[0]?.cart_item_id : undefined;
+      const dyn: Provider =
+        mode === "live" || !lastItem
+          ? provider
+          : {
+              name: provider.name,
+              chat: async (m, tl) => {
+                const resp = await provider.chat(m, tl);
+                if (resp.tool_calls)
+                  for (const tc of resp.tool_calls)
+                    if (tc.arguments?.includes("$last_changed_item"))
+                      tc.arguments = tc.arguments.replaceAll("$last_changed_item", lastItem);
+                return resp;
+              },
+            };
       const r = await runAgentTurn(
         { user_message: t.user_message, client_action_id: "eval-" + c.case_id + "-" + i },
         ctx,
-        provider,
+        dyn,
       );
       turns.push(r);
     }
@@ -104,17 +122,11 @@ for (const f of files) {
       if (v?.stock_qty !== want) failures.push("stock " + vid + "=" + v?.stock_qty + " expected " + want);
     }
     if (c.expect.evidence_cited) {
-      const cited = new Set(
-        [...last.message.matchAll(/\b(r-\d+|v-[a-z0-9-]+|p-[a-z0-9-]+)\b/g)].map((m) => m[1]),
-      );
-      const have = new Set([
-        ...last.evidence_refs.products,
-        ...last.evidence_refs.variants,
-        ...last.evidence_refs.reviews,
-      ]);
-      for (const id of cited)
-        if (!have.has(id)) failures.push("cited id not in tool results: " + id);
+      for (const id of ungroundedCitations(last.message, last.evidence_refs))
+        failures.push("cited id not in tool results: " + id);
     }
+    if (c.expect.compare_present && !last.compare)
+      failures.push("expected compare card but none was assembled");
     results.push({ case_id: c.case_id, pass: failures.length === 0, failures });
   }
 }
@@ -130,4 +142,3 @@ const failed = results.filter((r) => !r.pass).length;
 console.log("eval " + mode + "/" + split + ": " + (results.length - failed) + "/" + results.length + " passed");
 await sql.end();
 process.exit(failed ? 1 : 0);
-

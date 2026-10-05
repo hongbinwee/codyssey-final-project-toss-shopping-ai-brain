@@ -8,7 +8,7 @@ import { connectDb, sql } from "./db.ts";
 import { ensureDevDb } from "./devdb.ts";
 import { contextFromRequest, signSession } from "./session.ts";
 import { getProduct, getReviews, searchProducts } from "./catalog.ts";
-import { addToCart, getCart } from "./cart.ts";
+import { addToCart, getCart, removeCartItem, updateCartQuantity } from "./cart.ts";
 import { getActionResult } from "./actions.ts";
 import { runAgentTurn } from "./agent.ts";
 import { getProvider } from "./llm.ts";
@@ -158,6 +158,29 @@ export async function start(port = config.port) {
           quantity: Number(b.quantity),
           expected_cart_version: Number(b.expected_cart_version),
           expected_variant_version: Number(b.expected_variant_version),
+        }, ctx, "ui-" + b.idempotency_key));
+      }
+
+      // 카트 항목 수량 변경·삭제 (W03). 화면과 Agent Tool이 같은 서비스를 쓴다.
+      m = p.match(/^\/api\/cart\/items\/([^/]+)$/);
+      if (m && req.method === "PATCH") {
+        const b = (await body(req)) as { quantity?: number; expected_cart_version?: number; expected_variant_version?: number; idempotency_key?: string };
+        if (!b.idempotency_key)
+          return json(res, 400, { ok: false, error: { code: "VALIDATION", message: "idempotency_key가 필요합니다" } });
+        return send(res, await updateCartQuantity({
+          cart_item_id: decodeURIComponent(m[1]),
+          quantity: Number(b.quantity),
+          expected_cart_version: Number(b.expected_cart_version),
+          expected_variant_version: Number(b.expected_variant_version),
+        }, ctx, "ui-" + b.idempotency_key));
+      }
+      if (m && req.method === "DELETE") {
+        const b = (await body(req)) as { expected_cart_version?: number; idempotency_key?: string };
+        if (!b.idempotency_key)
+          return json(res, 400, { ok: false, error: { code: "VALIDATION", message: "idempotency_key가 필요합니다" } });
+        return send(res, await removeCartItem({
+          cart_item_id: decodeURIComponent(m[1]),
+          expected_cart_version: Number(b.expected_cart_version),
         }, ctx, "ui-" + b.idempotency_key));
       }
 

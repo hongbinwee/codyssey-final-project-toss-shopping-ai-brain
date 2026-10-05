@@ -50,3 +50,13 @@
 | 화면 | `src/web/screens/{Shopping,Product,Cart}.tsx` + `components/{AgentPanel,CommerceState,ProductCard}` — Toss류 다크 테마 1파일 CSS | UI는 W01~W03 최소 + A01 패널. 주문 버튼은 Phase 3까지 미노출 |
 | Agent | `src/agent.ts` — TOOL_REGISTRY 5종(search_products/get_product/get_reviews/get_cart/add_to_cart), 인자 allowed-keys 검증, ≤8 calls/60s, evidence_refs = Tool 결과에 실제 등장한 id만 | eval의 인용 근거 검사가 이 세트를 사용 |
 | 라우팅/정적 | 정적 파일은 auth 게이트보다 먼저 서빙 | `/`가 401로 막히는 회귀 수정 |
+
+Phase 2 추가 결정:
+
+| 항목 | 결정 | 이유/메모 |
+| --- | --- | --- |
+| 비교 카드 데이터 | 서버가 tool result JSON에서 조립(`buildCompare`), 최대 3개 + limitations(리뷰 근거 부족/부분 결과/품절 포함) | LLM 텍스트가 아닌 조회 데이터 기준 — 허위 근거/과대 표현을 구조적으로 차단 |
+| update/remove 멱등 | runAction 공통 처리. action kind는 001 예약값 UPDATE_CART/REMOVE_CART 사용 | Phase 2 migration 없음 |
+| 재시도 규칙 | OUTCOME_UNKNOWN만 같은 키+payload 보존(결과 조회 복구). VERSION_CONFLICT는 새 키 + 최신 버전으로 사용자가 재시도 | REJECTED는 저장된 거절을 재생할 뿐이므로 같은 키로 재실행 불가 |
+| 카트 가격 표시 | 담긴 시점 가격을 저장하지 않고 항상 현재가 표시 | ponytail: 가격 변경 감지 UI 대신 라이브 가격. 옵션 version 충돌로 변경 후 구매는 여전히 차단 |
+| 수량 UI | +는 재고 힌트 없이 서버 OUT_OF_STOCK에 위임, −는 1에서 비활성, 품절은 삭제만 | CartView에 stock 미포함 상태 유지 |

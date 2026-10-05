@@ -139,3 +139,17 @@ export interface CartView {
   total_won: number;
   can_checkout: boolean;
 }
+
+// A01 비교 카드. 서버가 Tool 조회 결과로만 조립한다 — LLM 텍스트를 근거로 쓰지 않는다.
+export interface CompareCard {
+  products: {
+    product_id: string;
+    name: string;
+    min_price_won: number;
+    max_price_won: number;
+    rating_summary: { avg: number | null; count: number };
+    availability: Availability;
+    evidence_review_ids: string[];
+  }[];
+  limitations: string[];
+}

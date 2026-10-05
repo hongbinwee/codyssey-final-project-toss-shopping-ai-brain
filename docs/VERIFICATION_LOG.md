@@ -42,3 +42,25 @@
 - `verify --phase=1` 래퍼 실행 중 호스트 셀이 중간 회수되는 환경 이슈가 있었으나, 구성 단계(tsc/build/unit/integration/e2e/eval)를 각각 직접 실행해 모두 PASS 확인. verify.ts 스크립트 자체 결함 아님.
 - e2e는 `commerce_test` DB 공유 — global-setup에서 u-a/u-b 카트·action_requests를 매번 비움(누적 수량으로 금액 assertion이 깨지는 것 방지).
 - eval 케이스 `t1-recommend-only`: 예산 캡 검색 후 전체 검색 1회를 추가해 예산 초과 후보(p-c) 인용을 Tool 결과에 근거하도록 수정.
+- eval 케이스 `t1-recommend-only`: 예산 캡 검색 후 전체 검색 1회를 추가해 예산 초과 후보(p-c) 인용을 Tool 결과에 근거하도록 수정.
+
+## 2026-10-06 Phase 2
+
+### T1 완성 — 카트 수정/삭제·비교 카드·근거 방어
+
+| 명령 | 결과 |
+| --- | --- |
+| npm run check (tsc --noEmit) | PASS — 오류 0 |
+| npm run build | PASS — web/app.js 1.2mb |
+| npm run test:unit | PASS — 9/9 (citation grounding 3건 추가: 조회된 id만 통과·미조회 id 감지·무인용) |
+| npm run test:integration | PASS — 20/20 (update/remove 11건 추가: 수량 변경·replay·0/음수 거절·재고 초과 거절·카트/옵션 버전 경합·타인 항목 NOT_FOUND·동명 다른 옵션·품절 삭제·빈 카트 전이) |
+| npm run test:e2e | PASS — 5/5 (t1-complete: 수량 +/− → 363,000/183,000원 → 삭제 → Empty; compare card 3행+한계 표시+W02 이동) |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 8/8 (compare-present·update·remove·주입 리뷰 케이스 추가) |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (stub으로 대체하지 않음) |
+
+메모:
+- action kind는 migration 001 예약값 UPDATE_CART/REMOVE_CART 사용 — Phase 2 migration 없음(계획 일치).
+- e2e 스펙 파일별 테스트 사용자 분리(t1-slice=u-a, t1-complete=u-b) — 병렬 실행 시 카트 버전 경합 방지.
+- ungroundedCitations를 agent.ts로 옮겨 eval과 단위 테스트가 같은 규칙을 쓰게 함.
+- 비교 카드는 모델 텍스트가 아니라 서버가 Tool 결과 JSON으로만 조립 — 조회 안 한 상품/근거 노출 불가.
+- 실제 리뷰 표본(REAL) 미확보 → provenance.md에 미완료 항목으로 기록. r-09(주입 테스트)는 SYNTHETIC 적대 문장.
