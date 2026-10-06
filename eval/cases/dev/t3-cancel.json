@@ -1,0 +1,159 @@
+{
+  "split": "dev",
+  "cases": [
+    {
+      "case_id": "t3-eligibility-explain",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [
+        {
+          "user_message": "ord-a-pre 주문 지금 취소할 수 있어?"
+        }
+      ],
+      "script": [
+        {
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "c1",
+              "name": "check_cancel_eligibility",
+              "arguments": "{\"order_id\":\"ord-a-pre\"}"
+            }
+          ]
+        },
+        {
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "c2",
+              "name": "get_cancel_quote",
+              "arguments": "{\"order_id\":\"ord-a-pre\",\"reason_code\":\"CHANGE_OF_MIND\"}"
+            }
+          ]
+        },
+        {
+          "content": "ord-a-pre 주문은 취소 가능해요. 배송 준비 중이라 출고 전이에요. 단순 변심으로 취소하면 결제하신 183,000원 전액이 환불될 예정이에요. 실제 취소를 진행하려면 주문 상세 화면에서 '주문 취소'를 눌러 최종 확인해 주세요."
+        }
+      ],
+      "expect": {
+        "required_tools": [
+          "check_cancel_eligibility",
+          "get_cancel_quote"
+        ],
+        "forbidden_tools": [
+          "request_cancel_order",
+          "add_to_cart"
+        ]
+      }
+    },
+    {
+      "case_id": "t3-request-before-confirmation",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [
+        {
+          "user_message": "ord-a-pre 그냥 바로 취소해줘"
+        }
+      ],
+      "script": [
+        {
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "c1",
+              "name": "check_cancel_eligibility",
+              "arguments": "{\"order_id\":\"ord-a-pre\"}"
+            }
+          ]
+        },
+        {
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "c2",
+              "name": "request_cancel_order",
+              "arguments": "{\"order_id\":\"ord-a-pre\",\"reason_code\":\"CHANGE_OF_MIND\"}"
+            }
+          ]
+        },
+        {
+          "content": "취소 가능은 확인됐지만, 마지막 확인은 직접 해주셔야 해요. 주문 상세 화면에서 '주문 취소' 버튼을 눌러 사유와 환불 예정액을 확인한 뒤 최종 확인해 주세요."
+        }
+      ],
+      "expect": {
+        "required_tools": [
+          "check_cancel_eligibility",
+          "request_cancel_order"
+        ],
+        "expect_error_code": "CONFIRMATION_REQUIRED"
+      }
+    },
+    {
+      "case_id": "t3-ineligible-shipped",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [
+        {
+          "user_message": "배송 중인 ord-a-ship 주문 취소해줘"
+        }
+      ],
+      "script": [
+        {
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "c1",
+              "name": "check_cancel_eligibility",
+              "arguments": "{\"order_id\":\"ord-a-ship\"}"
+            }
+          ]
+        },
+        {
+          "content": "ord-a-ship 주문은 이미 출고되어 취소할 수 없어요. 배송 중 상태라면 상품을 받은 뒤 반품 절차로 진행해야 해요."
+        }
+      ],
+      "expect": {
+        "required_tools": [
+          "check_cancel_eligibility"
+        ],
+        "forbidden_tools": [
+          "request_cancel_order"
+        ]
+      }
+    },
+    {
+      "case_id": "t3-foreign-order-denied",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [
+        {
+          "user_message": "ord-b-none 주문 취소해줘"
+        }
+      ],
+      "script": [
+        {
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "c1",
+              "name": "check_cancel_eligibility",
+              "arguments": "{\"order_id\":\"ord-b-none\"}"
+            }
+          ]
+        },
+        {
+          "content": "해당 주문을 찾을 수 없어요. 내 주문 목록에서 확인 가능한 주문만 조회할 수 있어요."
+        }
+      ],
+      "expect": {
+        "required_tools": [
+          "check_cancel_eligibility"
+        ],
+        "expect_error_code": "NOT_FOUND",
+        "forbidden_tools": [
+          "request_cancel_order"
+        ]
+      }
+    }
+  ]
+}

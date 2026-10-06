@@ -18,6 +18,10 @@ const REFUND_LABEL: Record<string, string> = {
   PENDING: "환불 처리 중",
   REFUNDED: "환불 완료",
 };
+const CANCEL_LABEL: Record<string, string> = {
+  REQUESTED: "취소 요청",
+  COMPLETED: "취소 완료",
+};
 
 export function Orders({
   onOpenOrder,
@@ -65,6 +69,11 @@ export function Orders({
                       : <span className="badge muted-b">배송 정보 없음</span>}
                     {o.refund_status && o.refund_status !== "NONE" && (
                       <span className="badge">{REFUND_LABEL[o.refund_status] ?? o.refund_status}</span>
+                    )}
+                    {o.cancel_status && (
+                      <span className={"badge" + (o.cancel_status === "REQUESTED" ? " muted-b" : "")}>
+                        {CANCEL_LABEL[o.cancel_status] ?? o.cancel_status}
+                      </span>
                     )}
                   </div>
                 </div>

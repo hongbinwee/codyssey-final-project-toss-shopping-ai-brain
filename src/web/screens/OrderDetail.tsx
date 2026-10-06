@@ -1,15 +1,26 @@
-// W06 주문 상세 — 상품/금액 스냅샷·결제·배송 이력·(Phase 4)취소 결과를 한 화면에서 본다.
+// W06 주문 상세 — 상품/금액 스냅샷·결제·배송 이력·취소 요청/환불 결과를 한 화면에서 본다.
 // 배송 갱신은 서버 데이터를 다시 조회하는 '새로고침'으로만 — 상태는 시뮬레이터가 바꾼다.
 import { useEffect, useState } from "react";
 import { api, fmtWon, type ApiResult } from "../api.ts";
 import type { OrderView } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
+import { CancelSheet } from "../components/CancelSheet.tsx";
 
 const SHIP_LABEL: Record<string, string> = {
   PREPARING: "배송 준비 중",
   IN_TRANSIT: "배송 중",
   DELIVERED: "배송 완료",
   CANCELLED: "배송 취소",
+};
+
+const CANCEL_LABEL: Record<string, string> = {
+  REQUESTED: "취소 요청 접수됨",
+  COMPLETED: "취소 완료",
+};
+const REASON_LABEL: Record<string, string> = {
+  ORDER_MISTAKE: "주문을 잘못 입력",
+  CHANGE_OF_MIND: "단순 변심",
+  OTHER: "기타",
 };
 
 export function OrderDetail({
@@ -22,6 +33,7 @@ export function OrderDetail({
   onAskAgent: (orderId: string) => void;
 }) {
   const [res, setRes] = useState<ApiResult<OrderView> | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   async function reload() {
     const r = await api<OrderView>("/api/orders/" + encodeURIComponent(orderId));
@@ -143,17 +155,43 @@ export function OrderDetail({
         <div className="checkout-block">
           <h3 className="section-title">취소 요청</h3>
           <div>
-            {o.cancel_request.status} · 환불 예정 {fmtWon(o.cancel_request.refund_amount_won)}
+            <span className="badge">{CANCEL_LABEL[o.cancel_request.status] ?? o.cancel_request.status}</span>
+            {" "}사유: {REASON_LABEL[o.cancel_request.reason_code] ?? o.cancel_request.reason_code}
+          </div>
+          <div className="muted sm">
+            접수 {new Date(o.cancel_request.requested_at).toLocaleString("ko-KR")}
+            {o.cancel_request.completed_at && " · 처리 " + new Date(o.cancel_request.completed_at).toLocaleString("ko-KR")}
+          </div>
+          <div className="muted">
+            환불 예정 {fmtWon(o.cancel_request.refund_amount_won)}
+            {o.payment?.refund_status === "REFUNDED" ? " — 환불 완료" : o.payment?.refund_status === "PENDING" ? " — 환불 처리 중" : ""}
           </div>
         </div>
       )}
 
       <div className="bottom-bar">
         <button className="btn ghost" onClick={onBack}>목록</button>
+        {o.status === "CONFIRMED" && !o.cancel_request && (
+          <button className="btn ghost" onClick={() => setCancelOpen(true)}>주문 취소</button>
+        )}
         <button className="btn primary" onClick={() => onAskAgent(o.id)}>
           AI에게 이 주문 물어보기
         </button>
       </div>
+
+      {cancelOpen && (
+        <CancelSheet
+          orderId={o.id}
+          itemSummary={
+            o.items[0]?.product_name +
+            (o.items.length > 1 ? " 외 " + (o.items.length - 1) + "건" : "")
+          }
+          onClose={(changed) => {
+            setCancelOpen(false);
+            if (changed) reload();
+          }}
+        />
+      )}
     </div>
   );
 }

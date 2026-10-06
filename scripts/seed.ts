@@ -65,9 +65,16 @@ for (const f of files) {
     // Phase 3 주문 시나리오. seed 주문은 결제 완료 상태로 직접 넣는다 — 재고 차감 없음.
     // (checkout 경로로 만든 주문만 재고를 차감한다. provenance.md 참고)
     for (const o of data.orders) {
+      // Phase 4: 재시드는 시나리오 주문의 취소/환불 상태도 초기 상태로 되돌린다.
+      // (phase<4 DB에는 cancel_requests가 없을 수 있으므로 존재를 먼저 확인)
+      const [reg] = await sql.unsafe<{ r: string | null }[]>(
+        "SELECT to_regclass('public.cancel_requests') AS r",
+      );
+      if (reg.r)
+        await sql.unsafe("DELETE FROM cancel_requests WHERE order_id=$1", [o.id]);
       await sql.unsafe(
-          "INSERT INTO orders (id, user_id, status, items_total_won, shipping_fee_won, total_won, address_snapshot_json, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8) " +
-            "ON CONFLICT (id) DO UPDATE SET status=$3, items_total_won=$4, shipping_fee_won=$5, total_won=$6, address_snapshot_json=$7::jsonb, created_at=$8",
+          "INSERT INTO orders (id, user_id, status, items_total_won, shipping_fee_won, total_won, address_snapshot_json, created_at, version, cancelled_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,1,NULL) " +
+            "ON CONFLICT (id) DO UPDATE SET status=$3, items_total_won=$4, shipping_fee_won=$5, total_won=$6, address_snapshot_json=$7::jsonb, created_at=$8, version=1, cancelled_at=NULL",
           [o.id, o.user_id, o.status, o.items_total_won, o.shipping_fee_won, o.total_won, o.address, o.created_at],
       );
       for (const [idx, it] of (o.items as { variant_id: string; product_name: string; option_values: Record<string,string>; unit_price_won: number; quantity: number }[]).entries()) {
@@ -79,8 +86,8 @@ for (const f of files) {
       }
       if (o.payment) {
         await sql.unsafe(
-          "INSERT INTO payments (id, order_id, method, status, paid_amount_won, paid_at) VALUES ($1,$2,'SIMULATED','PAID',$3,$4) " +
-            "ON CONFLICT (order_id) DO UPDATE SET paid_amount_won=$3, paid_at=$4",
+          "INSERT INTO payments (id, order_id, method, status, paid_amount_won, paid_at, refund_status, refunded_amount_won, refunded_at) VALUES ($1,$2,'SIMULATED','PAID',$3,$4,'NONE',0,NULL) " +
+            "ON CONFLICT (order_id) DO UPDATE SET paid_amount_won=$3, paid_at=$4, refund_status='NONE', refunded_amount_won=0, refunded_at=NULL",
           [o.id + "-pay", o.id, o.payment.paid_amount_won, o.payment.paid_at],
         );
       }

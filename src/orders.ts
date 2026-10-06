@@ -60,6 +60,13 @@ export async function listOrders(
     : [];
   const shipBy = new Map(ships.map((s) => [s.order_id, s.status]));
   const payBy = new Map(pays.map((p) => [p.order_id, p]));
+  const cxls = ids.length
+    ? await sql.unsafe<{ order_id: string; status: string }[]>(
+        "SELECT order_id, status FROM cancel_requests WHERE order_id = ANY($1)",
+        [ids],
+      )
+    : [];
+  const cxlBy = new Map(cxls.map((c) => [c.order_id, c.status]));
 
   const orders: OrderListItem[] = page.map((o) => ({
     id: o.id,
@@ -71,6 +78,7 @@ export async function listOrders(
     payment_status: payBy.get(o.id)?.status ?? null,
     shipping_status: shipBy.get(o.id) ?? null,
     refund_status: payBy.get(o.id)?.refund_status ?? null,
+    cancel_status: cxlBy.get(o.id) ?? null,
   }));
   return ok(
     {
@@ -116,6 +124,13 @@ export async function getOrder(
     }[]
   >("SELECT * FROM shipments WHERE order_id=$1", [o.id]);
 
+  const [cxl] = await sql.unsafe<
+    {
+      id: string; status: string; reason_code: string;
+      refund_amount_won: number; requested_at: string; completed_at: string | null;
+    }[]
+  >("SELECT * FROM cancel_requests WHERE order_id=$1", [o.id]);
+
   return ok(
     {
       id: o.id,
@@ -156,7 +171,16 @@ export async function getOrder(
             updated_at: new Date(ship.updated_at).toISOString(),
           }
         : null,
-      cancel_request: null, // Phase 4에서 채움
+      cancel_request: cxl
+        ? {
+            id: cxl.id,
+            status: cxl.status,
+            reason_code: cxl.reason_code,
+            refund_amount_won: cxl.refund_amount_won,
+            requested_at: new Date(cxl.requested_at).toISOString(),
+            completed_at: cxl.completed_at ? new Date(cxl.completed_at).toISOString() : null,
+          }
+        : null,
     },
     trace_id,
   );

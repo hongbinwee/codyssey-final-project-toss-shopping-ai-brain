@@ -11,6 +11,9 @@ import { getProduct, getReviews, searchProducts } from "./catalog.ts";
 import { addToCart, getCart, removeCartItem, updateCartQuantity } from "./cart.ts";
 import { checkoutQuote, confirmCheckout } from "./checkout.ts";
 import { getOrder, getShippingStatus, listOrders } from "./orders.ts";
+import {
+  approveCancel, checkCancelEligibility, getCancelQuote, requestCancelOrder,
+} from "./cancellation.ts";
 import { getActionResult } from "./actions.ts";
 import { runAgentTurn } from "./agent.ts";
 import { getProvider } from "./llm.ts";
@@ -215,6 +218,30 @@ export async function start(port = config.port) {
       m = p.match(/^\/api\/orders\/([^/]+)\/shipping$/);
       if (m && req.method === "GET")
         return send(res, await getShippingStatus(ctx, decodeURIComponent(m[1])));
+
+      // T3 취소 — 자격/견적은 READ, 승인은 UI 전용, 실행은 화면과 Agent이 같은 로직을 쓴다.
+      m = p.match(/^\/api\/orders\/([^/]+)\/cancel\/eligibility$/);
+      if (m && req.method === "GET")
+        return send(res, await checkCancelEligibility(ctx, decodeURIComponent(m[1])));
+      m = p.match(/^\/api\/orders\/([^/]+)\/cancel\/quote$/);
+      if (m && req.method === "GET")
+        return send(res, await getCancelQuote(
+          ctx, decodeURIComponent(m[1]), url.searchParams.get("reason_code") ?? "",
+        ));
+      m = p.match(/^\/api\/orders\/([^/]+)\/cancel\/approve$/);
+      if (m && req.method === "POST") {
+        const b = (await body(req)) as { quote_token?: string; reason_code?: string; action_key?: string };
+        return send(res, await approveCancel(ctx, decodeURIComponent(m[1]), b));
+      }
+      m = p.match(/^\/api\/orders\/([^/]+)\/cancel\/execute$/);
+      if (m && req.method === "POST") {
+        const b = (await body(req)) as { confirmation_id?: string; reason_code?: string };
+        return send(res, await requestCancelOrder(ctx, {
+          order_id: decodeURIComponent(m[1]),
+          reason_code: b.reason_code,
+          confirmation_id: b.confirmation_id,
+        }));
+      }
       m = p.match(/^\/api\/orders\/([^/]+)$/);
       if (m && req.method === "GET")
         return send(res, await getOrder(ctx, decodeURIComponent(m[1])));

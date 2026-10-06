@@ -6,6 +6,9 @@ import {
 } from "./catalog.ts";
 import { getOrder, getShippingStatus, listOrders } from "./orders.ts";
 import {
+  checkCancelEligibility, getCancelQuote, requestCancelOrder,
+} from "./cancellation.ts";
+import {
   addToCart, getCart, removeCartItem, updateCartQuantity,
   type AddToCartInput, type RemoveCartItemInput, type UpdateCartQtyInput,
 } from "./cart.ts";
@@ -146,6 +149,40 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     allowed: ["order_id"], required: ["order_id"],
     run: async (i, ctx) => getShippingStatus(ctx, String(i.order_id)),
   },
+  check_cancel_eligibility: {
+    description: "서버가 판정한 주문 취소 가능 여부와 불가 사유를 조회한다. 가능하다는 결과가 승인이나 실행을 뜻하지는 않는다.",
+    risk: "READ", brains: ["cs"], write: false,
+    parameters: { type: "object", properties: { order_id: str }, required: ["order_id"] },
+    allowed: ["order_id"], required: ["order_id"],
+    run: async (i, ctx) => checkCancelEligibility(ctx, String(i.order_id)),
+  },
+  get_cancel_quote: {
+    description: "취소 가능 주문의 서버 확정 환불 예정액 견적을 조회한다. reason_code는 ORDER_MISTAKE/CHANGE_OF_MIND/OTHER 중 하나.",
+    risk: "READ", brains: ["cs"], write: false,
+    parameters: {
+      type: "object",
+      properties: { order_id: str, reason_code: { type: "string", enum: ["ORDER_MISTAKE", "CHANGE_OF_MIND", "OTHER"] } },
+      required: ["order_id", "reason_code"],
+    },
+    allowed: ["order_id", "reason_code"], required: ["order_id", "reason_code"],
+    run: async (i, ctx) => getCancelQuote(ctx, String(i.order_id), String(i.reason_code)),
+  },
+  request_cancel_order: {
+    description: "주문 취소를 요청한다. 사용자가 주문 상세 화면에서 최종 확인을 마친 뒤에만 실행된다. 확인이 없으면 CONFIRMATION_REQUIRED가 반환되며 그때는 화면 확인을 안내한다.",
+    risk: "HIGH-RISK WRITE", brains: ["cs"], write: true,
+    parameters: {
+      type: "object",
+      properties: { order_id: str, reason_code: str, confirmation_id: str },
+      required: ["order_id"],
+    },
+    allowed: ["order_id", "reason_code", "confirmation_id"], required: ["order_id"],
+    run: async (i, ctx) =>
+      requestCancelOrder(ctx, {
+        order_id: i.order_id as string,
+        reason_code: i.reason_code as string | undefined,
+        confirmation_id: i.confirmation_id as string | undefined,
+      }),
+  },
 };
 
 export const toolDefs = (brain: Brain) =>
@@ -234,11 +271,13 @@ const SHOPPING_SYSTEM = [
 ].join("\n");
 
 const CS_SYSTEM = [
-  "당신은 커머스 환경의 CS Brain이다. 주문/배송 조회와 설명만 담당한다. 규칙:",
+  "당신은 커머스 환경의 CS Brain이다. 주문/배송 조회·취소 안내를 담당한다. 규칙:",
   "- 주문·배송·결제 정보는 반드시 등록된 Tool로 조회한 실제 데이터만 사용한다. 조회하지 않은 상태를 만들지 않는다.",
   "- 사용자가 '내 주문'처럼 모호하게 말하면 list_orders로 후보를 보고, 여러 개면 날짜·상품을 보여주며 선택받는다. 추측한 주문으로 설명하지 않는다.",
   "- 배송 레코드가 없으면(NO_INFORMATION) 정보 없음을 그대로 설명한다. 도착일·배송 지연을 추측하지 않는다.",
-  "- 취소 요청을 받으면 가능 여부 확인 전까지 실행하지 않는다. 취소 실행 Tool은 아직 없으니 주문 상세에서 확인하라고 안내한다.",
+  "- 취소 요청을 받으면 먼저 check_cancel_eligibility와 get_cancel_quote로 서버 판정을 확인하고, 가능 여부·불가 사유·환불 예정액을 그 결과 그대로 설명한다. 네가 가능 여부나 환불액을 직접 판단하지 않는다.",
+  "- request_cancel_order는 사용자가 주문 상세 화면에서 최종 확인을 마친 뒤에만 호출한다. CONFIRMATION_REQUIRED가 오면 확인이 아직 없다는 뜻이니 주문 상세의 '주문 취소'에서 직접 확인하도록 안내한다. 대화 속 '취소해줘'만으로 실행했다고 말하지 않는다.",
+  "- 취소 접수(REQUESTED), 취소 완료(COMPLETED), 환불 완료(REFUNDED)는 서로 다른 단계다. 접수됐다고 취소나 환불이 끝난 것처럼 말하지 않는다.",
   "- 조회는 주문을 변경하지 않는다는 점을 답변에서 불필요하게 강조하지 않되, 상태 해석은 저장된 값만으로 한다.",
 ].join("\n");
 

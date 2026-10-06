@@ -215,6 +215,7 @@ export interface OrderListItem {
   payment_status: string | null;
   shipping_status: string | null;
   refund_status: string | null;
+  cancel_status: string | null;
 }
 
 export interface ShippingStatusResult {
@@ -225,6 +226,41 @@ export interface ShippingStatusResult {
   events: ShipmentEvent[];
   estimated_arrival_at: string | null;
   updated_at: string | null;
+}
+
+// T3 취소 (Phase 4). 가능 여부·견적·환불액은 서버가 결정한다 — LLM 입력은 사유 선택뿐.
+export type CancelReasonCode = "ORDER_MISTAKE" | "CHANGE_OF_MIND" | "OTHER";
+
+export interface CancelEligibilityResult {
+  order_id: string;
+  order_version: number;
+  eligible: boolean;
+  reasons: { code: string; message: string }[];
+  policy_version: string;
+}
+
+export interface CancelQuoteResult {
+  order_id: string;
+  order_version: number;
+  eligible: boolean;
+  reasons: { code: string; message: string }[];
+  quote: {
+    order_id: string;
+    order_version: number;
+    reason_code: CancelReasonCode;
+    refund_amount_won: number;
+    currency: "KRW";
+    policy_version: string;
+    expires_at: string;
+    quote_token: string;
+  } | null;
+}
+
+export interface CancelRequestResult {
+  cancel_request_id: string;
+  status: "REQUESTED";
+  refund_amount_won: number;
+  order: OrderView | null; // 최초 접수 결과 + 현재 주문 상태 재조회. 조회 실패 시 null.
 }
 
 // W04 주문서 견적 (UI 전용 — Agent Tool이 아니다). 서명된 불투명 토큰 + 표시용 카트/주소.

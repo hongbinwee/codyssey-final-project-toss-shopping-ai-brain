@@ -257,3 +257,25 @@ main { flex: 1; padding: 0 16px 96px; }
   content: ""; position: absolute; left: -16px; top: 9px;
   width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
 }
+
+/* A02 취소 확인 시트 (W06 위 Bottom Sheet) */
+.sheet-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: #000a;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet {
+  width: 100%; max-width: 960px; max-height: 85vh; overflow-y: auto;
+  background: var(--bg-elev); border: 1px solid var(--line);
+  border-radius: 16px 16px 0 0; padding: 18px 16px 24px;
+}
+.reason-opt {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; margin-top: 8px; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.reason-opt.sel { border-color: var(--accent); }
+.reason-opt input { accent-color: var(--accent); }
+.reason-list { list-style: none; padding: 0; margin: 10px 0; }
+.sheet-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+.sheet-actions .btn { min-width: 110px; }

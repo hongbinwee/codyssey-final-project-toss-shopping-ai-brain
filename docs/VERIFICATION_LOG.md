@@ -90,3 +90,25 @@
 - 견적 토큰: HMAC 서명 불투명 토큰 + 5분 TTL. 확인 시 카트/옵션 버전·가격·재고 재검증(STALE_QUOTE/OUT_OF_STOCK). checkout은 Agent Tool이 아님(UI 전용) — toolDefs 양쪽 brain에서 노출 0건 검증.
 - 재시드 시 variant version=1 리셋 추가 — checkout이 version을 올리므로 재현성 유지.
 - 시드 주문은 재고 차감을 거치지 않음(provenance.md에 명시). 재고 차감은 checkout 경로만.
+
+## 2026-10-07 Phase 4
+
+### T3 — 주문 취소 확인·접수·처리·환불 (A02 + CS Brain 취소 Tool)
+
+| 명령 | 결과 |
+| --- | --- |
+| node scripts/migrate.ts --phase=4 (개발/테스트 DB) | PASS — 003_cancel_requests 적용. 기존 001/002 데이터 보존 |
+| node scripts/seed.ts --phase=4 | PASS — u-d 추가, 재시드 시 cancel_requests 정리·주문 version/cancelled_at/환불 필드 리셋(재현성) |
+| node node_modules/typescript/bin/tsc --noEmit | PASS — 오류 0 |
+| node scripts/build-web.ts | PASS — web/app.js |
+| node --test tests/unit/*.test.ts | PASS — 18/18 (취소 자격 정책 p0-v1 9건: 충족/이미 취소/결제 부적격/금액 불일치/중복 요청/배송 없음/출고 후/비PREPARING/복합 사유) |
+| node --test --test-concurrency=1 --test-force-exit tests/integration/*.test.ts | PASS — 58/58. 신규 18건: 확인 전 실행 거절·승인 UI 전용·타인 주문/승인/위조 차단·만료/버전/사유 불일치 거절·승인→실행→REQUESTED·replay·UI 승인만 CS Tool 소비·중복 취소 차단 / 취소-출고 경합·동시 실행 1건·재실행 복구 / 응답 유실 복구·접수 후 출고 차단·처리(주문/배송 CANCELLED+재고 1회 복원+환불 PENDING)·환불 전액 1회 멱등·금액 불일치 중단·무요청 전환 거절 |
+| node node_modules/playwright/cli.js test | PASS — 9/9. 신규 t3-cancel 2건(주문 생성→A02 확인→취소 REQUESTED·W06/W05 표시; 출고 seed 주문은 시트에서 불가 사유·실행 버튼 없음) |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 (T3 4건: 자격 설명·확인 전 요청 시 CONFIRMATION_REQUIRED·출고 주문 불가·타인 주문 NOT_FOUND) |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (stub PASS로 대체하지 않음) |
+| node scripts/simulate.ts --event=cancel/refund | PASS — REQUESTED→취소 처리(재고 복원·환불 PENDING)→REFUNDED. 검증 후 시드로 기준값 복원 |
+| node scripts/verify.ts --phase=4 | PASS — 누적 게이트 전체 통과 |
+
+메모:
+- e2e 병렬 충돌 수정: t3-cancel이 checkout-t2와 같은 옵션(v-b-24)을 구매해 한쪽이 STALE_QUOTE(재고 차감→옵션 버전 증가는 설계상 정상 거절). t3는 아무 스펙도 안 쓰는 모니터 C(v-c-27)로 격리. 도메인 규칙은 변경하지 않음.
+- checkout-t2의 '주문 상세' 헤딩 대기 5s→15s (병렬 부하 시 응답 지연 플레이크 방지, t3와 동일 기준).

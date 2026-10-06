@@ -76,3 +76,16 @@ Phase 3 추가 결정:
 | jsonb 파라미터 | postgres.js 파라미터에는 raw 객체/배열(JSON.stringify 금지 — 문자열로 저장돼 CHECK 위반) | seeds/checkout/orders에 동일 적용 |
 | 통합 테스트 종료 | sql 풀이 서브프로세스 종료를 막아 --test 러너 hang → after(sql.end()) + --test-force-exit | spawn kill 직후 크래시는 300ms 지연으로 회피. verify.ts 반영 |
 | 주문서 CTA | 장바구니 '주문하기' 버튼 라벨에 금액 미포함 | 기존 e2e의 금액 텍스트 단정과 strict-mode 충돌 방지 |
+
+Phase 4 추가 결정:
+
+| 항목 | 결정 | 이유/메모 |
+| --- | --- | --- |
+| 취소 승인 = 실행 요청 행 | UI 승인이 action_requests(kind=CANCEL_ORDER, status=READY, 5분 만료)를 만들고, CS Tool 실행이 같은 행을 READY→SUCCEEDED/REJECTED로 확정 | confirmation_id==operation_id. 승인과 실행이 한 멱등 단위 — '승인 없는 실행'과 '중복 실행'이 구조적으로 불가 |
+| 승인 생성은 UI 전용 | POST /api/orders/:id/cancel/approve는 세션 본인만. Tool registry에 없음 | Agent가 스스로 승인을 만들 수 없어 확인 우회 차단(approval_api_not_agent_accessible 테스트) |
+| 실행 입력 | request_cancel_order(order_id, reason_code?, confirmation_id?) — confirmation_id 없으면 actor+order의 최신 READY 승인을 소비 | 단순화: 시트는 confirmation_id를 명시하고, Agent는 방금 만든 승인을 조회해 소비. 없으면 CONFIRMATION_REQUIRED |
+| 실행 전 재검증 | 만료→CONFIRMATION_EXPIRED, 주문 버전/대상/사유/금액 불일치→CONFIRMATION_STALE, 자격 상실→CANCEL_NOT_ELIGIBLE — 전부 REJECTED로 확정 저장 | 승인 시점 이후 상태 변화(출고 등)를 실행 시점에 다시 확인 |
+| 접수≠완료 | REQUESTED에서 주문은 CONFIRMED 유지, 최종 취소·재고 복원·환불 PENDING은 simulate cancel(completeCancellation), 환불 REFUNDED는 simulate refund | P0: 처리 지연을 운영자 시뮬레이션으로 표현. LLM이 취소 완료/환불액을 판단하지 않음 |
+| 자격 조건(p0-v1) | 소유 주문·CONFIRMED·결제 PAID+환불 NONE·취소 요청 없음·배송 PREPARING. 배송 레코드 없으면 SHIPPING_UNVERIFIED(불가) | 환불액=payments.paid_amount_won 전액, 주문 합계와 불일치 시 DATA_INCONSISTENT로 중단 |
+| 취소-출고 경합 | cancel과 shipOrder가 같은 orders 행 FOR UPDATE로 직렬화 — 패자는 CONFIRMATION_STALE(버전 범프) 또는 INVALID_STATE | REQUESTED와 IN_TRANSIT 동시 성립 불가(설계 §8.1) |
+| e2e 상품 격리 | t3-cancel은 모니터 C(v-c-27) 구매 — checkout-t2(v-b-24)와 다른 옵션 | 재고 차감이 옵션 버전을 올리는 것은 문서화된 정상 동작. 병렬 스펙끼리 같은 옵션을 사면 STALE_QUOTE가 의도대로 발생하므로 상품을 분리 |

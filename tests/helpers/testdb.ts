@@ -30,8 +30,19 @@ export async function ensureTestDb(phase = 1) {
 }
 
 // 테스트가 만든 사용자 데이터만 비운다. seed 카탈로그와 seed 주문(ord-*)은 그대로 둔다.
+// (seed 주문의 취소/환불 잔여 상태는 seed.ts가 재시드 시 초기화한다)
 export async function cleanUserData() {
-  const uids = ["u-a", "u-b", "u-c"];
+  const uids = ["u-a", "u-b", "u-c", "u-d"];
+  // cancel_requests가 action_requests/orders를 FK로 참조하므로 먼저 지운다.
+  // seed 주문(ord-*)에 붙은 테스트 취소 요청도 함께 지워 다음 테스트의 자격 판정을 보존한다.
+  const [regC] = await sql.unsafe<{ r: string | null }[]>(
+    "SELECT to_regclass('public.cancel_requests') AS r",
+  );
+  if (regC.r)
+    await sql.unsafe(
+      "DELETE FROM cancel_requests WHERE order_id IN (SELECT id FROM orders WHERE user_id = ANY($1))",
+      [uids],
+    );
   await sql.unsafe(
     "DELETE FROM cart_items WHERE cart_id IN (SELECT id FROM carts WHERE user_id = ANY($1))",
     [uids],
@@ -58,6 +69,11 @@ export async function cleanUserData() {
     );
     const ids = rows.map((r) => r.id);
     if (ids.length) {
+      const [regC] = await sql.unsafe<{ r: string | null }[]>(
+        "SELECT to_regclass('public.cancel_requests') AS r",
+      );
+      if (regC.r)
+        await sql.unsafe("DELETE FROM cancel_requests WHERE order_id = ANY($1)", [ids]);
       await sql.unsafe("DELETE FROM order_items WHERE order_id = ANY($1)", [ids]);
       await sql.unsafe("DELETE FROM payments WHERE order_id = ANY($1)", [ids]);
       await sql.unsafe("DELETE FROM shipments WHERE order_id = ANY($1)", [ids]);

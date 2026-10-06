@@ -48,7 +48,7 @@ const dir = "eval/cases/" + split;
 const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
 const results: { case_id: string; pass: boolean; failures: string[] }[] = [];
 
-await ensureTestDb(1);
+await ensureTestDb(Number(arg("phase", "4")));
 
 for (const f of files) {
   const cases = JSON.parse(readFileSync(dir + "/" + f, "utf8")).cases as Case[];

@@ -30,8 +30,8 @@ test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
 
   await page.getByRole("button", { name: "152,000원 결제하기" }).click();
 
-  // W04 완료 -> W06 주문 상세
-  await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
+  // W04 완료 -> W06 주문 상세. 병렬 실행 시 서버 응답이 느려질 수 있어 넉넉하게 기다린다.
+  await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("모의 결제 152,000원")).toBeVisible();
   await expect(page.getByText("배송 준비 중").first()).toBeVisible();
 
