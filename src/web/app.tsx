@@ -5,12 +5,19 @@ import { api } from "./api.ts";
 import { Shopping } from "./screens/Shopping.tsx";
 import { Product } from "./screens/Product.tsx";
 import { Cart } from "./screens/Cart.tsx";
+import { Checkout } from "./screens/Checkout.tsx";
+import { Orders } from "./screens/Orders.tsx";
+import { OrderDetail } from "./screens/OrderDetail.tsx";
 import { AgentPanel, type AgentReply } from "./components/AgentPanel.tsx";
+import type { AgentBrain } from "./api.ts";
 
 type Route =
   | { name: "shop"; query: string }
   | { name: "product"; id: string }
-  | { name: "cart" };
+  | { name: "cart" }
+  | { name: "checkout" }
+  | { name: "orders" }
+  | { name: "order"; id: string };
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#/, "");
@@ -18,6 +25,9 @@ function parseHash(): Route {
   const params = new URLSearchParams(qs ?? "");
   if (path.startsWith("/p/")) return { name: "product", id: decodeURIComponent(path.slice(3)) };
   if (path === "/cart") return { name: "cart" };
+  if (path === "/checkout") return { name: "checkout" };
+  if (path === "/orders") return { name: "orders" };
+  if (path.startsWith("/orders/")) return { name: "order", id: decodeURIComponent(path.slice(8)) };
   return { name: "shop", query: params.get("q") ?? "" };
 }
 
@@ -25,6 +35,9 @@ const goto = (r: Route) => {
   location.hash =
     r.name === "product" ? "#/p/" + encodeURIComponent(r.id)
     : r.name === "cart" ? "#/cart"
+    : r.name === "checkout" ? "#/checkout"
+    : r.name === "orders" ? "#/orders"
+    : r.name === "order" ? "#/orders/" + encodeURIComponent(r.id)
     : "#/" + (r.query ? "?q=" + encodeURIComponent(r.query) : "");
 };
 
@@ -61,8 +74,12 @@ function App() {
   const [user, setUser] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
   const [route, setRoute] = useState<Route>(parseHash());
-  const [agentOpen, setAgentOpen] = useState(false);
-  const [agentMsgs, setAgentMsgs] = useState<AgentReply[]>([]);
+  const [agentOpen, setAgentOpen] = useState<AgentBrain | null>(null);
+  // Brain별 대화를 따로 유지한다 (서버도 user:brain 단위로 히스토리를 나눈다).
+  const [agentMsgs, setAgentMsgs] = useState<Record<AgentBrain, AgentReply[]>>({
+    shopping: [],
+    cs: [],
+  });
   const [cart, setCart] = useState<CartView | null>(null);
   const [search, setSearch] = useState(route.name === "shop" ? route.query : "");
 
@@ -87,6 +104,7 @@ function App() {
   const pageContext = {
     screen: route.name,
     product_id: route.name === "product" ? route.id : undefined,
+    order_id: route.name === "order" ? route.id : undefined,
   };
 
   return (
@@ -106,7 +124,8 @@ function App() {
           </form>
         )}
         <nav>
-          <button className="nav-btn" onClick={() => setAgentOpen(true)}>🤖 AI</button>
+          <button className="nav-btn" onClick={() => setAgentOpen("shopping")}>🤖 AI</button>
+          <button className="nav-btn" onClick={() => goto({ name: "orders" })}>내 주문</button>
           <button className="nav-btn" onClick={() => goto({ name: "cart" })}>
             장바구니{cart && cart.items.length > 0 ? " " + cart.items.length : ""}
           </button>
@@ -118,7 +137,7 @@ function App() {
             query={route.query}
             onSearch={(q) => goto({ name: "shop", query: q })}
             onOpenProduct={(id) => goto({ name: "product", id })}
-            onOpenAgent={() => setAgentOpen(true)}
+            onOpenAgent={() => setAgentOpen("shopping")}
           />
         )}
         {route.name === "product" && (
@@ -133,17 +152,38 @@ function App() {
             cart={cart}
             onCartLoaded={setCart}
             onOpenShop={() => goto({ name: "shop", query: "" })}
+            onCheckout={() => goto({ name: "checkout" })}
+          />
+        )}
+        {route.name === "checkout" && (
+          <Checkout
+            onOpenOrder={(id) => goto({ name: "order", id })}
+            onOpenCart={() => goto({ name: "cart" })}
+          />
+        )}
+        {route.name === "orders" && (
+          <Orders
+            onOpenOrder={(id) => goto({ name: "order", id })}
+            onOpenShop={() => goto({ name: "shop", query: "" })}
+          />
+        )}
+        {route.name === "order" && (
+          <OrderDetail
+            orderId={route.id}
+            onBack={() => goto({ name: "orders" })}
+            onAskAgent={() => setAgentOpen("cs")}
           />
         )}
       </main>
       {agentOpen && (
         <AgentPanel
-          messages={agentMsgs}
-          setMessages={setAgentMsgs}
+          brain={agentOpen}
+          messages={agentMsgs[agentOpen]}
+          setMessages={(m) => setAgentMsgs((prev) => ({ ...prev, [agentOpen]: m }))}
           pageContext={pageContext}
           onOpenProduct={(id) => goto({ name: "product", id })}
           onCartChanged={refreshCart}
-          onClose={() => setAgentOpen(false)}
+          onClose={() => setAgentOpen(null)}
         />
       )}
     </div>

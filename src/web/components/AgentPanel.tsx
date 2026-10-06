@@ -1,6 +1,6 @@
 // A01 공통 AI 대화·비교 패널
 import { useState } from "react";
-import { api, fmtWon, newActionKey } from "../api.ts";
+import { api, fmtWon, newActionKey, type AgentBrain } from "../api.ts";
 import type { CompareCard } from "../../contracts.ts";
 
 export interface AgentReply {
@@ -61,6 +61,7 @@ function CompareCardView({
 }
 
 export function AgentPanel({
+  brain,
   messages,
   setMessages,
   pageContext,
@@ -68,9 +69,10 @@ export function AgentPanel({
   onCartChanged,
   onClose,
 }: {
+  brain: AgentBrain;
   messages: AgentReply[];
   setMessages: (m: AgentReply[]) => void;
-  pageContext: { screen?: string; product_id?: string };
+  pageContext: { screen?: string; product_id?: string; order_id?: string };
   onOpenProduct: (id: string) => void;
   onCartChanged: () => void;
   onClose: () => void;
@@ -98,6 +100,7 @@ export function AgentPanel({
         user_message: text,
         page_context: pageContext,
         client_action_id: newActionKey(),
+        brain,
       }),
     });
     setBusy(false);
@@ -124,7 +127,7 @@ export function AgentPanel({
     <aside className="agent-panel">
       <div className="agent-head">
         <div>
-          <b>AI 쇼핑 도우미</b>
+          <b>{brain === "cs" ? "AI 고객센터" : "AI 쇼핑 도우미"}</b>
           <div className="muted sm">AI 생성 답변 · 실제 데이터를 조회합니다</div>
         </div>
         <button className="link" onClick={onClose}>닫기</button>
@@ -132,7 +135,9 @@ export function AgentPanel({
       <div className="agent-body">
         {messages.length === 0 && (
           <div className="state-box">
-            예산·용도를 알려주세요. 예: “배송비 포함 20만원 안에서 개발용 모니터 비교해줘”
+            {brain === "cs"
+              ? "주문이나 배송에 대해 물어보세요. 예: “내 최근 주문 배송 상태 알려줘”"
+              : "예산·용도를 알려주세요. 예: “배송비 포함 20만원 안에서 개발용 모니터 비교해줘”"}
           </div>
         )}
         {messages.map((m, i) => (

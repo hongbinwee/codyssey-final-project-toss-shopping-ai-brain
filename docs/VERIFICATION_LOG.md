@@ -64,3 +64,29 @@
 - ungroundedCitations를 agent.ts로 옮겨 eval과 단위 테스트가 같은 규칙을 쓰게 함.
 - 비교 카드는 모델 텍스트가 아니라 서버가 Tool 결과 JSON으로만 조립 — 조회 안 한 상품/근거 노출 불가.
 - 실제 리뷰 표본(REAL) 미확보 → provenance.md에 미완료 항목으로 기록. r-09(주입 테스트)는 SYNTHETIC 적대 문장.
+
+## 2026-10-06 Phase 3
+
+### 모의 결제와 T2 주문·배송 설명 (W04/W05/W06 + CS Brain)
+
+| 명령 | 결과 |
+| --- | --- |
+| node scripts/migrate.ts --phase=3 (개발 DB) | PASS — 002_orders_payments_shipments 적용. 기존 001 데이터/카트 보존 |
+| node scripts/seed.ts --phase=3 | PASS — scenarios.json (ord-a-pre/ord-a-ship/ord-a-done=배송 3단계, ord-b-none=배송 정보 없음) |
+| node node_modules/typescript/bin/tsc --noEmit | PASS — 오류 0 |
+| node scripts/build-web.ts | PASS — web/app.js |
+| node --test tests/unit/*.test.ts | PASS — 9/9 |
+| node --test --test-concurrency=1 --test-force-exit tests/integration/*.test.ts | PASS — 40/40. 신규: checkout 7건(빈 카트 견적 거절/원자 커밋/중복 키 replay/결과 복구/STALE_QUOTE/동시 재고 1건만 성공+음수 재고 없음+패자 잔여 주문 없음/Agent checkout 불가), t2-orders 5건(소유권 스코프/NO_INFORMATION 구분/상세 스냅샷+결제+이력/checkout 주문이 같은 조회 경로/ship·deliver 전환 규칙) |
+| node node_modules/playwright/cli.js test | PASS — 7/7. 신규 checkout-t2 2건(카트→주문서→152,000원 결제→W06 배송 준비 중→W05 목록; W06→AI 고객센터 stub이 list_orders→get_shipping_status로 실제 상태 설명) |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 12/12 (T2 4건: 배송 설명/정보 없음/모호 주문 선택/CS에서 쇼핑 Tool 거부) |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (stub PASS로 대체하지 않음) |
+| 개발 서버 스모크 (Docker DB) | PASS — /health connected, 세션 발급, /api/orders 3건, /api/orders/:id/shipping 이벤트 확인 |
+| node scripts/simulate.ts --order=ord-a-pre --event=ship→deliver | PASS — IN_TRANSIT/DELIVERED 전환, 배송 레코드 없는 주문 INVALID_STATE. 검증 후 시드로 기준값 복원 |
+| node scripts/verify.ts --phase=3 | PASS — 누적 게이트 전체 통과 |
+
+메모:
+- jsonb 파라미터 버그 수정: postgres.js에 JSON.stringify(...)를 넘기면 이중 인코딩으로 jsonb 문자열이 저장돼 events_json CHECK 제약 위반. seed/checkout/ship·deliver 전부 raw 객체로 교정.
+- 테스트 러너 종료: 통합 테스트 서브프로세스가 sql 풀로 종료하지 않아 --test 러너가 멈춤 → DB 사용 파일에 after(sql.end()) 추가 + verify.ts의 integration 단계에 --test-force-exit. session-api는 spawn kill 직후 force-exit 크래시(libuv async handle)라 300ms 지연 추가.
+- 견적 토큰: HMAC 서명 불투명 토큰 + 5분 TTL. 확인 시 카트/옵션 버전·가격·재고 재검증(STALE_QUOTE/OUT_OF_STOCK). checkout은 Agent Tool이 아님(UI 전용) — toolDefs 양쪽 brain에서 노출 0건 검증.
+- 재시드 시 variant version=1 리셋 추가 — checkout이 version을 올리므로 재현성 유지.
+- 시드 주문은 재고 차감을 거치지 않음(provenance.md에 명시). 재고 차감은 checkout 경로만.

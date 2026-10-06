@@ -9,6 +9,8 @@ import { ensureDevDb } from "./devdb.ts";
 import { contextFromRequest, signSession } from "./session.ts";
 import { getProduct, getReviews, searchProducts } from "./catalog.ts";
 import { addToCart, getCart, removeCartItem, updateCartQuantity } from "./cart.ts";
+import { checkoutQuote, confirmCheckout } from "./checkout.ts";
+import { getOrder, getShippingStatus, listOrders } from "./orders.ts";
 import { getActionResult } from "./actions.ts";
 import { runAgentTurn } from "./agent.ts";
 import { getProvider } from "./llm.ts";
@@ -194,14 +196,37 @@ export async function start(port = config.port) {
           idempotency_key: url.searchParams.get("idempotency_key") ?? undefined,
         }));
 
+      // W04 견적/확인 — UI 전용. Agent Tool registry에 없으므로 A01이 호출할 수 없다.
+      if (p === "/api/checkout/quote" && req.method === "GET")
+        return send(res, await checkoutQuote(ctx));
+      if (p === "/api/checkout/confirm" && req.method === "POST") {
+        const b = (await body(req)) as { quote_token?: string; idempotency_key?: string };
+        if (!b.quote_token || !b.idempotency_key)
+          return json(res, 400, { ok: false, error: { code: "VALIDATION", message: "quote_token과 idempotency_key가 필요합니다" } });
+        return send(res, await confirmCheckout(b.quote_token, ctx, "ui-" + b.idempotency_key));
+      }
+
+      // W05/W06 주문·배송 조회
+      if (p === "/api/orders" && req.method === "GET")
+        return send(res, await listOrders(ctx, {
+          cursor: url.searchParams.get("cursor") ?? undefined,
+          limit: url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined,
+        }));
+      m = p.match(/^\/api\/orders\/([^/]+)\/shipping$/);
+      if (m && req.method === "GET")
+        return send(res, await getShippingStatus(ctx, decodeURIComponent(m[1])));
+      m = p.match(/^\/api\/orders\/([^/]+)$/);
+      if (m && req.method === "GET")
+        return send(res, await getOrder(ctx, decodeURIComponent(m[1])));
+
       if (p === "/api/agent/turn" && req.method === "POST") {
-        const b = (await body(req)) as { user_message?: string; page_context?: unknown; client_action_id?: string };
+        const b = (await body(req)) as { user_message?: string; page_context?: unknown; client_action_id?: string; brain?: "shopping" | "cs" };
         if (!b.user_message || !b.client_action_id)
           return json(res, 400, { ok: false, error: { code: "VALIDATION", message: "user_message와 client_action_id가 필요합니다" } });
         // 이 경로에서 실행되는 Tool의 origin은 AGENT다.
         const agentCtx = { ...ctx, origin: "AGENT" as const };
         const result = await runAgentTurn(
-          { user_message: b.user_message, page_context: b.page_context as never, client_action_id: b.client_action_id },
+          { user_message: b.user_message, page_context: b.page_context as never, client_action_id: b.client_action_id, brain: b.brain },
           agentCtx,
           provider,
         );

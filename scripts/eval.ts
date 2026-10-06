@@ -38,6 +38,7 @@ type Expect = {
 type Case = {
   case_id: string;
   user: string;
+  brain?: "shopping" | "cs";
   turns: { user_message: string }[];
   script?: ChatResponse[];
   expect: Expect;
@@ -78,7 +79,7 @@ for (const f of files) {
               },
             };
       const r = await runAgentTurn(
-        { user_message: t.user_message, client_action_id: "eval-" + c.case_id + "-" + i },
+        { user_message: t.user_message, client_action_id: "eval-" + c.case_id + "-" + i, brain: c.brain },
         ctx,
         dyn,
       );

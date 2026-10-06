@@ -1,4 +1,4 @@
-import { before, describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { ensureTestDb } from "../helpers/testdb.ts";
 import { searchProducts, getProduct, getReviews } from "../../src/catalog.ts";
@@ -74,3 +74,6 @@ describe("t1 catalog", () => {
     assert.ok(!rr.ok && rr.error.code === "NOT_FOUND");
   });
 });
+
+// sql 풀 연결을 닫아야 서브프로세스가 종료하고 다음 파일로 진행된다.
+after(() => sql.end());

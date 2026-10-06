@@ -1,0 +1,82 @@
+{
+  "orders": [
+    {
+      "id": "ord-a-pre",
+      "user_id": "u-a",
+      "status": "CONFIRMED",
+      "items_total_won": 180000,
+      "shipping_fee_won": 3000,
+      "total_won": 183000,
+      "created_at": "2026-09-28T02:00:00Z",
+      "address": { "name": "김데모", "phone": "010-0000-0001", "address": "서울 테스트구 테스트로 1", "detail": "101호" },
+      "items": [
+        { "variant_id": "v-a-24", "product_name": "코드뷰 모니터 A", "option_values": { "size": "24인치" }, "unit_price_won": 180000, "quantity": 1 }
+      ],
+      "payment": { "paid_amount_won": 183000, "paid_at": "2026-09-28T02:00:10Z" },
+      "shipment": {
+        "status": "PREPARING",
+        "events": [
+          { "status": "PREPARING", "occurred_at": "2026-09-28T02:00:10Z", "note": "주문 접수 (모의)" }
+        ]
+      }
+    },
+    {
+      "id": "ord-a-ship",
+      "user_id": "u-a",
+      "status": "CONFIRMED",
+      "items_total_won": 149000,
+      "shipping_fee_won": 3000,
+      "total_won": 152000,
+      "created_at": "2026-09-27T05:30:00Z",
+      "address": { "name": "김데모", "phone": "010-0000-0001", "address": "서울 테스트구 테스트로 1", "detail": "101호" },
+      "items": [
+        { "variant_id": "v-b-24", "product_name": "코드뷰 모니터 B", "option_values": { "size": "24인치" }, "unit_price_won": 149000, "quantity": 1 }
+      ],
+      "payment": { "paid_amount_won": 152000, "paid_at": "2026-09-27T05:30:10Z" },
+      "shipment": {
+        "status": "IN_TRANSIT",
+        "events": [
+          { "status": "PREPARING", "occurred_at": "2026-09-27T05:30:10Z", "note": "주문 접수 (모의)" },
+          { "status": "IN_TRANSIT", "occurred_at": "2026-09-28T09:00:00Z", "note": "배송 시작 (모의)" }
+        ]
+      }
+    },
+    {
+      "id": "ord-a-done",
+      "user_id": "u-a",
+      "status": "CONFIRMED",
+      "items_total_won": 289000,
+      "shipping_fee_won": 3000,
+      "total_won": 292000,
+      "created_at": "2026-09-20T01:00:00Z",
+      "address": { "name": "김데모", "phone": "010-0000-0001", "address": "서울 테스트구 테스트로 1", "detail": "101호" },
+      "items": [
+        { "variant_id": "v-c-27", "product_name": "코드뷰 모니터 C", "option_values": { "size": "27인치" }, "unit_price_won": 289000, "quantity": 1 }
+      ],
+      "payment": { "paid_amount_won": 292000, "paid_at": "2026-09-20T01:00:10Z" },
+      "shipment": {
+        "status": "DELIVERED",
+        "events": [
+          { "status": "PREPARING", "occurred_at": "2026-09-20T01:00:10Z", "note": "주문 접수 (모의)" },
+          { "status": "IN_TRANSIT", "occurred_at": "2026-09-21T09:00:00Z", "note": "배송 시작 (모의)" },
+          { "status": "DELIVERED", "occurred_at": "2026-09-23T15:40:00Z", "note": "배송 완료 (모의)" }
+        ]
+      }
+    },
+    {
+      "id": "ord-b-none",
+      "user_id": "u-b",
+      "status": "CONFIRMED",
+      "items_total_won": 149000,
+      "shipping_fee_won": 3000,
+      "total_won": 152000,
+      "created_at": "2026-09-29T11:00:00Z",
+      "address": { "name": "이격리", "phone": "010-0000-0002", "address": "서울 테스트구 테스트로 2", "detail": "202호" },
+      "items": [
+        { "variant_id": "v-b-24", "product_name": "코드뷰 모니터 B", "option_values": { "size": "24인치" }, "unit_price_won": 149000, "quantity": 1 }
+      ],
+      "payment": { "paid_amount_won": 152000, "paid_at": "2026-09-29T11:00:10Z" },
+      "shipment": null
+    }
+  ]
+}

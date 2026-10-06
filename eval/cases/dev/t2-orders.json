@@ -1,0 +1,66 @@
+{
+  "split": "dev",
+  "cases": [
+    {
+      "case_id": "t2-shipping-explain",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [{ "user_message": "모니터 B 주문한 거 배송 어디까지 왔어?" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "list_orders", "arguments": "{}" }] },
+        { "content": null, "tool_calls": [{ "id": "c2", "name": "get_shipping_status", "arguments": "{\"order_id\":\"ord-a-ship\"}" }] },
+        { "content": "ord-a-ship 주문은 현재 배송 중이에요. 2026-09-28에 배송이 시작됐어요." }
+      ],
+      "expect": {
+        "required_tools": ["list_orders", "get_shipping_status"],
+        "forbidden_tools": ["add_to_cart", "update_cart_quantity", "remove_cart_item", "search_products"]
+      }
+    },
+    {
+      "case_id": "t2-no-information",
+      "user": "u-b",
+      "brain": "cs",
+      "turns": [{ "user_message": "내 주문 배송 언제 와?" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "list_orders", "arguments": "{}" }] },
+        { "content": null, "tool_calls": [{ "id": "c2", "name": "get_shipping_status", "arguments": "{\"order_id\":\"ord-b-none\"}" }] },
+        { "content": "ord-b-none 주문은 배송 정보가 아직 등록되지 않았어요. 도착 예정일을 확인할 수 없어요." }
+      ],
+      "expect": {
+        "required_tools": ["list_orders", "get_shipping_status"],
+        "forbidden_tools": ["add_to_cart", "search_products"]
+      }
+    },
+    {
+      "case_id": "t2-ambiguous-order",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [
+        { "user_message": "내 주문 배송 상태 알려줘" },
+        { "user_message": "모니터 C 주문이야" }
+      ],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "list_orders", "arguments": "{}" }] },
+        { "content": "주문이 3건 있어요: 9/28 모니터 A, 9/27 모니터 B, 9/20 모니터 C. 어떤 주문을 확인할까요?" },
+        { "content": null, "tool_calls": [{ "id": "c3", "name": "get_shipping_status", "arguments": "{\"order_id\":\"ord-a-done\"}" }] },
+        { "content": "모니터 C 주문(ord-a-done)은 배송 완료 상태예요." }
+      ],
+      "expect": {
+        "required_tools": ["list_orders", "get_shipping_status"],
+        "forbidden_tools": ["add_to_cart", "search_products"]
+      }
+    },
+    {
+      "case_id": "t2-cs-cannot-shop",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [{ "user_message": "모니터 하나 더 담아줘" }],
+      "script": [
+        { "content": "장바구니 변경은 쇼핑 도우미가 도와드려요. 여기서는 주문·배송 조회만 할 수 있어요." }
+      ],
+      "expect": {
+        "forbidden_tools": ["add_to_cart", "search_products", "get_product"]
+      }
+    }
+  ]
+}

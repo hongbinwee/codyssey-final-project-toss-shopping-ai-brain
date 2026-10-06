@@ -226,3 +226,34 @@ main { flex: 1; padding: 0 16px 96px; }
   text-align: center;
 }
 .login h1 { margin: 0; font-size: 24px; }
+
+/* W04 주문서 / W05·W06 주문 */
+.checkout-block {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px; margin-top: 14px;
+}
+.checkout-block .section-title { margin-top: 0; }
+.order-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.order-row {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px;
+  color: var(--text); font-size: 15px; cursor: pointer; text-align: left;
+}
+.order-row:hover { border-color: var(--accent); }
+.order-badges { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.badge {
+  display: inline-block; font-size: 12px; padding: 3px 8px;
+  border-radius: 8px; border: 1px solid var(--line); color: var(--text);
+}
+.badge.bad { border-color: var(--danger); color: var(--danger); }
+.badge.muted-b { color: var(--muted); }
+.timeline {
+  list-style: none; margin: 10px 0 6px; padding: 0 0 0 10px;
+  border-left: 2px solid var(--line);
+}
+.timeline li { padding: 4px 0 4px 10px; position: relative; }
+.timeline li::before {
+  content: ""; position: absolute; left: -16px; top: 9px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+}

@@ -2,6 +2,7 @@ import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { ensureTestDb, TEST_DB_URL } from "../helpers/testdb.ts";
+import { sql } from "../../src/db.ts";
 
 const PORT = 3997;
 let proc: ChildProcess | undefined;
@@ -67,6 +68,10 @@ describe("session api", () => {
     });
     assert.equal(spoof.status, 401);
   });
-  after(() => proc?.kill());
+  after(async () => {
+    proc?.kill();
+    // 자식 프로세스 종료 핸들이 닫힐 시간을 준다 (force-exit과 kill이 겹치면 종료 크래시).
+    await new Promise((r) => setTimeout(r, 300));
+    await sql.end();
+  });
 });
-

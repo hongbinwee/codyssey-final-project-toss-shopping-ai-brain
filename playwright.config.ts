@@ -12,7 +12,7 @@ export default defineConfig({
       ...process.env,
       PORT: "3100",
       DATABASE_URL: "postgres://commerce:commerce@localhost:5432/commerce_test",
-      TEST_USER_CODES: "e2e-a=u-a,e2e-b=u-b",
+      TEST_USER_CODES: "e2e-a=u-a,e2e-b=u-b,e2e-c=u-c",
       LLM_PROVIDER: "stub",
     },
     reuseExistingServer: !process.env.CI,

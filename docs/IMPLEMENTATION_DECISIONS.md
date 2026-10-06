@@ -60,3 +60,19 @@ Phase 2 추가 결정:
 | 재시도 규칙 | OUTCOME_UNKNOWN만 같은 키+payload 보존(결과 조회 복구). VERSION_CONFLICT는 새 키 + 최신 버전으로 사용자가 재시도 | REJECTED는 저장된 거절을 재생할 뿐이므로 같은 키로 재실행 불가 |
 | 카트 가격 표시 | 담긴 시점 가격을 저장하지 않고 항상 현재가 표시 | ponytail: 가격 변경 감지 UI 대신 라이브 가격. 옵션 version 충돌로 변경 후 구매는 여전히 차단 |
 | 수량 UI | +는 재고 힌트 없이 서버 OUT_OF_STOCK에 위임, −는 1에서 비활성, 품절은 삭제만 | CartView에 stock 미포함 상태 유지 |
+
+Phase 3 추가 결정:
+
+| 항목 | 결정 | 이유/메모 |
+| --- | --- | --- |
+| 주문서 견적 | HMAC 서명 불투명 토큰 + 5분 TTL, 카트/옵션 버전·가격·주소 스냅샷 포함 | UI 전용. 견적 후 카트 변경은 STALE_QUOTE로 차단하고 재확인 요구 |
+| 결제 원자성 | runAction("CHECKOUT") 단일 트랜잭션: 카트 잠금→버전 검증→옵션 FOR UPDATE(정렬)→활성/가격/재고 재검증→재고 차감→주문+항목 스냅샷+결제 PAID+배송 PREPARING 생성→카트 비우기 | 실패 시 부분 주문 없음. 같은 키 재전송은 저장된 결과 복원(중복 주문 없음) |
+| checkout 접근 | Tool registry에 등록하지 않음. GET /api/checkout/quote + POST /api/checkout/confirm은 UI 세션 전용 | agent_cannot_checkout 테스트로 brain 양쪽 노출 0 검증 |
+| 주문 항목 | 구매 시점 스냅샷(상품명/옵션/단가) 저장 | 이후 상품·가격 변경과 무관하게 주문 내용 보존 |
+| 배송 상태 | shipments 주문당 1건, PREPARING→IN_TRANSIT→DELIVERED 전환은 내부 simulate만(shipOrder/deliverOrder). cancel_requests가 생기면(Phase 4) 같은 주문 잠금으로 출고 차단 | Tool/API에 노출하지 않는 운영 전환 |
+| CS Brain 분리 | ToolSpec.brains로 노출 범위 분리: shopping=카탈로그·카트, cs=주문 조회 3종. 히스토리는 user:brain별 | brain 외 Tool은 TOOL_NOT_ALLOWED. 취소 실행 Tool은 Phase 4 |
+| 테스트 사용자 | u-c 추가(박주문) — e2e checkout 스펙 전용 | 병렬 실행 시 기존 u-a/u-b 카트와 경합 방지 |
+| 재시드 재현성 | variant upsert에 version=1 리셋 포함 | checkout이 version을 올려 재실행 시 기대값(1)과 어긋나는 것 방지 |
+| jsonb 파라미터 | postgres.js 파라미터에는 raw 객체/배열(JSON.stringify 금지 — 문자열로 저장돼 CHECK 위반) | seeds/checkout/orders에 동일 적용 |
+| 통합 테스트 종료 | sql 풀이 서브프로세스 종료를 막아 --test 러너 hang → after(sql.end()) + --test-force-exit | spawn kill 직후 크래시는 300ms 지연으로 회피. verify.ts 반영 |
+| 주문서 CTA | 장바구니 '주문하기' 버튼 라벨에 금액 미포함 | 기존 e2e의 금액 텍스트 단정과 strict-mode 충돌 방지 |

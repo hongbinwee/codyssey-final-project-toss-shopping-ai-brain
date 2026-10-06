@@ -13,10 +13,12 @@ export function Cart({
   cart,
   onCartLoaded,
   onOpenShop,
+  onCheckout,
 }: {
   cart: CartView | null;
   onCartLoaded: (v: CartView) => void;
   onOpenShop: () => void;
+  onCheckout: () => void;
 }) {
   const [res, setRes] = useState<ApiResult<CartView> | null>(cart ? { ok: true, data: cart } : null);
   const [loading, setLoading] = useState(!cart);
@@ -183,7 +185,18 @@ export function Cart({
               <div className="muted">상품 {fmtWon(c.items_total_won)} + 배송비 {fmtWon(c.shipping_fee_won)}</div>
               <b>{fmtWon(c.total_won)}</b>
             </div>
-            {/* 주문 버튼은 Phase 3에서 연결 — 존재하지 않는 기능을 노출하지 않는다 */}
+            <div>
+              {!c.can_checkout && (
+                <div className="muted sm">주문 불가 항목을 삭제해 주세요</div>
+              )}
+              <button
+                className="btn primary"
+                disabled={!c.can_checkout}
+                onClick={onCheckout}
+              >
+                주문하기
+              </button>
+            </div>
           </div>
         </>
       )}

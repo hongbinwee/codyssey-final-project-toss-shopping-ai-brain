@@ -67,8 +67,46 @@ export function scriptedProvider(steps: ChatResponse[]): Provider {
 export function stubProvider(): Provider {
   return {
     name: "stub-readonly",
-    async chat(messages) {
+    async chat(messages, tools) {
+      const names = new Set(
+        (tools as { function?: { name?: string } }[]).map((t) => t.function?.name),
+      );
       const toolMsgs = messages.filter((m) => m.role === "tool");
+      // CS Brain 스텁: 주문 목록 → 첫 주문 배송 조회 → 실제 조회값 요약.
+      if (names.has("list_orders")) {
+        if (toolMsgs.length === 0)
+          return {
+            content: null,
+            tool_calls: [{ id: "call_1", name: "list_orders", arguments: "{}" }],
+          };
+        if (toolMsgs.length === 1) {
+          try {
+            const d = JSON.parse(String(toolMsgs[0].content));
+            const oid = d?.orders?.[0]?.id;
+            if (!oid)
+              return { content: "주문 내역이 없어요. 주문이 생기면 다시 확인해 주세요." };
+            return {
+              content: null,
+              tool_calls: [
+                { id: "call_2", name: "get_shipping_status", arguments: JSON.stringify({ order_id: oid }) },
+              ],
+            };
+          } catch {
+            // fallthrough
+          }
+        }
+        try {
+          const ship = JSON.parse(String(toolMsgs[1]?.content ?? "{}"));
+          const list = JSON.parse(String(toolMsgs[0].content));
+          const oid = list?.orders?.[0]?.id;
+          if (ship?.information === "NO_INFORMATION")
+            return { content: oid + " 주문의 배송 정보가 아직 등록되지 않았어요. 잠시 후 다시 확인해 주세요." };
+          const label = { PREPARING: "배송 준비 중", IN_TRANSIT: "배송 중", DELIVERED: "배송 완료", CANCELLED: "배송 취소" }[ship?.status as string] ?? "알 수 없음";
+          return { content: oid + " 주문은 현재 " + label + " 상태예요. (로컬 stub — LLM 미설정)" };
+        } catch {
+          return { content: "주문/배송 정보를 확인하지 못했어요." };
+        }
+      }
       if (toolMsgs.length === 0) {
         const userMsg = [...messages].reverse().find((m) => m.role === "user");
         const raw = typeof userMsg?.content === "string" ? userMsg.content : "";

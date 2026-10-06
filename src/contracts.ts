@@ -153,3 +153,84 @@ export interface CompareCard {
   }[];
   limitations: string[];
 }
+
+// 주문/결제/배송 (Phase 3). 주문 항목은 구매 시점 스냅샷이다.
+export interface OrderItemView {
+  order_item_id: string;
+  variant_id: string;
+  product_name: string;
+  option_values: Record<string, string>;
+  unit_price_won: number;
+  quantity: number;
+  line_total_won: number;
+}
+
+export interface PaymentView {
+  status: "PAID";
+  paid_amount_won: number;
+  paid_at: string;
+  refund_status: "NONE" | "PENDING" | "REFUNDED";
+  refunded_amount_won: number;
+  refunded_at: string | null;
+}
+
+export interface ShipmentEvent {
+  status: "PREPARING" | "IN_TRANSIT" | "DELIVERED" | "CANCELLED";
+  occurred_at: string;
+  note?: string;
+}
+
+export interface ShipmentView {
+  status: ShipmentEvent["status"];
+  events: ShipmentEvent[];
+  estimated_arrival_at: string | null;
+  updated_at: string;
+}
+
+export interface OrderView {
+  id: string;
+  version: number;
+  status: "CONFIRMED" | "CANCELLED";
+  created_at: string;
+  cancelled_at: string | null;
+  items: OrderItemView[];
+  items_total_won: number;
+  shipping_fee_won: number;
+  total_won: number;
+  address_snapshot: Record<string, string>;
+  payment: PaymentView | null;
+  shipping: ShipmentView | null;
+  cancel_request: {
+    id: string; status: string; reason_code: string;
+    refund_amount_won: number; requested_at: string; completed_at: string | null;
+  } | null;
+}
+
+export interface OrderListItem {
+  id: string;
+  created_at: string;
+  item_summary: string;
+  total_won: number;
+  order_status: string;
+  payment_status: string | null;
+  shipping_status: string | null;
+  refund_status: string | null;
+}
+
+export interface ShippingStatusResult {
+  order_id: string;
+  order_version: number;
+  information: "AVAILABLE" | "NO_INFORMATION";
+  status: ShipmentEvent["status"] | null;
+  events: ShipmentEvent[];
+  estimated_arrival_at: string | null;
+  updated_at: string | null;
+}
+
+// W04 주문서 견적 (UI 전용 — Agent Tool이 아니다). 서명된 불투명 토큰 + 표시용 카트/주소.
+export interface CheckoutQuoteView {
+  quote_token: string;
+  expires_at: string;
+  cart: CartView;
+  address: Record<string, string>;
+}

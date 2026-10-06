@@ -1,4 +1,4 @@
-import { before, describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { ensureTestDb, cleanUserData } from "../helpers/testdb.ts";
 import { getCart, addToCart, updateCartQuantity, removeCartItem } from "../../src/cart.ts";
@@ -286,3 +286,6 @@ describe("t1 cart update/remove", () => {
     assert.ok(!r.ok && r.error.code === "NOT_FOUND");
   });
 });
+
+// sql 풀 연결을 닫아야 서브프로세스가 종료하고 다음 파일로 진행된다.
+after(() => sql.end());
