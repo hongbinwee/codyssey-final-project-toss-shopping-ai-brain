@@ -99,7 +99,9 @@ export function Search({
     api<SearchResult>(
       // 카테고리 칩은 상위 그룹(digital/beauty/...)으로, 결과에서 클라이언트 필터한다.
       // 서버 category 파라미터는 단일 값만 받아 monitor가 디지털 그룹에 못 들어가므로 쓰지 않는다.
-      "/api/products?query=" + encodeURIComponent(submitted) + "&sort=" + sort,
+      // limit=50(서버 최대): 데모 카탈로그(28개) 전체를 한 페이지로 받아야
+      // 클라이언트 그룹 필터가 첫 페이지(기본 20) 밖의 상품을 누락하지 않는다.
+      "/api/products?query=" + encodeURIComponent(submitted) + "&sort=" + sort + "&limit=50",
     )
       .then(setRes)
       .finally(() => setLoading(false));

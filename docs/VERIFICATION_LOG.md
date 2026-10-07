@@ -191,7 +191,7 @@
 | node node_modules/typescript/bin/tsc --noEmit | PASS — 오류 0 |
 | node scripts/build-web.ts | PASS — web/app.js |
 | node --test tests/unit/*.test.ts | PASS — 18/18 |
-| node --test (integration 파일별 순차 실행) | PASS — cancel 18 / checkout 7 / health 2 / session 1 / t1-cart 30 / t1-catalog 6(데모 격리 단정 신설) / t2-orders 5 |
+| node --test (integration 파일별 순차 실행) | PASS — cancel 18 / checkout 7 / health 2 / session 1 / t1-cart 20 / t1-catalog 6(데모 격리 단정 신설) / t2-orders 5 |
 | Playwright e2e | PASS — 14/14 |
 | node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
 | node scripts/eval.ts --mode=stub --split=holdout | PASS — 18/18 |
@@ -199,10 +199,42 @@
 | node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
 
 메모:
-- Demo Catalog는 seed --demo로만 적재. 기본 seed(--phase)는 기존 deterministic fixture(catalog.json 3상품/6variant/8review)만 유지해 commerce_test에 데모 데이터가 유입되지 않는다. t1-catalog에 "demo catalog is isolated from test db" 단정 추가.
-- Demo reconcile: seed --demo 실행 시 p-d-* 네임스페이스 한정으로 FK 순서(order_items→cart_items→reviews→variants→products) 정리 후 재적재. order_items가 참조하는 상품은 삭제 대신 active=false. p-a/p-b/p-c·사용자·주문 등 기존 데이터는 건드리지 않는다.
+- Demo Catalog는 seed --demo로만 적재. 기본 seed(--phase)는 기존 deterministic fixture(catalog.json 3상품/6variant + reviews.json 9건 — r-09는 prompt-injection 방어용 의도적 적대 문장, provenance.md 참고)만 유지해 commerce_test에 데모 데이터가 유입되지 않는다. t1-catalog에 "demo catalog is isolated from test db" 단정 추가.
+- Demo reconcile: seed --demo 실행 시 데모 네임스페이스(p-d-*/v-d-*/r-d-*) 한정으로 정리 후 재적재. order_items가 참조하는 상품은 삭제 대신 active=false. p-a/p-b/p-c·사용자·주문 등 기존 데이터는 건드리지 않는다. **[Superseded 2026-10-08]** 이 기록의 동작 설명은 04-B 초기 구현 기준이다 — 이후 검수에서 --demo가 phase=99를 암시해 base 시드까지 재실행하는 결함이 발견돼, demo 전용 독립 모드 + r-d-* 한정 reconcile + 외부 참조 보존 + commerce_test 가드로 교정됐다(아래 '04-B Seed Safety Correction' 절).
 - 리뷰 수/평점은 실제 저장된 SYNTHETIC review row 기준으로 통일(review_count_display 미사용 — 대규모 표시 수가 필요하면 aggregate 통계와 sample text를 분리하는 별도 계약을 그때 설계).
 - 카테고리: 기존 fixture는 category=monitor 유지, 신규 데모는 digital/beauty/fashion/living/food 상위 카테고리. display-meta의 CATEGORY_GROUPS가 monitor를 디지털 UI 그룹에 묶어 표시.
 - 상품 이미지 25장은 imagegen으로 생성 후 600×600 WebP로 변환해 web/assets/products/에 배치(총 ~210KB). 무단 스크래핑·브랜드 자산 사용 없음.
 - 사고 기록: 병렬 재실행으로 남은 고아 node --test 프로세스가 commerce_test를 동시 reseed해 스위트가 간헐 지연. 임의 PID 강제종료는 자동 검토 거부로, 파일 단위 개별 실행으로 회귀 검증을 완료했다. 통합 스위트는 한 번에 하나만 실행할 것.
 - live eval은 LLM_API_KEY 미설정으로 계속 BLOCKED.
+
+## 2026-10-08 04-B Seed Safety Correction
+
+Side Astra 검수에서 --demo의 암묵적 base 재시드(phase=99)·리뷰 reconcile 범위 결함이 발견돼 교정했다.
+
+### 변경
+
+- `--demo`는 **demo 전용 독립 모드**: phase 시드(users/catalog/reviews/scenarios)를 실행하지 않는다. `--demo`+`--phase` 동시 사용은 거부(exit 1).
+- `--demo`를 `commerce_test` DB에서 실행하면 거부한다(URL의 db명 검사).
+- stale 리뷰 정리는 `id LIKE 'r-d-%'`로 한정 — 데모 상품에 붙은 비-demo 리뷰(product_id LIKE 'p-d-%'만으로)는 더 이상 삭제하지 않는다.
+- stale v-d-*/p-d-* 정리: 외부 참조(order_items/cart_items/reviews)가 있으면 DELETE 대신 active=false 보존. 사용자 cart_items를 reconcile이 지우지 않는다.
+- Search.tsx 검색 결과 요청에 limit=50 추가 — 서버 기본 20으로 인해 그룹 필터가 28개 카탈로그의 일부를 누락하던 문제 수정.
+- 프로틴 상품(p-d-pro-1, 720g 파우더/24회분) 이미지가 RTD 병처럼 보이던 것을 파우더 통+스쿱 이미지로 재생성 교체.
+
+### 검증
+
+| 명령 / 확인 | 결과 |
+| --- | --- |
+| node --test tests/integration/demo-seed.test.ts (신규, scratch DB commerce_demo_verify) | PASS — 3/3. (1) commerce_test --demo 거부 (2) --demo+--phase 거부 (3) fixture stock/version·주문 version/cancelled_at·payment 환불 상태가 3회 데모 시드 후에도 보존, r-custom 비-demo 리뷰 보존, r-d-stale 정리, 외부 참조 stale variant/product는 active=false 보존 + 사용자 cart_item 보존, 고아 stale 행만 삭제, fixture p-a~c·리뷰 9건·demo 25/55 확인 |
+| npm run db:seed:demo (dev DB) | PASS — demo 파일만 적재(base 시드 미실행 로그 확인), reconcile 정상, dev DB 실측 28/61/89 유지, v-a-24 stock=5·주문 4건 불변 |
+| node node_modules/typescript/bin/tsc --noEmit | PASS |
+| node scripts/build-web.ts | PASS |
+| node --test tests/unit/*.test.ts | PASS — 18/18 |
+| integration 전체 | PASS — 62건. 스위트 1회 실행 중 후반부 출력이 멈춰(고아 프로세스 간섭 추정) 로그상 51건 확인 + t1-catalog 6·t2-orders 5를 파일별 재실행해 전부 PASS 확인 |
+| Playwright e2e | PASS — 14/14 |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
+| node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
+
+메모:
+- demo-seed.test의 seed 헬퍼가 --demo를 누락해 1차 실행에서 거부 테스트가 phase-0 no-op으로 통과되던 결함을 발견·수정. 보존 검증이 실제 --demo를 3회 실행함을 확인했다(실패→수정→통과 이력).
+- payments CHECK 제약(전액 환불만 허용)에 맞춰 검증용 UPDATE도 refunded_amount=paid_amount로 조정 — 제약 자체는 변경하지 않았다.

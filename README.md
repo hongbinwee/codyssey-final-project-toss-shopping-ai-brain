@@ -22,8 +22,8 @@ LLM은 조건 해석·근거 비교·설명을 담당하고, 재고/가격/소�
     docker compose up -d
     npm install
     npm run db:migrate -- --phase=4
-   npm run db:seed -- --phase=4
-    npm run db:seed:demo   # (선택) 데모 카탈로그 포함 — dev DB 전용, 단독으로 전체 시드+데모 적재
+    npm run db:seed -- --phase=4
+    npm run db:seed:demo   # (선택) 데모 카탈로그만 적재 — dev DB 전용 독립 모드. base 시드(p-a~c/users/시나리오)는 먼저 위 명령으로 넣어야 한다. --demo는 기존 데이터를 건드리지 않는다
     npm run dev
 
 http://localhost:3000

@@ -6,17 +6,29 @@ import { readFileSync } from "node:fs";
 await ensureDevDb();
 connectDb(process.env.DATABASE_URL!);
 
-// --demo: 개발/데모 DB 전용 Demo Catalog(db/seeds/demo-*.json).
-// phase SEEDS에 넣지 않아 setupTestDb/eval 등 테스트 적재 경로와 완전히 분리된다.
-// 네임스페이스 p-d-*/v-d-*/r-d-*에만 upsert+reconcile을 적용하며 fixture(p-a~c 등)는 건드리지 않는다.
+// --demo: 개발/데모 DB 전용 Demo Catalog(db/seeds/demo-*.json) — 독립 모드.
+// phase 시드(users/catalog/reviews/scenarios)를 실행하지 않는다.
+// 데모 시드가 소유하는 범위는 p-d-*/v-d-*/r-d-* 네임스페이스뿐이며,
+// fixture(p-a~c)·users·주문·결제·배송·취소·환불·재고 등은 절대 변경하지 않는다.
 const demo = process.argv.some((a) => a === "--demo");
 const DEMO_FILES = ["demo-catalog.json", "demo-reviews.json"];
 
-// --demo에 --phase가 없으면 전체 시드(=99)를 암시한다:
-// "node scripts/seed.ts --demo" 한 번으로 fixture + demo가 갖춰진다.
-const phase = Number(
-  process.argv.find((a) => a.startsWith("--phase="))?.split("=")[1] ?? (demo ? "99" : "0"),
-);
+const phaseArg = process.argv.find((a) => a.startsWith("--phase="));
+if (demo && phaseArg) {
+  // 암묵적 base 재시드(주문/취소/재고 리셋)를 막기 위해 두 모드는 반드시 따로 실행한다.
+  console.error("--demo와 --phase는 함께 사용할 수 없습니다. base 시드: npm run db:seed -- --phase=N / 데모: npm run db:seed:demo");
+  process.exit(1);
+}
+const phase = phaseArg ? Number(phaseArg.split("=")[1]) : 0;
+
+if (demo) {
+  // 데모 카탈로그가 테스트 DB에 들어가면 deterministic 회귀 테스트가 깨진다.
+  const dbName = new URL(process.env.DATABASE_URL!).pathname.replace(/^\//, "");
+  if (dbName === "commerce_test") {
+    console.error("--demo는 테스트 DB(commerce_test)에서 실행할 수 없습니다. dev DB에서만 사용하세요.");
+    process.exit(1);
+  }
+}
 
 const SEEDS: Record<number, string[]> = {
   0: [],
@@ -28,9 +40,8 @@ const phaseFiles = Object.entries(SEEDS)
   .filter(([p]) => Number(p) <= phase)
   .flatMap(([, f]) => f);
 
-// demo 파일은 products 계열 테이블이 있는 phase>=1에서만 적재한다.
-const files = [...phaseFiles, ...(demo && phase >= 1 ? DEMO_FILES : [])];
-if (demo && phase < 1) console.log("--demo는 phase>=1이 필요합니다. demo 시드를 건너뜁니다.");
+// demo 모드는 demo 파일만 처리한다. base 시드와 섞이지 않는다.
+const files = demo ? DEMO_FILES : phaseFiles;
 
 if (files.length === 0) {
   console.log("no seeds defined for phase <= " + phase);
@@ -141,60 +152,66 @@ for (const f of files) {
 }
 
 // demo reconcile: 이번 seed 파일에 없는 데모 네임스페이스 행을 정리한다.
-// FK 순서 reviews → cart_items → product_variants → products.
-// 주문 스냅샷(order_items)이 참조하는 variant는 삭제할 수 없으므로 active=false로 남기고,
-// 참조가 없는 행만 DELETE한다. 같은 seed 파일을 반복 실행해도 결과가 같다(멱등).
-if (demo && phase >= 1) {
+// 소유 경계는 r-d-*/v-d-*/p-d-*뿐 — 사용자가 만든 데이터(cart_items, 비-demo 리뷰,
+// 주문 스냅샷)는 삭제하지 않는다. 외부 참조가 붙은 stale 데모 행은 DELETE 대신
+// active=false로 보존하고, 참조가 없는 행만 삭제한다. 반복 실행해도 결과가 같다(멱등).
+if (demo) {
   const cat = read("demo-catalog.json") as { products: { id: string }[]; variants: { id: string }[] };
   const rev = read("demo-reviews.json") as { id: string }[];
   const pids = cat.products.map((p) => p.id);
   const vids = cat.variants.map((v) => v.id);
   const rids = rev.map((r) => r.id);
 
+  // 1) stale 리뷰는 demo 소유(r-d-*)만 삭제한다. product_id가 p-d-*이더라도
+  //    사용자가 작성한 비-demo 리뷰(r-custom 등)는 보존한다.
   const [dr] = await sql.unsafe<{ c: number }[]>(
-    "SELECT count(*)::int AS c FROM reviews WHERE (id LIKE 'r-d-%' OR product_id LIKE 'p-d-%') AND NOT (id = ANY($1))",
+    "SELECT count(*)::int AS c FROM reviews WHERE id LIKE 'r-d-%' AND NOT (id = ANY($1))",
     [rids],
   );
   await sql.unsafe(
-    "DELETE FROM reviews WHERE (id LIKE 'r-d-%' OR product_id LIKE 'p-d-%') AND NOT (id = ANY($1))",
+    "DELETE FROM reviews WHERE id LIKE 'r-d-%' AND NOT (id = ANY($1))",
     [rids],
   );
-  await sql.unsafe(
-    "DELETE FROM cart_items WHERE variant_id LIKE 'v-d-%' AND NOT (variant_id = ANY($1))",
-    [vids],
-  );
+
+  // 2) stale 데모 variant: 외부 참조(order_items/cart_items/reviews)가 있으면
+  //    active=false로 보존하고, 없을 때만 삭제한다. cart_items는 사용자 소유라 건드리지 않는다.
+  const refs: string[] = [];
   const [regOi] = await sql.unsafe<{ r: string | null }[]>(
     "SELECT to_regclass('public.order_items') AS r",
   );
-  if (regOi.r) {
-    await sql.unsafe(
-      "UPDATE product_variants SET active=false WHERE id LIKE 'v-d-%' AND NOT (id = ANY($1)) " +
-        "AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id = product_variants.id)",
-      [vids],
-    );
-    await sql.unsafe(
-      "DELETE FROM product_variants WHERE id LIKE 'v-d-%' AND NOT (id = ANY($1)) " +
-        "AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id = product_variants.id)",
-      [vids],
-    );
-  } else {
-    await sql.unsafe(
-      "DELETE FROM product_variants WHERE id LIKE 'v-d-%' AND NOT (id = ANY($1))",
-      [vids],
-    );
-  }
-  // variant가 남은 stale 상품은 비활성화(주문 이력 표시용으로 보존), 없으면 삭제
+  const [regCi] = await sql.unsafe<{ r: string | null }[]>(
+    "SELECT to_regclass('public.cart_items') AS r",
+  );
+  if (regOi.r)
+    refs.push("EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id = product_variants.id)");
+  if (regCi.r)
+    refs.push("EXISTS (SELECT 1 FROM cart_items ci WHERE ci.variant_id = product_variants.id)");
+  refs.push("EXISTS (SELECT 1 FROM reviews r WHERE r.variant_id = product_variants.id)");
+  const refSql = refs.join(" OR ");
+  await sql.unsafe(
+    "UPDATE product_variants SET active=false WHERE id LIKE 'v-d-%' AND NOT (id = ANY($1)) AND (" + refSql + ")",
+    [vids],
+  );
+  await sql.unsafe(
+    "DELETE FROM product_variants WHERE id LIKE 'v-d-%' AND NOT (id = ANY($1)) AND NOT (" + refSql + ")",
+    [vids],
+  );
+
+  // 3) stale 데모 product: 남은 variant나 리뷰가 있으면 active=false로 보존
+  //    (주문 이력/사용자 리뷰 표시용), 완전히 고아인 행만 삭제한다.
   await sql.unsafe(
     "UPDATE products SET active=false WHERE id LIKE 'p-d-%' AND NOT (id = ANY($1)) " +
-      "AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id)",
+      "AND (EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id) " +
+      "OR EXISTS (SELECT 1 FROM reviews r WHERE r.product_id = products.id))",
     [pids],
   );
   await sql.unsafe(
     "DELETE FROM products WHERE id LIKE 'p-d-%' AND NOT (id = ANY($1)) " +
-      "AND NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id)",
+      "AND NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id) " +
+      "AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.product_id = products.id)",
     [pids],
   );
   console.log("demo reconcile done (removed stale r-d reviews: " + dr.c + ")");
 }
-console.log("seed ok (phase <= " + phase + ")");
+console.log(demo ? "demo seed ok" : "seed ok (phase <= " + phase + ")");
 await sql.end();
