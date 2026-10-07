@@ -214,7 +214,7 @@ Side Astra 검수에서 --demo의 암묵적 base 재시드(phase=99)·리뷰 rec
 ### 변경
 
 - `--demo`는 **demo 전용 독립 모드**: phase 시드(users/catalog/reviews/scenarios)를 실행하지 않는다. `--demo`+`--phase` 동시 사용은 거부(exit 1).
-- `--demo`를 `commerce_test` DB에서 실행하면 거부한다(URL의 db명 검사).
+- `--demo`를 `commerce_test` DB에서 실행하면 거부한다(당시: URL의 db명 검사 — 이후 URL 옵션 우회 가능이 발견돼 실제 접속 DB 기준 검사로 강화됐다. 아래 '04-B Seed Safety Final Patch' 절 참고).
 - stale 리뷰 정리는 `id LIKE 'r-d-%'`로 한정 — 데모 상품에 붙은 비-demo 리뷰(product_id LIKE 'p-d-%'만으로)는 더 이상 삭제하지 않는다.
 - stale v-d-*/p-d-* 정리: 외부 참조(order_items/cart_items/reviews)가 있으면 DELETE 대신 active=false 보존. 사용자 cart_items를 reconcile이 지우지 않는다.
 - Search.tsx 검색 결과 요청에 limit=50 추가 — 서버 기본 20으로 인해 그룹 필터가 28개 카탈로그의 일부를 누락하던 문제 수정.
@@ -238,3 +238,31 @@ Side Astra 검수에서 --demo의 암묵적 base 재시드(phase=99)·리뷰 rec
 메모:
 - demo-seed.test의 seed 헬퍼가 --demo를 누락해 1차 실행에서 거부 테스트가 phase-0 no-op으로 통과되던 결함을 발견·수정. 보존 검증이 실제 --demo를 3회 실행함을 확인했다(실패→수정→통과 이력).
 - payments CHECK 제약(전액 환불만 허용)에 맞춰 검증용 UPDATE도 refunded_amount=paid_amount로 조정 — 제약 자체는 변경하지 않았다.
+
+## 2026-10-08 04-B Seed Safety Final Patch
+
+Side Astra 재검수에서 남은 Major 2건(demo seed 원자성 부재, DB 가드 우회)을 해소했다.
+
+### 변경
+
+- demo seed의 모든 DB write를 `sql.begin` 단일 트랜잭션으로 묶었다 — DB 가드 확인 → stale reconcile(리뷰→variant→product) → demo upsert(product→variant→review)가 한 트랜잭션에서 커밋되거나 함께 롤백된다. 트랜잭션 콜백 안의 모든 쿼리는 전달받은 `q`를 사용한다.
+- DB 가드를 URL pathname 검사에서 트랜잭션 안의 `SELECT current_database()`로 교체했다. postgres.js는 `?database=` URL 옵션을 실제 접속에 사용해 pathname과 다른 DB에 연결될 수 있으므로(`postgres://…/commerce?database=commerce_test` → commerce_test 접속 확인), 가드는 실제 접속 DB명을 본다. 허용 DB: `commerce`, `commerce_demo_verify`. 그 외(테스트 DB 포함)는 거부한다.
+- demo-seed.test.ts 확장: ?database= 우회 거부 + 거부 시 무쓰기 단정, 트랜잭션 중간 실패(CHECK 제약 주입) 시 reconcile·upsert·비활성화 전체 롤백 검증, cancel_requests/action_requests·주문 상태 보존 단정 추가, scratch DB 정리를 try/finally로 이동.
+
+### 검증
+
+| 명령 / 확인 | 결과 |
+| --- | --- |
+| node --test tests/integration/demo-seed.test.ts | PASS — 5/5. (1) commerce_test --demo 거부 (2) `?database=commerce_test` 우회도 거부 + commerce_test의 p-d-* 개수 전후 불변 (3) --demo+--phase 거부 (4) fixture stock/version·주문 status·cancel_requests COMPLETED·payment 환불 상태가 3회 데모 시드 후 보존, r-custom 보존, r-d-stale 정리, 외부 참조 stale 행 active=false 보존, 고아 행 삭제, fixture·demo 25/55 확인 (5) products CHECK 제약으로 upsert 중간 실패 주입 → reconcile 삭제/비활성화·product upsert 전부 롤백 확인, 제약 제거 후 동일 seed 정상 커밋 |
+| node node_modules/typescript/bin/tsc --noEmit | PASS |
+| node scripts/build-web.ts | PASS |
+| node --test tests/unit/*.test.ts | PASS — 18/18 |
+| integration 전체 | PASS — 64건. 스위트 로그상 28건(demo-seed 5·health 2·session 1·t1-cart 9·t1-update 11) 확인 후 실행 프로세스가 t1-cart update 직후 소멸하는 기존 증상 재발 → 나머지 7개 파일을 개별 직렬 실행해 전부 PASS(t1-catalog 6·t2-orders 5·checkout 7·cancel-confirmation 9·cancel-race 3·cancel-recovery 6). 병렬 재실행(3개 cancel 파일 동시) 시 VERSION_CONFLICT 재현 — commerce_test 공유 충돌이며 직렬 실행으로 해소 |
+| Playwright e2e | PASS — 14/14 |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
+| node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
+
+메모:
+- 실패 주입은 테스트에서 `ALTER TABLE products ADD CONSTRAINT chk_demo_tx CHECK (id <> 'p-d-tone') NOT VALID`로 수행 — 운영 seed 경로에 디버그 옵션을 두지 않았다. 기존 행 검증을 건너뛰는 NOT VALID이지만 신규 write(upsert)에는 적용돼 트랜잭션 중간 실패를 만든다.
+- 검증 초기 `DEMO_DBS` 상수가 모듈 하단에 선언돼 TDZ로 전 테스트가 실패하던 결함을 발견·수정(선언을 데모 분기 위로 이동) — 실패→수정→통과 이력.

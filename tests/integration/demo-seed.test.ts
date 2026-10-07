@@ -4,6 +4,8 @@
 // - 비-demo 상태(fixture stock/version, 주문, 결제/환불)는 demo 시드가 변경하지 않는다
 // - 데모 상품의 비-demo 리뷰(r-custom)는 보존, stale r-d-*는 정리
 // - 외부 참조가 붙은 stale v-d-*/p-d-*는 삭제 대신 active=false 보존
+// - reconcile+upsert는 단일 트랜잭션 — 중간 실패 시 전체 롤백
+// - DB 가드는 URL이 아니라 current_database() 기준이라 ?database= 우회를 막는다
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -26,6 +28,27 @@ test("--demo는 테스트 DB(commerce_test)에서 실행을 거부한다", () =>
   assert.match(String(r.stderr) + String(r.stdout), /commerce_test/);
 });
 
+test("--demo 가드는 ?database= 우회도 막는다(실제 접속 DB 기준)", async () => {
+  // postgres.js는 ?database= 옵션을 실제 접속에 사용한다 — URL의 pathname은
+  // commerce지만 접속 DB는 commerce_test가 되는 우회. 가드가 실제 DB명을
+  // 검사하므로 거부돼야 하고 commerce_test에는 어떤 변경도 없어야 한다.
+  const tdb = postgres("postgres://commerce:commerce@localhost:5432/commerce_test");
+  const before = await tdb.unsafe<{ c: number }[]>(
+    "SELECT count(*)::int AS c FROM products WHERE id LIKE 'p-d-%'",
+  );
+  const r = seed(
+    ["--demo"],
+    "postgres://commerce:commerce@localhost:5432/commerce?database=commerce_test",
+  );
+  assert.notEqual(r.status, 0);
+  assert.match(String(r.stderr) + String(r.stdout), /commerce_test/);
+  const afterRows = await tdb.unsafe<{ c: number }[]>(
+    "SELECT count(*)::int AS c FROM products WHERE id LIKE 'p-d-%'",
+  );
+  assert.equal(afterRows[0].c, before[0].c);
+  await tdb.end();
+});
+
 test("--demo와 --phase 동시 사용을 거부한다", () => {
   const r = seed(["--demo", "--phase=1"]);
   assert.notEqual(r.status, 0);
@@ -37,18 +60,19 @@ test("demo seed는 비-demo 상태를 보존하고 demo 행만 reconcile한다",
   await admin.unsafe("CREATE DATABASE " + DB);
   await admin.end();
 
-  for (const step of [
-    ["scripts/migrate.ts", "--phase=4"],
-    ["scripts/seed.ts", "--phase=4"],
-    ["scripts/seed.ts", "--demo"],
-  ]) {
-    const r = spawnSync("node", step, {
-      env: { ...process.env, DATABASE_URL: DB_URL },
-      stdio: "pipe",
-    });
-    assert.equal(r.status, 0, step.join(" ") + "\n" + r.stderr);
-  }
-  connectDb(DB_URL);
+  try {
+    for (const step of [
+      ["scripts/migrate.ts", "--phase=4"],
+      ["scripts/seed.ts", "--phase=4"],
+      ["scripts/seed.ts", "--demo"],
+    ]) {
+      const r = spawnSync("node", step, {
+        env: { ...process.env, DATABASE_URL: DB_URL },
+        stdio: "pipe",
+      });
+      assert.equal(r.status, 0, step.join(" ") + "\n" + r.stderr);
+    }
+    connectDb(DB_URL);
 
   // --- demo 시드 전에 비-demo 상태를 의도적으로 변경한다 ---
   // fixture variant 재고/버전
@@ -89,6 +113,15 @@ test("demo seed는 비-demo 상태를 보존하고 demo 행만 reconcile한다",
     "INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, option_snapshot_json, unit_price_won, quantity, line_total_won) " +
       "VALUES ('oi-verify','ord-verify','v-d-stalekeep','스테일 상품','{}'::jsonb,1000,1,1000)",
   );
+  // 취소 요청(action_requests 1:1 연결) — demo 시드가 건드리면 안 되는 CS 상태
+  await sql.unsafe(
+    "INSERT INTO action_requests (id, actor_user_id, kind, idempotency_key, payload_json, payload_hash, status, confirmed_at, completed_at) " +
+      "VALUES ('ar-verify','u-a','CANCEL_ORDER','idem-verify','{}'::jsonb,'h','SUCCEEDED',now(),now())",
+  );
+  await sql.unsafe(
+    "INSERT INTO cancel_requests (id, order_id, action_request_id, reason_code, status, refund_amount_won, completed_at) " +
+      "VALUES ('cr-verify','ord-verify','ar-verify','CHANGE_OF_MIND','COMPLETED',1000,now())",
+  );
   // 외부 참조가 없는 stale demo product+variant → 삭제 대상
   await sql.unsafe("INSERT INTO products (id, name, brand, category) VALUES ('p-d-gone','지워질 상품','데모','digital')");
   await sql.unsafe(
@@ -117,6 +150,16 @@ test("demo seed는 비-demo 상태를 보존하고 demo 행만 reconcile한다",
   );
   assert.equal(pay.refund_status, "REFUNDED");
   assert.equal(pay.refunded_amount_won, pay.paid_amount_won);
+  // 취소 요청 + 주문 상태 보존
+  const [ov] = await sql.unsafe<{ status: string }[]>(
+    "SELECT status FROM orders WHERE id='ord-verify'",
+  );
+  assert.equal(ov.status, "CONFIRMED");
+  const [crv] = await sql.unsafe<{ status: string; refund_amount_won: number }[]>(
+    "SELECT status, refund_amount_won FROM cancel_requests WHERE id='cr-verify'",
+  );
+  assert.equal(crv.status, "COMPLETED");
+  assert.equal(crv.refund_amount_won, 1000);
 
   // B. 데모 상품의 비-demo 리뷰 보존
   const [rc] = await sql.unsafe<{ c: number }[]>(
@@ -175,11 +218,129 @@ test("demo seed는 비-demo 상태를 보존하고 demo 행만 reconcile한다",
     "SELECT count(*)::int AS c FROM product_variants WHERE id LIKE 'v-d-%' AND active",
   );
   assert.equal(dv.c, 55);
+  } finally {
+    // 실패해도 scratch DB는 정리한다. commerce/commerce_test는 절대 DROP하지 않는다.
+    try {
+      await sql.end();
+    } catch {
+      // 이미 닫혔을 수 있다
+    }
+    const admin2 = postgres(ADMIN_URL);
+    await admin2.unsafe("DROP DATABASE IF EXISTS " + DB + " WITH (FORCE)");
+    await admin2.end();
+  }
+});
 
-  await sql.end();
-  const admin2 = postgres(ADMIN_URL);
-  await admin2.unsafe("DROP DATABASE IF EXISTS " + DB + " WITH (FORCE)");
-  await admin2.end();
+test("demo seed 도중 실패하면 reconcile+upsert 전체가 롤백된다", { timeout: 120000 }, async () => {
+  const admin = postgres(ADMIN_URL);
+  await admin.unsafe("DROP DATABASE IF EXISTS " + DB + " WITH (FORCE)");
+  await admin.unsafe("CREATE DATABASE " + DB);
+  await admin.end();
+
+  try {
+    for (const step of [
+      ["scripts/migrate.ts", "--phase=4"],
+      ["scripts/seed.ts", "--phase=4"],
+      ["scripts/seed.ts", "--demo"],
+    ]) {
+      const r = spawnSync("node", step, {
+        env: { ...process.env, DATABASE_URL: DB_URL },
+        stdio: "pipe",
+      });
+      assert.equal(r.status, 0, step.join(" ") + "\n" + r.stderr);
+    }
+    connectDb(DB_URL);
+
+    // 롤백으로 확인할 상태:
+    //  - reconcile이 실행된 뒤(demo 순서: 정리→upsert) upsert 중간에서 실패 유발
+    //  - 삭제 예정 stale 행, 비활성화 예정 행, upsert 대상 행이 모두 사전 상태로 남는지 확인
+    await sql.unsafe("UPDATE products SET name='BROKEN' WHERE id='p-d-ear-lite'"); // upsert 롤백 확인용
+    await sql.unsafe(
+      "INSERT INTO reviews (id, product_id, variant_id, rating, body, source_kind, source_ref, written_at) " +
+        "VALUES ('r-d-rbstale','p-d-ear-lite',NULL,1,'stale demo review','SYNTHETIC','x','2026-10-08')",
+    );
+    // 외부 참조 없는 stale demo product+variant → 정상 경로에선 삭제 대상
+    await sql.unsafe("INSERT INTO products (id, name, brand, category) VALUES ('p-d-rb1','삭제대상','데모','digital')");
+    await sql.unsafe(
+      "INSERT INTO product_variants (id, product_id, unit_price_won, stock_qty) VALUES ('v-d-rb1','p-d-rb1',1000,1)",
+    );
+    // 주문이 참조하는 stale demo product+variant → 정상 경로에선 active=false 대상
+    await sql.unsafe("INSERT INTO products (id, name, brand, category) VALUES ('p-d-rb2','보존대상','데모','digital')");
+    await sql.unsafe(
+      "INSERT INTO product_variants (id, product_id, unit_price_won, stock_qty) VALUES ('v-d-rb2','p-d-rb2',1000,1)",
+    );
+    await sql.unsafe(
+      "INSERT INTO orders (id, user_id, status, items_total_won, shipping_fee_won, total_won, address_snapshot_json) " +
+        "VALUES ('ord-rb','u-a','CONFIRMED',1000,0,1000,'{}'::jsonb)",
+    );
+    await sql.unsafe(
+      "INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, option_snapshot_json, unit_price_won, quantity, line_total_won) " +
+        "VALUES ('oi-rb','ord-rb','v-d-rb2','보존대상','{}'::jsonb,1000,1,1000)",
+    );
+    await sql.unsafe("UPDATE product_variants SET stock_qty=99 WHERE id='v-a-24'");
+
+    // 실패 주입: products upsert가 p-d-tone(카탈로그 중간 지점)에서 깨지도록
+    // CHECK를 건다. NOT VALID로 기존 행 검증은 건너뛰고 신규 write만 막는다.
+    await sql.unsafe(
+      "ALTER TABLE products ADD CONSTRAINT chk_demo_tx CHECK (id <> 'p-d-tone') NOT VALID",
+    );
+
+    const r = seed(["--demo"]);
+    assert.notEqual(r.status, 0, "실패 주입 시 demo seed는 실패해야 함\n" + r.stdout + r.stderr);
+
+    // --- 롤백 검증: 어느 write도 커밋되지 않았어야 함 ---
+    const [p1] = await sql.unsafe<{ name: string }[]>(
+      "SELECT name FROM products WHERE id='p-d-ear-lite'",
+    );
+    assert.equal(p1.name, "BROKEN"); // upsert 롤백 — BROKEN이 그대로여야 함
+    const [rc] = await sql.unsafe<{ c: number }[]>(
+      "SELECT count(*)::int AS c FROM reviews WHERE id='r-d-rbstale'",
+    );
+    assert.equal(rc.c, 1); // review reconcile 롤백 — stale 행 생존
+    const [pc] = await sql.unsafe<{ c: number }[]>(
+      "SELECT count(*)::int AS c FROM products WHERE id='p-d-rb1'",
+    );
+    assert.equal(pc.c, 1); // product 삭제 롤백
+    const [v1] = await sql.unsafe<{ c: number }[]>(
+      "SELECT count(*)::int AS c FROM product_variants WHERE id='v-d-rb1'",
+    );
+    assert.equal(v1.c, 1); // variant 삭제 롤백
+    const [v2] = await sql.unsafe<{ active: boolean }[]>(
+      "SELECT active FROM product_variants WHERE id='v-d-rb2'",
+    );
+    assert.equal(v2.active, true); // active=false 롤백 — 참조된 행이 active 유지
+    const [fv] = await sql.unsafe<{ stock_qty: number }[]>(
+      "SELECT stock_qty FROM product_variants WHERE id='v-a-24'",
+    );
+    assert.equal(fv.stock_qty, 99); // 비-demo 상태 불변
+
+    // 실패 주입을 제거하면 같은 seed가 정상 동작해야 한다(부분 적용 잔재 없음)
+    await sql.unsafe("ALTER TABLE products DROP CONSTRAINT chk_demo_tx");
+    const r2 = seed(["--demo"]);
+    assert.equal(r2.status, 0, "제약 제거 후 정상\n" + r2.stderr);
+    const [p1b] = await sql.unsafe<{ name: string }[]>(
+      "SELECT name FROM products WHERE id='p-d-ear-lite'",
+    );
+    assert.notEqual(p1b.name, "BROKEN");
+    const [rc2] = await sql.unsafe<{ c: number }[]>(
+      "SELECT count(*)::int AS c FROM reviews WHERE id='r-d-rbstale'",
+    );
+    assert.equal(rc2.c, 0);
+    const [v2b] = await sql.unsafe<{ active: boolean }[]>(
+      "SELECT active FROM product_variants WHERE id='v-d-rb2'",
+    );
+    assert.equal(v2b.active, false);
+  } finally {
+    // 실패해도 scratch DB는 정리한다. commerce/commerce_test는 절대 DROP하지 않는다.
+    try {
+      await sql.end();
+    } catch {
+      // 이미 닫혔을 수 있다
+    }
+    const admin2 = postgres(ADMIN_URL);
+    await admin2.unsafe("DROP DATABASE IF EXISTS " + DB + " WITH (FORCE)");
+    await admin2.end();
+  }
 });
 
 // sql 풀 연결을 닫아야 서브프로세스가 종료하고 다음 파일로 진행된다.
