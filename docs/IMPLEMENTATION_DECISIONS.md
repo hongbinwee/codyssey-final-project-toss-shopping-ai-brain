@@ -101,3 +101,25 @@ Phase 5 추가 결정:
 | 배포 실행 | 로컬 빌드·기동·health/SPA까지 검증하고 외부 배포는 BLOCKED | 배포처 계정/레지스트리가 미정 — 준비물과 절차만 확정해 README에 기록 |
 | 접근 코드 운영 | TEST_USER_CODES env가 코드→사용자 매핑. 사용자 테스트용 계정도 seed가 아니라 env로 추가 | 코드 목록은 Source에 있지만 테스트용 코드는 전달용으로만 쓰고 클라이언트/로그 노출 금지 — 공용 actor 선택·DB reset·시뮬레이터는 API에 노출되지 않는 구조 유지 |
 | core-journeys 범위 | 기존 스펙이 덮는 경로는 반복하지 않고 미커버 필수 상태 5건만 작성 | ponytail: 전체 여정 재실행보다 커버리지 갭을 채우는 게 목적. 읽기 위주라 전용 사용자·재고 격리 불필요 |
+
+2026-10-07 · 프로젝트 방향 재정립 — Commerce Environment 선행
+
+배경: Phase 0~5로 Backend·Tool·Guardrail·Eval이 완성됐으나, 실제 화면을 사용해 본 결과 Commerce Environment가 토스쇼핑의 구매 환경과 너무 달랐다 — 상품 3개·단일 카테고리(모니터)로 콘텐츠 밀도 부재, merchandising·프로모션 구조 없음, Header/Search/Navigation의 IA가 실제 앱과 상이. 최종 목표(현실적 Commerce 환경에서 동작하는 Brain의 구현·검증)는 동일하고, 도달 경로를 '간소화 데모 우선'에서 '**토스쇼핑 수준의 Commerce Environment를 먼저 구축한 뒤 Brain 결합**'으로 수정했다.
+
+Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독자가 과거 문장을 보고 되돌아가지 않도록):
+
+| 과거 결정 (Superseded) | 현재 결정 | 변경 근거 |
+| --- | --- | --- |
+| Toss Navigation을 프로젝트용으로 단순화한다 | 토스 로고·상표·고유 자산을 제외하고 Navigation 구조·탭 수/배치·선택 상태·높이·아이콘/라벨 관계·가로 스크롤·화면 내 위치를 레퍼런스대로 최대한 따른다 | 독창적 네비게이션은 목표가 아니며, IA 차이가 '토스쇼핑 유사 환경' 판단을 깨뜨림 |
+| 상품 3개(전부 모니터)로 Commerce UI 검증이 충분하다 | 기존 fixture 보존 + 약 20~30개 Demo Catalog 추가 계획(04-B) | 카테고리 레일·추천·특가 등 Home merchandising을 실제 데이터로 검증 불가 |
+| 홈의 AI 진입 카드가 merchandising 영역을 대신한다 | merchandising block(프로모/특가/추천/기획전/배너)을 demo/static UI로 별도 재현. AI 카드는 추가 요소로 보존 | merchandising 밀도가 토스쇼핑 홈의 핵심 시각 특성 |
+| 개별 컴포넌트 유사도가 화면 구조보다 우선이다 | 화면 단위 IA·콘텐츠 밀도·수직 구조의 재구성이 우선 | 색상/컴포넌트가 유사해도 화면 전체 인상이 다르면 목표 미달 |
+| Brain 개발이 현재 우선순위다 | Commerce Environment(로드맵 04~09) 완성 후 Brain(11~12) | Brain 검증 환경이 먼저 실제 서비스 수준이어야 함. 기존 Tool Registry·Stub·Backend는 보존하되 Brain 완성으로 간주하지 않음 |
+| 04 홈·검색·목록 1차 구현이 최종 완료다 | 기능적 1차 구현만 완료. Visual QA 목표 미달이므로 04 Toss Shopping Shell은 진행 중 | 390×844 실제 비교에서 구조적 유사성 부족 확인 |
+
+연결 계획(계획만, 미실행):
+
+- **Demo Catalog(04-B):** 디지털/가전·패션·뷰티·생활·식품 카테고리 약 20~30개. 상품에 image·정가/판매가·할인율·평점·리뷰 수·배지·배송 정보·variants·품절·merchandising section tag(recommended/flash-sale/popular/new 등). section tag로 추천 엔진 없이 Home merchandising 구성. 스키마/Seed 변경은 실행 전 별도 승인.
+- **Personalization:** 'OOO님을 위한 추천'은 초기 static/demo → Brain 구현 후 교체 가능한 구조.
+- **Theme override(제안·미구현):** 개발/QA용 `?theme=light|dark|system`. 사용자용 수동 토글은 없음.
+- **재구현하지 않는 것:** 토스 브랜드 자산(로고·전용 폰트·아이콘 원본·문구), 오늘의 뽑기/스크롤하기/포인트 피드/미니맵 등 Brain 무관 기능, 판매자센터·실제 정산.

@@ -10,3 +10,6 @@ shots/
 blob-report/
 eval/results/
 *-out.txt
+verify-*.txt
+reference/toss-shopping/screenshots/
+reference/toss-shopping/docs/history/

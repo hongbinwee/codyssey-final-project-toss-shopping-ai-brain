@@ -2,6 +2,8 @@
 
 토스쇼핑과 유사한 흐름의 테스트용 커머스 환경 + Shopping/CS Brain Agent. P0 범위는 [CORE_TASK_SCOPE.md](CORE_TASK_SCOPE.md), 실행 계획은 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
+> 현재 최상위 방향·로드맵(Commerce Environment 선행 → Brain)은 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) §현재 프로젝트 방향 참조.
+
 ## 무엇을 하는 프로젝트인가
 
 실제 쇼핑 흐름(검색→상세→옵션→장바구니→주문서→모의 결제→주문/배송→취소) 위에서 동작하는 두 개의 AI Agent를 검증하는 환경이다.
