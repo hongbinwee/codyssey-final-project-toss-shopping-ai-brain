@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { extname } from "node:path";
+import { extname, join, normalize, sep } from "node:path";
 import { build } from "esbuild";
 import { config } from "./config.ts";
 import { connectDb, sql } from "./db.ts";
@@ -22,6 +22,12 @@ const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
 };
 
 const STATIC: Record<string, string> = {
@@ -125,6 +131,24 @@ export async function start(port = config.port) {
       if (file) {
         res.writeHead(200, { "content-type": MIME[extname(file)] ?? "text/plain" });
         return res.end(await readFile(file));
+      }
+
+      // 생성/테스트 에셋(상품 이미지 등)은 web/assets 아래 파일만 서빙한다.
+      if (req.method === "GET" && p.startsWith("/assets/")) {
+        const rel = decodeURIComponent(p.slice("/assets/".length));
+        const filePath = normalize(join("web", "assets", rel));
+        const base = normalize(join("web", "assets")) + sep;
+        if (!filePath.startsWith(base) || filePath.endsWith(sep)) {
+          res.writeHead(404);
+          return res.end("Not found");
+        }
+        try {
+          res.writeHead(200, { "content-type": MIME[extname(filePath)] ?? "application/octet-stream" });
+          return res.end(await readFile(filePath));
+        } catch {
+          res.writeHead(404);
+          return res.end("Not found");
+        }
       }
 
       // 아래부터는 인증 필요

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api.ts";
- import type { CartView } from "../contracts.ts";
+import type { CartView } from "../contracts.ts";
 import { Shopping } from "./screens/Shopping.tsx";
+import { Search } from "./screens/Search.tsx";
 import { Product } from "./screens/Product.tsx";
 import { Cart } from "./screens/Cart.tsx";
 import { Checkout } from "./screens/Checkout.tsx";
@@ -12,7 +13,8 @@ import { AgentPanel, type AgentReply } from "./components/AgentPanel.tsx";
 import type { AgentBrain } from "./api.ts";
 
 type Route =
-  | { name: "shop"; query: string }
+  | { name: "shop"; category: string }
+  | { name: "search"; query: string }
   | { name: "product"; id: string }
   | { name: "cart" }
   | { name: "checkout" }
@@ -23,22 +25,24 @@ function parseHash(): Route {
   const h = location.hash.replace(/^#/, "");
   const [path, qs] = h.split("?");
   const params = new URLSearchParams(qs ?? "");
+  if (path === "/search") return { name: "search", query: params.get("q") ?? "" };
   if (path.startsWith("/p/")) return { name: "product", id: decodeURIComponent(path.slice(3)) };
   if (path === "/cart") return { name: "cart" };
   if (path === "/checkout") return { name: "checkout" };
   if (path === "/orders") return { name: "orders" };
   if (path.startsWith("/orders/")) return { name: "order", id: decodeURIComponent(path.slice(8)) };
-  return { name: "shop", query: params.get("q") ?? "" };
+  return { name: "shop", category: params.get("cat") ?? "" };
 }
 
 const goto = (r: Route) => {
   location.hash =
-    r.name === "product" ? "#/p/" + encodeURIComponent(r.id)
+    r.name === "search" ? "#/search" + (r.query ? "?q=" + encodeURIComponent(r.query) : "")
+    : r.name === "product" ? "#/p/" + encodeURIComponent(r.id)
     : r.name === "cart" ? "#/cart"
     : r.name === "checkout" ? "#/checkout"
     : r.name === "orders" ? "#/orders"
     : r.name === "order" ? "#/orders/" + encodeURIComponent(r.id)
-    : "#/" + (r.query ? "?q=" + encodeURIComponent(r.query) : "");
+    : "#/" + (r.category ? "?cat=" + encodeURIComponent(r.category) : "");
 };
 
 function Login({ onLogin }: { onLogin: (name: string) => void }) {
@@ -70,6 +74,12 @@ function Login({ onLogin }: { onLogin: (name: string) => void }) {
   );
 }
 
+// 하단 네비는 홈(탭 루트)에만 표시한다 — 카트/주문/상세는 푸시 화면이며
+// 자체 고정 CTA(.bottom-bar)가 있어 겹치지 않게 한다.
+const NAV_ROUTES = new Set(["shop"]);
+// 뒤로가기 바를 붙이는 푸시 화면
+const BACK_ROUTES = new Set(["product", "cart", "checkout", "orders", "order"]);
+
 function App() {
   const [user, setUser] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
@@ -81,7 +91,7 @@ function App() {
     cs: [],
   });
   const [cart, setCart] = useState<CartView | null>(null);
-  const [search, setSearch] = useState(route.name === "shop" ? route.query : "");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     api<{ user: { display_name: string } }>("/api/session").then((r) => {
@@ -106,15 +116,19 @@ function App() {
     product_id: route.name === "product" ? route.id : undefined,
     order_id: route.name === "order" ? route.id : undefined,
   };
+  const cartCount = cart?.items.length ?? 0;
+  const showNav = NAV_ROUTES.has(route.name);
 
   return (
-    <div className="shell">
-      <header className="top">
-        <a className="logo" href="#/">AI Commerce</a>
-        {route.name === "shop" && (
+    <div className={"shell" + (showNav ? " has-nav" : "")}>
+      {route.name === "shop" && (
+        <header className="top">
           <form
             className="search"
-            onSubmit={(e) => { e.preventDefault(); goto({ name: "shop", query: search }); }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (search.trim()) goto({ name: "search", query: search.trim() });
+            }}
           >
             <input
               value={search}
@@ -122,22 +136,42 @@ function App() {
               placeholder="상품 검색"
             />
           </form>
-        )}
-        <nav>
-          <button className="nav-btn" onClick={() => setAgentOpen("shopping")}>🤖 AI</button>
-          <button className="nav-btn" onClick={() => goto({ name: "orders" })}>내 주문</button>
-          <button className="nav-btn" onClick={() => goto({ name: "cart" })}>
-            장바구니{cart && cart.items.length > 0 ? " " + cart.items.length : ""}
+          <button
+            className="icon-btn"
+            aria-label="장바구니"
+            onClick={() => goto({ name: "cart" })}
+          >
+            🛒
+            {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
           </button>
-        </nav>
-      </header>
+        </header>
+      )}
+      {BACK_ROUTES.has(route.name) && (
+        <header className="backbar">
+          <button
+            className="back-btn"
+            aria-label="뒤로가기"
+            onClick={() => history.back()}
+          >
+            ‹
+          </button>
+        </header>
+      )}
       <main>
         {route.name === "shop" && (
           <Shopping
-            query={route.query}
-            onSearch={(q) => goto({ name: "shop", query: q })}
+            category={route.category}
+            onCategory={(c) => goto({ name: "shop", category: c })}
             onOpenProduct={(id) => goto({ name: "product", id })}
             onOpenAgent={() => setAgentOpen("shopping")}
+          />
+        )}
+        {route.name === "search" && (
+          <Search
+            query={route.query}
+            onBack={() => goto({ name: "shop", category: "" })}
+            onSubmit={(q) => goto({ name: "search", query: q })}
+            onOpenProduct={(id) => goto({ name: "product", id })}
           />
         )}
         {route.name === "product" && (
@@ -151,7 +185,7 @@ function App() {
           <Cart
             cart={cart}
             onCartLoaded={setCart}
-            onOpenShop={() => goto({ name: "shop", query: "" })}
+            onOpenShop={() => goto({ name: "shop", category: "" })}
             onCheckout={() => goto({ name: "checkout" })}
           />
         )}
@@ -164,7 +198,7 @@ function App() {
         {route.name === "orders" && (
           <Orders
             onOpenOrder={(id) => goto({ name: "order", id })}
-            onOpenShop={() => goto({ name: "shop", query: "" })}
+            onOpenShop={() => goto({ name: "shop", category: "" })}
           />
         )}
         {route.name === "order" && (
@@ -175,6 +209,27 @@ function App() {
           />
         )}
       </main>
+      {showNav && (
+        <nav className="bottom-nav">
+          <button className="nav-item on" onClick={() => goto({ name: "shop", category: "" })}>
+            <span className="nav-ico" aria-hidden>🏠</span>홈
+          </button>
+          <button className="nav-item" onClick={() => goto({ name: "search", query: "" })}>
+            <span className="nav-ico" aria-hidden>🔍</span>검색
+          </button>
+          <button className="nav-item" onClick={() => goto({ name: "cart" })}>
+            <span className="nav-ico" aria-hidden>🛒</span>장바구니
+            {cartCount > 0 && <span className="cart-badge nav-badge">{cartCount}</span>}
+          </button>
+          <button className="nav-item" onClick={() => goto({ name: "orders" })}>
+            <span className="nav-ico" aria-hidden>🧾</span>내 주문
+          </button>
+          {/* e2e 계약: accessible name은 정확히 "🤖 AI" */}
+          <button className="nav-item" aria-label="🤖 AI" onClick={() => setAgentOpen("shopping")}>
+            <span className="nav-ico" aria-hidden>🤖</span>AI
+          </button>
+        </nav>
+      )}
       {agentOpen && (
         <AgentPanel
           brain={agentOpen}

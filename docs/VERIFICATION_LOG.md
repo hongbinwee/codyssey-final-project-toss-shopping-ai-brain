@@ -132,3 +132,25 @@
 - Dockerfile은 로컬 빌드·기동·health/SPA까지 검증. 외부 배포(레지스트리/호스트)는 계정 미정으로 BLOCKED — 배포 절차는 README에 기록.
 - 실사용자 5명 테스트는 사람이 수행할 작업. USER_TEST_REPORT.md에 프로토콜·기록 양식을 준비하고 미실시로 표시.
 - live eval은 LLM_API_KEY 미설정으로 계속 BLOCKED.
+
+## 2026-10-07 구매자 UI 1차 — 홈·검색·목록(토스쇼핑 레퍼런스 기반)
+
+### 검증
+
+| 명령 / 확인 | 결과 |
+| --- | --- |
+| node --test tests/unit/*.test.ts | PASS — 18/18 |
+| node --test --test-concurrency=1 tests/integration/*.test.ts | PASS — 전체 통과 (회귀 없음) |
+| Playwright e2e | PASS — 14/14 |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
+| node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 |
+| node scripts/build-web.ts | PASS — web/app.js |
+| 브라우저 실검증 (localhost:3200, 390×844, demo-a) | PASS — 홈/검색(최근·자동완성·결과·정렬시트·가격순·빈결과)·카테고리 필터 시각 확인. 캡처: test-results/compare/impl_*.png vs ref_*.png |
+| /assets/products/*.webp 정적 서빙 | PASS — 200 |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
+
+메모:
+- 이번 변경은 프런트(스타일/화면/정적 자산) 위주. Backend API·DB 스키마·Tool 계약은 변경 없음.
+- 상품 이미지는 DB image_urls가 비어 있어 프런트 convention 매핑(/assets/products/{id}.webp)으로 해결. DB 시드 변경 없음. 시드 확장(상품 수/할인·적립 필드)은 미승인 제안 상태.
+- 레퍼런스 대비 의도적 차이: 히어로 캐러셀·아이콘 그리드 대신 AI 카드, 하단 네비는 토스 앱 전체가 아닌 쇼핑 범위(홈/검색/장바구니/내 주문/AI), 토스 브랜드 자산 미사용.
+- 미해결 차이: 상품 카드 할인 배지/원가 취소선/적립 pill/카드 위 장바구니 아이콘은 데이터 필드 부재로 미구현(제안 대기).
