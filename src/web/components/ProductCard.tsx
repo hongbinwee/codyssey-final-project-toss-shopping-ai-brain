@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ProductSummary } from "../../contracts.ts";
 import { fmtWon } from "../api.ts";
+import { IcStar } from "../icons.tsx";
 
 // 시드 image_urls가 모두 비어 있어, 없을 때는 로컬 생성 에셋을 convention으로 쓴다.
 // DB에 실제 URL이 들어오면 p.image가 우선이고, 로컬 파일도 없으면 글자 플레이스홀더로 떨어진다.
@@ -30,7 +31,7 @@ export function ProductCard({ p, onOpen }: { p: ProductSummary; onOpen: () => vo
         <div className="product-meta">
           {p.rating_summary.avg !== null && (
             <span>
-              ★ {p.rating_summary.avg}{" "}
+              <IcStar size={12} /> {p.rating_summary.avg}{" "}
               <span className="muted">리뷰 {p.rating_summary.count}</span>
             </span>
           )}

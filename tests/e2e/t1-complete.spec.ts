@@ -40,7 +40,7 @@ test("compare card: tool-derived products, evidence, limitations", async ({
   page,
 }) => {
   await login(page);
-  await page.getByRole("button", { name: "🤖 AI", exact: true }).click();
+  await page.getByRole("button", { name: "AI", exact: true }).click();
   await page.getByPlaceholder("조건이나 요청을 입력하세요").fill("개발용 모니터 비교해줘");
   await page.getByRole("button", { name: "보내기" }).click();
 

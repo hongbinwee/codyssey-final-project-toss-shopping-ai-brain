@@ -4,6 +4,7 @@ import { api, type ApiResult } from "../api.ts";
 import type { SearchResult } from "../../contracts.ts";
 import { ProductCard } from "../components/ProductCard.tsx";
 import { Empty, ErrorState } from "../components/CommerceState.tsx";
+import { IcSparkle } from "../icons.tsx";
 
 const CAT_LABEL: Record<string, string> = { monitor: "모니터" };
 const catLabel = (c: string) => CAT_LABEL[c] ?? c;
@@ -64,7 +65,7 @@ export function Shopping({
       )}
 
       <button className="ai-entry" onClick={onOpenAgent}>
-        <span className="ai-entry-ico" aria-hidden>✦</span>
+        <span className="ai-entry-ico" aria-hidden><IcSparkle size={22} /></span>
         <span>
           <b>AI에게 조건 말하고 비교받기</b>
           <span className="ai-entry-sub">예산·용도만 말하면 상품을 찾아 비교해줘요</span>

@@ -32,8 +32,8 @@ test("A01 panel: stub provider answers with real data", async ({ page }) => {
   await page.goto("/");
   await page.getByPlaceholder("접근 코드").fill("e2e-a");
   await page.getByRole("button", { name: "시작하기" }).click();
-  // name 매칭은 substring이므로 "🤖 AI에게 조건…" 버튼과 충돌한다 → exact 필수
-  await page.getByRole("button", { name: "🤖 AI", exact: true }).click();
+  // name 매칭은 substring이므로 "AI에게 조건…" 버튼과 충돌한다 → exact 필수
+  await page.getByRole("button", { name: "AI", exact: true }).click();
   await page.getByPlaceholder("조건이나 요청을 입력하세요").fill("개발용 모니터 비교해줘");
   await page.getByRole("button", { name: "보내기" }).click();
   // stub provider가 실제 Tool 조회 결과를 반영한 답변을 돌려준다

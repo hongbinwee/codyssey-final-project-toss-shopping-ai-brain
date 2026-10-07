@@ -1,20 +1,59 @@
-/* 프로젝트 디자인 토큰 — 토스쇼핑 캡처 실측 기반 프로젝트 자체 토큰.
-   값 출처는 docs/COMMERCE_DESIGN_SYSTEM.md 참고 ([Observed]/[TDS]/[Inferred]). */
+/* Commerce 디자인 토큰 — docs/COMMERCE_DESIGN_SYSTEM.md가 Source of Truth.
+   Light = [TDS] 라이트 토큰 기반, Dark = [Observed] 토스쇼핑 캡처 실측. */
 :root {
-  --bg: #17161b;          /* 캡처 실측 배경 */
-  --bg-elev: #1f1f26;
-  --card: #202024;        /* 카드 실측 */
-  --card-2: #27262f;      /* 칩/인셋 실측 */
-  --text: #f2f2f5;
-  --muted: #8b95a1;       /* TDS grey500 근사 */
-  --line: #2e2e33;
-  --accent: #2975f4;      /* CTA 실측 블루 */
-  --accent-hover: #1f64d8;
-  --discount: #ed2c3b;    /* 특가 실측 레드 */
-  --danger: #ed2c3b;
+  color-scheme: light;
+  --bg: #f4f6f8;            /* [Inferred] grey50~100 */
+  --bg-elev: #ffffff;       /* [TDS] */
+  --card: #ffffff;          /* [TDS] */
+  --field: #f2f4f6;         /* [TDS] grey100 — 검색 필드/인셋 */
+  --chip: #f2f4f6;          /* [TDS] grey100 */
+  --chip-on: #e5e8eb;       /* [Inferred] 홈 카테고리 선택 pill */
+  --text: #191f28;          /* [TDS] grey900 */
+  --text-2: #4e5968;        /* [TDS] grey700 */
+  --muted: #8b95a1;         /* [TDS] grey500 */
+  --line: #e5e8eb;          /* [TDS] grey200 */
+  --accent: #3182f6;        /* [TDS] blue500 */
+  --accent-hover: #2272eb;  /* [TDS] blue600 */
+  --accent-weak: #e8f3ff;   /* [TDS] blue50 */
+  --sel: rgba(49, 130, 246, 0.1);
+  --discount: #f04452;      /* [TDS] red500 — 특가 배지/할인 */
+  --danger: #f04452;
+  --rate: #3182f6;          /* [Inferred] 할인율 텍스트 */
+  --star: #f7b500;          /* [Inferred] 평점 ★ */
+  --thumb-a: #eef2f7; --thumb-b: #e2e8ef; --thumb-fg: #9aa8b8;
+  --ai-a: #e8f3ff; --ai-b: #dcebff; --ai-line: #bcd8ff; --ai-sub: #4e7fb8;
+  --overlay: rgba(0, 0, 0, 0.4);
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.1);
   --radius: 14px;
   --radius-sm: 10px;
-  --nav-h: 56px;
+  --nav-h: 60px;
+  --pad: 20px;              /* [Observed] 콘텐츠 좌우 ~19.5px */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #171619;          /* [Observed] */
+    --bg-elev: #1f1f26;     /* [Observed] */
+    --card: #202024;        /* [Observed] */
+    --field: #24252a;       /* [Observed] 검색 필드 */
+    --chip: #27272c;        /* [Observed] 필터 칩 */
+    --chip-on: #3a3a41;     /* [Observed] 홈 '쇼핑 홈' 선택 pill */
+    --text: #f0f0f2;        /* [Observed] */
+    --text-2: #b0b4bd;      /* [Observed] 보조 텍스트 */
+    --muted: #8b95a1;       /* [TDS 근사] */
+    --line: #2e2e33;        /* [Observed 근사] */
+    --accent: #2975f4;      /* [Observed] CTA 블루 */
+    --accent-hover: #1f64d8;/* [Inferred] */
+    --accent-weak: #22345c; /* [Inferred] */
+    --sel: rgba(41, 117, 244, 0.16);
+    --discount: #ed2c3b;    /* [Observed] 특가 배지 */
+    --danger: #ed2c3b;
+    --rate: #a5b4d4;        /* [Observed] 할인율 라이트 스틸 */
+    --thumb-a: #24344f; --thumb-b: #1b2740; --thumb-fg: #7aa8ff;
+    --ai-a: #22345c; --ai-b: #1f2a47; --ai-line: #33507f; --ai-sub: #aebdd8;
+    --overlay: rgba(0, 0, 0, 0.62);
+    --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -27,34 +66,54 @@ body {
 }
 #root { min-height: 100vh; }
 mark { background: none; color: var(--accent); font-weight: 700; }
+button { font-family: inherit; }
+button svg { display: block; }
 
-/* 앱 셸 — 모바일 폭 고정(토스쇼핑은 모바일 앱). 데스크톱도 480px 컬럼. */
+/* 앱 셸 — 모바일 폭 고정 */
 .shell { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
 
-/* 홈 헤더 — 검색 필드 + 카트 아이콘(배지). 토스 홈 구조. */
+/* 홈 헤더 — 검색 필드(돋보기+pill) + 카트 아이콘(배지) [Observed] */
 .top {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px var(--pad) 8px;
   background: var(--bg);
 }
 .search { flex: 1; }
-.search input, .login input, .agent-input input, .search-field input {
-  width: 100%; padding: 10px 14px;
-  background: var(--card-2); color: var(--text);
-  border: 1px solid transparent; border-radius: 12px;
-  font-size: 15px; outline: none;
+.search-field {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  background: var(--field); border-radius: 18px;
+  padding: 0 12px 0 14px; height: 36px;
 }
-.search input:focus, .search-field input:focus { border-color: var(--accent); }
+.field-ico { color: var(--muted); display: flex; flex-shrink: 0; }
+.search input, .login input, .agent-input input, .search-field input {
+  flex: 1; min-width: 0; height: 100%;
+  background: none; color: var(--text);
+  border: none; border-radius: 0;
+  font-size: 15px; outline: none; padding: 0;
+}
+.search input::placeholder, .search-field input::placeholder { color: var(--muted); }
+.login input {
+  height: auto; padding: 12px 14px; border-radius: 12px;
+  background: var(--field); border: 1px solid transparent;
+}
+.login input:focus { border-color: var(--accent); }
+.agent-input input {
+  height: auto; padding: 10px 14px; border-radius: 12px;
+  background: var(--field); border: 1px solid transparent;
+}
+.agent-input input:focus { border-color: var(--accent); }
 .icon-btn {
   position: relative; flex-shrink: 0;
   width: 40px; height: 40px; border: none; border-radius: 12px;
-  background: none; font-size: 21px; cursor: pointer; line-height: 1;
+  background: none; color: var(--text); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
+.icon-btn:active { background: var(--field); }
 .cart-badge {
-  position: absolute; top: 1px; right: 1px;
+  position: absolute; top: 2px; right: 2px;
   min-width: 16px; height: 16px; padding: 0 4px;
-  border-radius: 8px; background: var(--discount); color: #fff;
+  border-radius: 9px; background: var(--discount); color: #fff;
   font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
 }
 
@@ -62,66 +121,65 @@ mark { background: none; color: var(--accent); font-weight: 700; }
 .backbar {
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center;
-  padding: 6px 8px;
+  padding: 4px 8px;
   background: var(--bg);
 }
 .back-btn {
-  width: 38px; height: 38px; border: none; background: none;
-  color: var(--text); font-size: 26px; line-height: 1; cursor: pointer;
-  border-radius: 10px;
+  width: 40px; height: 40px; border: none; background: none;
+  color: var(--text); cursor: pointer; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
 }
-.back-btn:active { background: var(--card-2); }
+.back-btn:active { background: var(--field); }
 
-/* 하단 네비 — 홈에만 표시. 선택 탭은 밝은 텍스트. */
+/* 하단 네비 — 쇼핑 범위 5탭(아이콘 22 + 라벨 10.5) [Project] */
 .bottom-nav {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
   width: 100%; max-width: 480px; height: var(--nav-h);
   display: flex; z-index: 25;
-  background: var(--bg); border-top: 1px solid var(--line);
+  background: var(--bg-elev); border-top: 1px solid var(--line);
 }
 .nav-item {
   position: relative; flex: 1;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 3px; border: none; background: none;
-  color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap;
+  color: var(--muted); font-size: 10.5px; cursor: pointer; white-space: nowrap;
 }
 .nav-item.on { color: var(--text); font-weight: 600; }
-.nav-ico { font-size: 20px; line-height: 1; }
-.nav-badge { top: 4px; right: auto; margin-left: 22px; }
+.nav-badge { top: 6px; right: auto; margin-left: 24px; }
 
-main { flex: 1; padding: 0 16px 110px; }
-.screen { padding-top: 8px; }
+main { flex: 1; padding: 0 var(--pad) 110px; }
+.screen { padding-top: 6px; }
 
-/* 카테고리 탭 — 가로 스크롤, 선택 탭 밑줄 */
+/* 홈 카테고리 — 가로 스크롤 pill 칩, 선택은 중성 밝기 상승 [Observed home/01] */
 .cat-tabs {
-  display: flex; gap: 18px; overflow-x: auto; scrollbar-width: none;
-  border-bottom: 1px solid var(--line); margin-bottom: 14px;
+  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
+  padding: 2px 0 4px; margin-bottom: 12px;
 }
 .cat-tabs::-webkit-scrollbar { display: none; }
 .cat-tab {
-  flex-shrink: 0; padding: 8px 2px 10px;
-  background: none; border: none; border-bottom: 2px solid transparent;
-  color: var(--muted); font-size: 15px; cursor: pointer; white-space: nowrap;
+  flex-shrink: 0; padding: 8px 14px;
+  background: var(--chip); border: none; border-radius: 999px;
+  color: var(--text-2); font-size: 13.5px; cursor: pointer; white-space: nowrap;
 }
-.cat-tab.on { color: var(--text); font-weight: 700; border-bottom-color: var(--text); }
+.cat-tab.on { background: var(--chip-on); color: var(--text); font-weight: 700; }
 
-/* AI 진입 카드 — 홈의 프로모 영역 역할 */
+/* AI 진입 카드 — 프로젝트 고유 요소 [Project] */
 .ai-entry {
   width: 100%; text-align: left;
   display: flex; align-items: center; gap: 12px;
-  background: linear-gradient(135deg, #22345c, #1f2a47);
-  color: var(--text); border: 1px solid #33507f;
+  background: linear-gradient(135deg, var(--ai-a), var(--ai-b));
+  color: var(--text); border: 1px solid var(--ai-line);
   border-radius: var(--radius); padding: 16px;
   font-size: 15px; cursor: pointer;
 }
-.ai-entry:hover { filter: brightness(1.15); }
-.ai-entry-ico { font-size: 20px; color: var(--accent); flex-shrink: 0; }
+.ai-entry:hover { filter: brightness(1.04); }
+.ai-entry-ico { color: var(--accent); flex-shrink: 0; display: flex; }
 .ai-entry b { display: block; font-weight: 700; }
-.ai-entry-sub { display: block; margin-top: 3px; font-size: 12.5px; color: #aebdd8; }
-.section-h { margin: 20px 0 10px; font-size: 16px; font-weight: 700; }
+.ai-entry-sub { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ai-sub); }
+.section-h { margin: 20px 0 12px; font-size: 16px; font-weight: 700; }
 
-/* 상품 그리드·카드 — 2열, 정사각 이미지, 텍스트는 이미지 아래 */
-.product-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; }
+/* 상품 그리드·카드 — 2열, 정사각 이미지, 텍스트는 이미지 아래, 카드 배경 없음 [Observed] */
+.product-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 10px; }
 .product-card {
   text-align: left; cursor: pointer; padding: 0;
   background: none; border: none; color: var(--text);
@@ -129,42 +187,43 @@ main { flex: 1; padding: 0 16px 110px; }
 }
 .product-thumb {
   position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden;
-  background: linear-gradient(160deg, #24344f, #1b2740);
+  background: linear-gradient(160deg, var(--thumb-a), var(--thumb-b));
 }
 .product-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb-fallback {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  font-size: 42px; font-weight: 800; color: #7aa8ff;
+  font-size: 42px; font-weight: 800; color: var(--thumb-fg);
 }
 .thumb-soldout {
-  position: absolute; inset: 0; background: #0009;
+  position: absolute; inset: 0; background: var(--overlay);
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 700; font-size: 15px;
 }
-.product-info { padding: 8px 2px 0; }
+.product-info { padding: 9px 2px 0; }
 .product-name {
-  font-size: 14px; line-height: 1.35; margin-bottom: 4px;
+  font-size: 15px; font-weight: 500; line-height: 1.38; margin-bottom: 4px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.product-price { font-size: 16px; font-weight: 800; margin-bottom: 3px; }
-.product-meta { font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; }
+.product-price { font-size: 17px; font-weight: 800; margin-bottom: 3px; }
+.product-meta { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.product-meta svg { color: var(--star); }
 
 /* 스켈레톤 */
 .skel-card { display: flex; flex-direction: column; gap: 6px; }
 .skel-thumb {
   aspect-ratio: 1; border-radius: 12px;
-  background: linear-gradient(100deg, var(--card) 40%, var(--card-2) 50%, var(--card) 60%);
+  background: linear-gradient(100deg, var(--card) 40%, var(--field) 50%, var(--card) 60%);
   background-size: 200% 100%; animation: skel 1.2s infinite;
 }
 .skel-line {
   height: 12px; border-radius: 6px; margin-top: 4px;
-  background: linear-gradient(100deg, var(--card) 40%, var(--card-2) 50%, var(--card) 60%);
+  background: linear-gradient(100deg, var(--card) 40%, var(--field) 50%, var(--card) 60%);
   background-size: 200% 100%; animation: skel 1.2s infinite;
 }
 .skel-line.sm { width: 55%; }
 @keyframes skel { to { background-position: -200% 0; } }
 
-/* 상태 박스 */
+/* 상태 박스 — Empty/Error */
 .state-box {
   background: var(--card); border: 1px dashed var(--line);
   border-radius: var(--radius); padding: 28px 16px;
@@ -175,63 +234,67 @@ main { flex: 1; padding: 0 16px 110px; }
 
 /* 버튼·링크 */
 .btn {
-  border: none; border-radius: 12px; padding: 12px 20px;
+  border: none; border-radius: 12px; padding: 13px 20px;
   font-size: 15px; font-weight: 700; cursor: pointer;
   white-space: nowrap; flex-shrink: 0;
 }
 .btn.primary { background: var(--accent); color: #fff; }
 .btn.primary:hover { background: var(--accent-hover); }
-.btn.primary:disabled { background: var(--card-2); color: var(--muted); cursor: not-allowed; }
-.btn.ghost { background: var(--card-2); color: var(--text); border: 1px solid var(--line); }
+.btn.primary:disabled { background: var(--field); color: var(--muted); cursor: not-allowed; }
+.btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--line); }
 .link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 14px; white-space: nowrap; }
 
-/* 검색 화면 */
+/* 검색 화면 — back + 필드 + 카트 [Observed: 결과 화면 헤더에 카트 아이콘] */
 .search-head {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 8px 8px 4px; margin: 0 -16px; padding-left: 4px; padding-right: 12px;
+  display: flex; align-items: center; gap: 2px;
+  padding: 8px 0; margin: 0 -8px 0 -4px;
   background: var(--bg);
 }
-.search-field {
-  flex: 1; display: flex; align-items: center; gap: 4px;
-  background: var(--card-2); border-radius: 12px; padding-right: 8px;
-}
-.search-field input { background: none; border: none; }
+.search-head .icon-btn { width: 38px; height: 38px; }
 .clear-btn {
-  border: none; background: var(--line); color: var(--text);
-  width: 20px; height: 20px; border-radius: 50%; font-size: 10px;
-  cursor: pointer; flex-shrink: 0; line-height: 1;
+  border: none; background: var(--line); color: var(--text-2);
+  width: 20px; height: 20px; border-radius: 50%;
+  cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
 }
-.search-body { padding-top: 6px; }
+.search-body { padding-top: 8px; }
 .recent-row {
   display: flex; align-items: center; width: 100%;
-  padding: 11px 2px; font-size: 15px; color: var(--text);
+  padding: 12px 2px; font-size: 15px; color: var(--text);
 }
 button.recent-row { background: none; border: none; cursor: pointer; text-align: left; }
 .recent-word {
-  flex: 1; display: flex; align-items: center; gap: 10px;
+  flex: 1; display: flex; align-items: center; gap: 12px;
   background: none; border: none; color: var(--text); font-size: 15px;
   cursor: pointer; text-align: left; padding: 0;
 }
+.recent-word svg { color: var(--muted); flex-shrink: 0; }
 .recent-row .rm {
   margin-left: auto; border: none; background: none;
-  color: var(--muted); font-size: 13px; cursor: pointer; padding: 4px;
+  color: var(--muted); cursor: pointer; padding: 4px;
+  display: flex; align-items: center;
 }
 .sug-row { border: none; background: none; cursor: pointer; text-align: left; }
 
-/* 결과 상단 칩 행 */
+/* 결과 상단 칩 행 — 칩 bg + pill [Observed] */
 .chip-row {
   display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
-  padding: 6px 0 12px;
+  padding: 4px 0 14px;
 }
 .chip-row::-webkit-scrollbar { display: none; }
 .fchip {
-  flex-shrink: 0; background: var(--card-2); border: 1px solid var(--line);
+  flex-shrink: 0; background: var(--chip); border: 1px solid transparent;
   border-radius: 999px; padding: 7px 13px; font-size: 13px;
-  color: var(--muted); cursor: pointer; white-space: nowrap;
+  color: var(--text-2); cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 3px;
 }
 .fchip.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .sort-trigger { color: var(--text); }
+.sort-trigger svg { color: var(--muted); }
+
+/* 검색 결과는 레퍼런스처럼 더 좁은 좌우 여백(콘텐츠 ~10px) */
+.results-zone { margin: 0 -10px; }
 
 /* 정렬 시트 항목 */
 .sort-item {
@@ -240,21 +303,21 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
   color: var(--text); font-size: 15px; cursor: pointer; text-align: left;
 }
 .sort-item .desc { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
-.sort-check { margin-left: auto; color: var(--accent); font-weight: 700; }
+.sort-check { margin-left: auto; color: var(--accent); display: flex; }
 
-/* W02 상세 (다음 단계 대상 — 현재 구조 유지) */
+/* W02 상세 (다음 단계 대상) */
 .detail-hero {
   aspect-ratio: 21/9; border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center;
-  font-size: 64px; font-weight: 800; color: #7aa8ff;
-  background: linear-gradient(160deg, #24344f, #1b2740);
+  font-size: 64px; font-weight: 800; color: var(--thumb-fg);
+  background: linear-gradient(160deg, var(--thumb-a), var(--thumb-b));
   margin-bottom: 16px;
 }
 .detail-name { margin: 0 0 4px; font-size: 22px; }
 .spec-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .chip {
-  background: var(--card-2); border: 1px solid var(--line);
-  border-radius: 999px; padding: 6px 12px; font-size: 13px; color: var(--muted);
+  background: var(--chip); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 12px; font-size: 13px; color: var(--text-2);
 }
 .section-title { margin: 24px 0 10px; font-size: 17px; }
 .option-list { display: flex; flex-direction: column; gap: 8px; }
@@ -264,11 +327,11 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
   border-radius: var(--radius-sm); padding: 14px; color: var(--text);
   font-size: 15px; cursor: pointer; text-align: left;
 }
-.option-btn.on { border-color: var(--accent); background: #22345c55; }
+.option-btn.on { border-color: var(--accent); background: var(--sel); }
 .option-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .badge-soldout { color: var(--discount); font-size: 12px; font-weight: 700; }
 .qty-row { display: flex; align-items: center; gap: 14px; margin: 14px 0; }
-.qty-ctrl { display: flex; align-items: center; gap: 12px; background: var(--card-2); border-radius: 10px; padding: 6px 10px; }
+.qty-ctrl { display: flex; align-items: center; gap: 12px; background: var(--field); border-radius: 10px; padding: 6px 10px; }
 .qty-ctrl button {
   width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--card); color: var(--text); font-size: 16px; cursor: pointer;
@@ -300,8 +363,8 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
 .cart-thumb {
   width: 56px; height: 56px; border-radius: var(--radius-sm); overflow: hidden;
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px; font-weight: 800; color: #7aa8ff;
-  background: linear-gradient(160deg, #24344f, #1b2740);
+  font-size: 22px; font-weight: 800; color: var(--thumb-fg);
+  background: linear-gradient(160deg, var(--thumb-a), var(--thumb-b));
   flex-shrink: 0;
 }
 .cart-thumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -311,7 +374,7 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
 .qty-ctrl.sm { margin-top: 8px; gap: 8px; padding: 4px 8px; display: inline-flex; }
 .qty-ctrl.sm .link { margin-left: 4px; }
 
-/* A01 비교 카드 — 서버가 Tool 조회 데이터로만 조립 */
+/* A01 비교 카드 */
 .compare-card {
   margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm);
   background: var(--bg-elev); padding: 10px; display: flex; flex-direction: column; gap: 10px;
@@ -329,7 +392,7 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
   width: min(460px, 100vw); z-index: 40;
   background: var(--bg-elev); border-left: 1px solid var(--line);
   display: flex; flex-direction: column;
-  box-shadow: -12px 0 40px #0008;
+  box-shadow: -12px 0 40px var(--overlay);
 }
 .agent-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -350,10 +413,10 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
   bottom: 88px; z-index: 60;
-  background: var(--card-2); border: 1px solid var(--line);
+  background: var(--chip); border: 1px solid var(--line); color: var(--text);
   border-radius: 999px; padding: 10px 18px;
   display: flex; gap: 10px; align-items: center;
-  box-shadow: 0 8px 28px #0007;
+  box-shadow: var(--shadow);
 }
 
 .muted { color: var(--muted); }
@@ -400,22 +463,29 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
   width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
 }
 
-/* 바텀시트 공용 — 딤 + 상단 라운드 */
+/* 바텀시트 공용 — 그래버 + 딤 + 상단 라운드 [Observed] */
 .sheet-overlay {
   position: fixed; inset: 0; z-index: 50;
-  background: #000a;
+  background: var(--overlay);
   display: flex; align-items: flex-end; justify-content: center;
 }
 .sheet {
   width: 100%; max-width: 480px; max-height: 85vh; overflow-y: auto;
-  background: var(--bg-elev); border: 1px solid var(--line);
-  border-radius: 20px 20px 0 0; padding: 18px 18px 26px;
+  background: var(--bg-elev);
+  border-radius: 20px 20px 0 0; padding: 10px 20px 26px;
+}
+@media (prefers-color-scheme: light) {
+  .sheet { border: 1px solid var(--line); border-bottom: none; }
+}
+.sheet-grabber {
+  width: 36px; height: 4px; border-radius: 2px;
+  background: var(--line); margin: 0 auto 12px;
 }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .sheet-title { font-size: 16px; }
 .sheet-close {
   border: none; background: none; color: var(--muted);
-  font-size: 15px; cursor: pointer; padding: 4px;
+  cursor: pointer; padding: 4px; display: flex; align-items: center;
 }
 .reason-opt {
   display: flex; align-items: center; gap: 10px;
@@ -427,3 +497,4 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
 .reason-list { list-style: none; padding: 0; margin: 10px 0; }
 .sheet-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
 .sheet-actions .btn { min-width: 110px; }
+

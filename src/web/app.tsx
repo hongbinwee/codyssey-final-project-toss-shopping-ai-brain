@@ -11,6 +11,7 @@ import { Orders } from "./screens/Orders.tsx";
 import { OrderDetail } from "./screens/OrderDetail.tsx";
 import { AgentPanel, type AgentReply } from "./components/AgentPanel.tsx";
 import type { AgentBrain } from "./api.ts";
+import { IcBack, IcCart, IcHome, IcReceipt, IcSearch, IcSparkle } from "./icons.tsx";
 
 type Route =
   | { name: "shop"; category: string }
@@ -124,12 +125,13 @@ function App() {
       {route.name === "shop" && (
         <header className="top">
           <form
-            className="search"
+            className="search-field"
             onSubmit={(e) => {
               e.preventDefault();
               if (search.trim()) goto({ name: "search", query: search.trim() });
             }}
           >
+            <span className="field-ico"><IcSearch size={18} /></span>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -141,7 +143,7 @@ function App() {
             aria-label="장바구니"
             onClick={() => goto({ name: "cart" })}
           >
-            🛒
+            <IcCart size={23} />
             {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
           </button>
         </header>
@@ -153,7 +155,7 @@ function App() {
             aria-label="뒤로가기"
             onClick={() => history.back()}
           >
-            ‹
+            <IcBack size={24} />
           </button>
         </header>
       )}
@@ -172,6 +174,8 @@ function App() {
             onBack={() => goto({ name: "shop", category: "" })}
             onSubmit={(q) => goto({ name: "search", query: q })}
             onOpenProduct={(id) => goto({ name: "product", id })}
+            cartCount={cartCount}
+            onOpenCart={() => goto({ name: "cart" })}
           />
         )}
         {route.name === "product" && (
@@ -212,21 +216,20 @@ function App() {
       {showNav && (
         <nav className="bottom-nav">
           <button className="nav-item on" onClick={() => goto({ name: "shop", category: "" })}>
-            <span className="nav-ico" aria-hidden>🏠</span>홈
+            <IcHome size={22} />홈
           </button>
           <button className="nav-item" onClick={() => goto({ name: "search", query: "" })}>
-            <span className="nav-ico" aria-hidden>🔍</span>검색
+            <IcSearch size={22} />검색
           </button>
           <button className="nav-item" onClick={() => goto({ name: "cart" })}>
-            <span className="nav-ico" aria-hidden>🛒</span>장바구니
+            <IcCart size={22} />장바구니
             {cartCount > 0 && <span className="cart-badge nav-badge">{cartCount}</span>}
           </button>
           <button className="nav-item" onClick={() => goto({ name: "orders" })}>
-            <span className="nav-ico" aria-hidden>🧾</span>내 주문
+            <IcReceipt size={22} />내 주문
           </button>
-          {/* e2e 계약: accessible name은 정확히 "🤖 AI" */}
-          <button className="nav-item" aria-label="🤖 AI" onClick={() => setAgentOpen("shopping")}>
-            <span className="nav-ico" aria-hidden>🤖</span>AI
+          <button className="nav-item" onClick={() => setAgentOpen("shopping")}>
+            <IcSparkle size={22} />AI
           </button>
         </nav>
       )}

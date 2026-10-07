@@ -1,14 +1,17 @@
-# Commerce 디자인 시스템 추출 — 토스쇼핑 레퍼런스 기반 (2026-10-07)
+# Commerce 디자인 시스템 — 구현 Source of Truth (2026-10-07, v2)
 
 목적: 토스쇼핑 캡처(130장)와 공개 Toss Design System(TDS) 문서에서 구매자 UI 구현에 필요한 디자인 규칙을 추출한다. 토스 브랜드 자산(로고·폰트·아이콘·문구)의 복제가 목적이 아니라, **유사한 UX 구조를 가진 테스트 커머스 환경**을 만들기 위한 참고 기준이다.
+
+**이 문서는 모든 Commerce UI의 디자인 Source of Truth다.** 화면 구현·수정 시 아래 토큰과 컴포넌트 스펙을 기준으로 하고, 코드의 실제 토큰 정의는 `src/web/styles.css`의 `:root`(Light) / `prefers-color-scheme: dark` 블록이 따른다.
 
 ## 0. 표기 원칙
 
 - `[Observed]` = `reference/toss-shopping/screenshots/` 실측값(픽셀 색상 추출 + 화면 열람). 스크린샷 해상도 880×1920px이며 약 2x 스케일로 보고 pt 환산했다.
 - `[TDS]` = 공개 문서(tossmini-docs.toss.im/tds-mobile, tds-react-native)의 공식 토큰. **토스쇼핑 앱의 확정값이 아니라 공통 규칙으로만 사용한다.**
 - `[Inferred]` = 캡처에서 확인되나 정확한 수치 측정이 불가한 추정값.
+- `[Project]` = 레퍼런스에 대응물이 없거나 데이터·스코프 차이로 우리가 정한 값.
 
-공개 TDS에는 라이트 테마 토큰만 있고 다크 테마 토큰표는 비공개라, 다크 앱의 실제 색상은 전부 `[Observed]` 실측값을 우선한다.
+공개 TDS에는 라이트 테마 토큰만 있고 다크 테마 토큰표는 비공개다. 또한 **수집된 토스쇼핑 캡처 130장은 전부 다크 테마**라('light'로 분류된 7장은 밝은 상품 사진 오탐), Dark 토큰은 `[Observed]` 실측을, Light 토큰은 `[TDS]`+`[Inferred]`만 근거로 둔다.
 
 ## 1. Typography
 
@@ -19,7 +22,7 @@
 | 토스 앱 본문 폰트 | 캡처만으로 서체 확정 불가 [Inferred]. 참고로 공개된 'TossFace'는 **이모지 전용 폰트**이며 본문 산세리프가 아니다. 토스쇼핑 본문에 쓰이는 서체는 비공개/미확인으로 보고, 캡처상 중성적인 한글 산세리프 특징(균일한 획 대비·좁은 자폭 경향)만 구조적으로 참고한다 |
 | 권장 대체 | **Pretendard** (SIL Open Font License 1.1, 한글 산세리프, 토스 UI와 계열이 유사해 실무에서 토스류 UI의 표준 대체재로 널리 사용) |
 | Fallback | `-apple-system, Pretendard, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif` |
-| 현재 구현 | 시스템 스택만 사용(`-apple-system/Segoe UI/Malgun Gothic`) — Pretendard 미도입 |
+| 현재 구현 | **Pretendard Variable 도입 완료** — `index.html`이 jsdelivr CDN(orioncactus/pretendard v1.3.9, OFL)의 동적 서브셋을 로드하고 `styles.css`가 `"Pretendard Variable", Pretendard, -apple-system, ...` 스택을 사용. CDN 실패 시 시스템 산세리프로 자연스럽게 폴백 |
 
 ### 크기 단계 (캡처 관측 추정, pt)
 
@@ -56,6 +59,46 @@
 | 오버레이 딤 | 검정 55~70% | 바텀시트/슬라이드 패널 배경 |
 
 TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`, `grey900 #191F28`, `grey500 #8B95A1`, `grey600 #6B7684`. 실측 블루 `#2975F4`·레드 `#ED2C3B`가 TDS와 근사하므로, **프로젝트 토큰은 실측값을 표준으로 하고 TDS를 fallback 근거로 둔다.** 현재 `styles.css`의 `--bg #17171c`·`--accent #3182f6`은 방향이 맞지만 카드·칩·레드 계열 정밀 조정이 필요하다.
+
+## 2-1. 구현 Semantic Token (Light / Dark)
+
+`styles.css`에 반영된 실제 토큰. Light는 `[TDS]` 기반, Dark는 `[Observed]` 실측 기반. 시스템 `prefers-color-scheme`을 따르며 수동 토글은 두지 않는다 `[Project]`.
+
+| Semantic token | Light | 근거 | Dark | 근거 |
+| --- | --- | --- | --- | --- |
+| `--bg` 페이지 배경 | `#f4f6f8` | [Inferred] grey50~100 | `#171619` | [Observed] |
+| `--bg-elev` 상승 배경(시트·네비) | `#ffffff` | [TDS] | `#1f1f26` | [Observed] |
+| `--card` 카드 | `#ffffff` | [TDS] | `#202024` | [Observed] |
+| `--field` 입력 필드/인셋 | `#f2f4f6` | [TDS] grey100 | `#24252a` | [Observed] |
+| `--chip` 칩 배경 | `#f2f4f6` | [TDS] grey100 | `#27272c` | [Observed] |
+| `--chip-on` 칩 선택(중성) | `#e5e8eb` | [Inferred] | `#3a3a41` | [Observed] 홈 '쇼핑 홈' pill |
+| `--text` 기본 텍스트 | `#191f28` | [TDS] grey900 | `#f0f0f2` | [Observed] |
+| `--text-2` 보조 텍스트 | `#4e5968` | [TDS] grey700 | `#b0b4bd` | [Observed] |
+| `--muted` 메타/플레이스홀더 | `#8b95a1` | [TDS] grey500 | `#8b95a1` | [TDS 근사] |
+| `--line` 구분선 | `#e5e8eb` | [TDS] grey200 | `#2e2e33` | [Observed 근사] |
+| `--accent` CTA/링크/선택 | `#3182f6` | [TDS] blue500 | `#2975f4` | [Observed] |
+| `--accent-hover` | `#2272eb` | [TDS] blue600 | `#1f64d8` | [Inferred] |
+| `--accent-weak` 약한 강조 배경 | `#e8f3ff` | [TDS] blue50 | `#22345c` | [Inferred] |
+| `--sel` 선택 배경 tint | accent 10% | [Project] | accent 16% | [Project] |
+| `--discount` 특가/할인 레드 | `#f04452` | [TDS] red500 | `#ed2c3b` | [Observed] |
+| `--rate` 할인율 텍스트 | `#3182f6` | [Inferred] | `#a5b4d4` | [Observed] 라이트 스틸 |
+| `--star` 평점 ★ | `#f7b500` | [Inferred] 웜 옐로 | `#f7b500` | [Inferred] |
+| `--overlay` 시트 딤 | black 40% | [Inferred] | black 62% | [Observed] 55~70% |
+
+비고: 카트 배지 레드는 `--discount` 재사용(캡처 `#ae1231~`#d6293f` 대열과 근사). Light 테마는 실측 캡처가 없어 향후 라이트 캡처가 생기면 `[Observed]`로 재검증한다.
+
+## 2-2. Iconography
+
+이모지·혼합 스타일 금지. 전 UI 아이콘을 `src/web/icons.tsx`의 단일 라인 아이콘 시스템으로 통일 `[Project]` — 토스 고유 아이콘 복제가 아니라 범용 라인 아이콘을 캡처의 크기·stroke·배치에 맞춰 규격화한 것.
+
+| 규격 | 값 |
+| --- | --- |
+| 그리드 | 24×24 viewBox |
+| stroke | 2px, round cap/join, `fill: none`, `currentColor` 상속 |
+| 기본 크기 | 22px(헤더/네비), 12~13px(인라인 보조), 40px 터치 영역(`.icon-btn`) |
+| 채움 예외 | `IcStar`만 filled(평점 ★) |
+
+제공 아이콘: `IcSearch` `IcCart` `IcBack` `IcClose` `IcHome` `IcReceipt`(내 주문) `IcSparkle`(AI) `IcClock`(최근 검색) `IcChevronDown`(정렬·더보기) `IcCheck`(선택 ✓) `IcStar`.
 
 ## 3. Spacing / Radius
 
@@ -101,7 +144,7 @@ TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`
 
 - 홈 헤더: 검색 필드 + 마이(사람 아이콘) + 장바구니(빨간 배지 숫자) 아이콘.
 - 상세 헤더: 이미지 위 투명 오버레이 아이콘(좌: 뒤로가기, 우: 공유/검색/장바구니). 스크롤 시 변화는 별도 캡처로 미정밀 확인(상단 영역만 관찰됨) `[Inferred]`.
-- 하단 네비: 5탭 아이콘+라벨(홈/혜택/쇼핑/습관/전체), 선택 탭은 밝은 아이콘+라벨, 높이 약 56pt, 배경과 동일 톤+상단 구분선. **현재 앱에는 없음 — 구매자 UI에는 필요한 골격.**
+- 하단 네비: 5탭 아이콘+라벨(홈/혜택/쇼핑/증권/전체) — 이는 **토스 앱 전체 네비게이션**으로, 우리가 만드는 '쇼핑 구매 흐름' 네비게이션과 목적이 다르다. 관찰된 형식(아이콘 22px+라벨 ~10.5px, 선택 탭 밝게, 높이 ~56~62px, 상단 구분선, 아이콘-라벨 수직 스택)만 따르고 탭 구성은 우리 플로우에 맞게 **홈/검색/장바구니(배지)/내 주문/AI**로 정했다 `[Project]`.
 
 ### Bottom Sheet `[Observed]`
 
@@ -132,17 +175,29 @@ TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`
 - 결제 완료: 센터 체크 아이콘+타이틀+적립 CTA+주문 카드+배송지+안내 박스+Primary('홈으로 가기')+보조 링크('주문 상세 내역 보기').
 - CS: '문의 내용을 선택해주세요' 슬라이드 패널(주제 행 >) → 채팅 UI(버블+입력 바+스켈레톤).
 
-## 5. 현재 구현 토큰과의 매핑 제안
+### 공통 상태 스펙
 
-| 현재 `styles.css` | 레퍼런스 기준 제안 | 근거 |
+| 상태 | 스펙 | 근거 |
 | --- | --- | --- |
-| `--bg: #17171c` | 유지 (≈실측 `#171619`) | Observed |
-| `--card: #24242e` | `#202024`~`#232329` 대열로 조정 | 카드 실측이 현재보다 한 단계 어두움 |
-| `--accent: #3182f6` | `#2975F4` (실측) — 또는 유지(TDS blue500) 둘 다 근거 있음 | Observed vs TDS |
-| `--danger: #f47067` | 할인/위험 분리: 할인 `#ED2C3B`, 비활성은 회색 | Observed |
-| radius 16px | 카드 12~16pt 범위 유지, 시트 상단 ~20pt 추가 | Inferred |
-| 폰트 시스템 스택 | Pretendard 도입 + 시스템 fallback | 라이선스 안전 |
-| 하단 고정바 | 화면별 CTA 레이아웃 분리(버튼 최소 폭·줄바꿈 방지) | 감사 이슈 #3 |
+| Loading | 스켈레톤 블록 — 상품 그리드는 `.skel-card`(카드 형태 회색 블록), 리스트는 회색 바. 스피너보다 형태 스켈레톤 우선 | [Observed] 채팅·리스트 스켈레톤 |
+| Empty | 점선 테두리 카드 + 중앙 보조 텍스트 ('조건에 맞는 상품이 없어요', '최근 검색 기록이 없어요'). 과장된 일러스트 없이 텍스트 중심 | [Project] — 레퍼런스에 대응 empty 미촬영 |
+| Disabled | 회색 필 + 낮은 대비 텍스트, `opacity ~0.45` 또는 회색 버튼 ('품절', '다음' 미선택) | [Observed] |
+| Sold Out | 이미지 위 딤 + '품절' 오버레이 또는 `품절` 레드 배지, CTA 비활성 | [Observed] |
+| Error | `error.code` 표시 + 재시도 버튼. 전체 화면 전환보다 인라인 복구 우선 | [Project] |
+| 선택(Selection) | accent 테두리 + 약한 tint 배경(`--sel`), 또는 행 우측 accent `IcCheck` | [Observed] 정렬 시트 ✓, 옵션 카드 |
+
+## 5. 현재 구현 토큰과의 매핑 (반영 상태)
+
+| `styles.css` | 현재 값 | 상태 |
+| --- | --- | --- |
+| `--bg` | Light `#f4f6f8` / Dark `#171619` | ✅ semantic Light/Dark 분리됨 |
+| `--card` | Light `#fff` / Dark `#202024` | ✅ 실측 대열 |
+| `--accent` | Light `#3182f6` / Dark `#2975f4` | ✅ 테마별 분기 |
+| `--discount` | Light `#f04452` / Dark `#ed2c3b` | ✅ 할인 레드 실측 |
+| radius | 카드 14, 서브 10, 시트 상단 20, 이미지 12 | ✅ |
+| 폰트 | Pretendard Variable CDN + 시스템 fallback | ✅ |
+| 아이콘 | `icons.tsx` 단일 SVG 시스템 | ✅ 이모지 제거 완료 |
+| 하단 고정바 | `.bottom-bar` CTA + `.bottom-nav` 5탭 분리 | ✅ |
 
 ## 6. 자산·라이선스 메모
 
@@ -156,3 +211,4 @@ TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`
 
 ---
 작성 근거: `reference/toss-shopping/screenshots/` 중 home/01, product-detail/04·095·069, cart/44, checkout/051, orders/079·080·084·085·088·089, payment/077·131, search/101·102·103·105·110, reviews/19, cs/057·062 직접 열람 + 픽셀 색상 측정. TDS 값은 공개 문서 검색 결과이며 쇼핑 앱 확정값이 아니다.
+v2 변경: Light/Dark semantic 토큰표(2-1) 신설, Iconography(2-2) 신설, 공통 상태 스펙 신설, 홈 카테고리 pill 반영, Pretendard 도입 반영, §5 제안→반영 상태로 갱신. 구현 검증은 `test-results/compare/{light,dark}_*.png`(390×844, colorScheme 컨텍스트)로 수행.

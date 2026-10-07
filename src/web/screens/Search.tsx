@@ -6,6 +6,7 @@ import type { SearchResult } from "../../contracts.ts";
 import { ProductCard } from "../components/ProductCard.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
 import { Empty, ErrorState } from "../components/CommerceState.tsx";
+import { IcBack, IcCart, IcCheck, IcChevronDown, IcClock, IcClose, IcSearch } from "../icons.tsx";
 
 const RECENTS_KEY = "recent-searches";
 const loadRecents = (): string[] => {
@@ -51,11 +52,15 @@ export function Search({
   onBack,
   onSubmit,
   onOpenProduct,
+  cartCount = 0,
+  onOpenCart,
 }: {
   query: string;
   onBack: () => void;
   onSubmit: (q: string) => void;
   onOpenProduct: (id: string) => void;
+  cartCount?: number;
+  onOpenCart?: () => void;
 }) {
   const [text, setText] = useState(query);
   const [submitted, setSubmitted] = useState(query);
@@ -140,9 +145,10 @@ export function Search({
         }}
       >
         <button type="button" className="back-btn" aria-label="뒤로가기" onClick={onBack}>
-          ‹
+          <IcBack size={24} />
         </button>
         <div className="search-field">
+          <span className="field-ico"><IcSearch size={18} /></span>
           <input
             ref={inputRef}
             value={text}
@@ -160,10 +166,14 @@ export function Search({
                 inputRef.current?.focus();
               }}
             >
-              ✕
+              <IcClose size={10} />
             </button>
           )}
         </div>
+        <button type="button" className="icon-btn" aria-label="장바구니" onClick={onOpenCart}>
+          <IcCart size={23} />
+          {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+        </button>
       </form>
 
       {mode === "recents" && (
@@ -175,14 +185,14 @@ export function Search({
             recents.map((w) => (
               <div key={w} className="recent-row">
                 <button className="recent-word" onClick={() => submit(w)}>
-                  <span aria-hidden>🕐</span> {w}
+                  <IcClock size={18} /> {w}
                 </button>
                 <button
                   className="rm"
                   aria-label={w + " 삭제"}
                   onClick={() => removeRecent(w)}
                 >
-                  ✕
+                  <IcClose size={14} />
                 </button>
               </div>
             ))
@@ -209,7 +219,7 @@ export function Search({
       )}
 
       {mode === "results" && (
-        <section className="search-body">
+        <section className="search-body results-zone">
           <div className="chip-row">
             <button className={"fchip" + (cat === "" ? " on" : "")} onClick={() => setCat("")}>
               전체
@@ -224,7 +234,7 @@ export function Search({
               </button>
             ))}
             <button className="fchip sort-trigger" onClick={() => setSortOpen(true)}>
-              {SORT_LABEL[sort]} ⌄
+              {SORT_LABEL[sort]} <IcChevronDown size={14} />
             </button>
           </div>
           {loading ? (
@@ -273,7 +283,7 @@ export function Search({
                 {SORT_LABEL[s]}
                 <span className="desc">{SORT_DESC[s]}</span>
               </span>
-              {sort === s && <span className="sort-check">✓</span>}
+              {sort === s && <span className="sort-check"><IcCheck size={18} /></span>}
             </button>
           ))}
         </BottomSheet>

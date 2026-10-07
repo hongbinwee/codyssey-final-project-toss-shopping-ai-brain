@@ -5,6 +5,8 @@ web/app.js
 .pgdata/
 test-results/
 playwright-report/
+pw-output/
+shots/
 blob-report/
 eval/results/
 *-out.txt

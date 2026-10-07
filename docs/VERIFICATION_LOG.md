@@ -154,3 +154,26 @@
 - 상품 이미지는 DB image_urls가 비어 있어 프런트 convention 매핑(/assets/products/{id}.webp)으로 해결. DB 시드 변경 없음. 시드 확장(상품 수/할인·적립 필드)은 미승인 제안 상태.
 - 레퍼런스 대비 의도적 차이: 히어로 캐러셀·아이콘 그리드 대신 AI 카드, 하단 네비는 토스 앱 전체가 아닌 쇼핑 범위(홈/검색/장바구니/내 주문/AI), 토스 브랜드 자산 미사용.
 - 미해결 차이: 상품 카드 할인 배지/원가 취소선/적립 pill/카드 위 장바구니 아이콘은 데이터 필드 부재로 미구현(제안 대기).
+
+## 2026-10-07 디자인 시스템 정본화 + 홈·검색·목록 Visual 보정
+
+### 검증
+
+| 명령 / 확인 | 결과 |
+| --- | --- |
+| npm run check (tsc) | PASS |
+| node --test tests/unit/*.test.ts | PASS — 18/18 |
+| node --test --test-concurrency=1 tests/integration/*.test.ts | PASS — 전 스위트 ✔ (t1-catalog+t2-orders 별도 확인 10/10) |
+| npx playwright test --output=pw-output | PASS — 14/14 |
+| node scripts/build-web.ts | PASS |
+| 390×844 colorScheme light/dark 캡처 | PASS — shots/compare/{light,dark}_{home,search_results,search_idle,search_empty,home_cat}.png |
+
+메모:
+- COMMERCE_DESIGN_SYSTEM.md를 구현 Source of Truth로 v2 정본화: [Project] 태그 추가, Light/Dark semantic 토큰표(2-1)·Iconography(2-2)·공통 상태 스펙 신설, 하단 네비 라벨 정정(토스 앱 전체 네비 vs 우리 쇼핑 네비 구분), Pretendard 도입 반영.
+- 이모지 → src/web/icons.tsx 단일 SVG 라인 아이콘(24 그리드·stroke 2·currentColor) 전환: 검색/카트/뒤로가기/닫기/홈/주문/AI/시계/chevron/✓/★.
+- 홈 카테고리 언더라인 탭 → pill 칩(.cat-tab, 선택=--chip-on+bold)으로 교정 — home/01의 '쇼핑 홈' pill 관측값 반영.
+- 정렬 바텀시트에 grabber(.sheet-grabber) 추가, 검색 결과 헤더에 카트 아이콘 추가(레퍼런스 관측).
+- e2e 로케이터 'AI' exact로 갱신(SVG aria-hidden으로 접근 이름은 'AI').
+- COMMERCE_UI_SPEC.md 7-1에 다음 Phase(상세→옵션→카트) 스펙 기록: 구매 가능 기본 옵션 자동 선택, 품절 옵션 기본 선택 제외, 전부 품절일 때만 CTA disabled, 옵션 변경은 공용 BottomSheet, 선택·수량에 따라 가격/CTA 즉시 갱신.
+- 사고 기록: playwright 기본 outputDir(test-results)이 실행 시 폴더를 비워 기존 비교 캡처·분석 스크립트 삭제됨. 이후 스크린샷은 shots/compare/, 스크립트는 scripts/shoot-themes.mjs로 이동. 중복 실행으로 남은 고아 node --test 프로세스 14개는 사용자 승인 후 PID 명시로 정리.
+- live eval은 LLM_API_KEY 미설정으로 계속 BLOCKED.
