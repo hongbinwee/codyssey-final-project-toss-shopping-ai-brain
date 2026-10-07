@@ -6,8 +6,16 @@ import { readFileSync } from "node:fs";
 await ensureDevDb();
 connectDb(process.env.DATABASE_URL!);
 
+// --demo: 개발/데모 DB 전용 Demo Catalog(db/seeds/demo-*.json).
+// phase SEEDS에 넣지 않아 setupTestDb/eval 등 테스트 적재 경로와 완전히 분리된다.
+// 네임스페이스 p-d-*/v-d-*/r-d-*에만 upsert+reconcile을 적용하며 fixture(p-a~c 등)는 건드리지 않는다.
+const demo = process.argv.some((a) => a === "--demo");
+const DEMO_FILES = ["demo-catalog.json", "demo-reviews.json"];
+
+// --demo에 --phase가 없으면 전체 시드(=99)를 암시한다:
+// "node scripts/seed.ts --demo" 한 번으로 fixture + demo가 갖춰진다.
 const phase = Number(
-  process.argv.find((a) => a.startsWith("--phase="))?.split("=")[1] ?? "0",
+  process.argv.find((a) => a.startsWith("--phase="))?.split("=")[1] ?? (demo ? "99" : "0"),
 );
 
 const SEEDS: Record<number, string[]> = {
@@ -16,9 +24,13 @@ const SEEDS: Record<number, string[]> = {
   3: ["scenarios.json"],
 };
 
-const files = Object.entries(SEEDS)
+const phaseFiles = Object.entries(SEEDS)
   .filter(([p]) => Number(p) <= phase)
   .flatMap(([, f]) => f);
+
+// demo 파일은 products 계열 테이블이 있는 phase>=1에서만 적재한다.
+const files = [...phaseFiles, ...(demo && phase >= 1 ? DEMO_FILES : [])];
+if (demo && phase < 1) console.log("--demo는 phase>=1이 필요합니다. demo 시드를 건너뜁니다.");
 
 if (files.length === 0) {
   console.log("no seeds defined for phase <= " + phase);
@@ -53,7 +65,32 @@ for (const f of files) {
         [v.id, v.product_id, v.option_values, v.spec_overrides, v.unit_price_won, v.stock_qty],
       );
     }
+  } else if (f === "demo-catalog.json") {
+    // deterministic fixture(catalog.json)와 구조는 같되, 충돌 시 active=true로 되돌려
+    // 이전 reconcile로 비활성화된 행이 seed에 다시 포함됐을 때 복구되게 한다.
+    for (const p of data.products) {
+      await sql.unsafe(
+        "INSERT INTO products (id, name, brand, category, description, image_urls, specs_json, active) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,true) " +
+          "ON CONFLICT (id) DO UPDATE SET name=$2, brand=$3, category=$4, description=$5, image_urls=$6::jsonb, specs_json=$7::jsonb, active=true",
+        [p.id, p.name, p.brand, p.category, p.description, p.image_urls, p.specs],
+      );
+    }
+    for (const v of data.variants) {
+      await sql.unsafe(
+        "INSERT INTO product_variants (id, product_id, option_values_json, spec_overrides_json, unit_price_won, stock_qty, active) VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,true) " +
+          "ON CONFLICT (id) DO UPDATE SET product_id=$2, option_values_json=$3::jsonb, spec_overrides_json=$4::jsonb, unit_price_won=$5, stock_qty=$6, active=true, version=1",
+        [v.id, v.product_id, v.option_values, v.spec_overrides, v.unit_price_won, v.stock_qty],
+      );
+    }
   } else if (f === "reviews.json") {
+    for (const r of data) {
+      await sql.unsafe(
+        "INSERT INTO reviews (id, product_id, variant_id, rating, body, source_kind, source_ref, written_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) " +
+          "ON CONFLICT (id) DO UPDATE SET product_id=$2, variant_id=$3, rating=$4, body=$5, source_kind=$6, source_ref=$7, written_at=$8",
+        [r.id, r.product_id, r.variant_id, r.rating, r.body, r.source_kind, r.source_ref, r.written_at],
+      );
+    }
+  } else if (f === "demo-reviews.json") {
     for (const r of data) {
       await sql.unsafe(
         "INSERT INTO reviews (id, product_id, variant_id, rating, body, source_kind, source_ref, written_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) " +
@@ -101,6 +138,63 @@ for (const f of files) {
     }
   }
   console.log("seeded " + f);
+}
+
+// demo reconcile: 이번 seed 파일에 없는 데모 네임스페이스 행을 정리한다.
+// FK 순서 reviews → cart_items → product_variants → products.
+// 주문 스냅샷(order_items)이 참조하는 variant는 삭제할 수 없으므로 active=false로 남기고,
+// 참조가 없는 행만 DELETE한다. 같은 seed 파일을 반복 실행해도 결과가 같다(멱등).
+if (demo && phase >= 1) {
+  const cat = read("demo-catalog.json") as { products: { id: string }[]; variants: { id: string }[] };
+  const rev = read("demo-reviews.json") as { id: string }[];
+  const pids = cat.products.map((p) => p.id);
+  const vids = cat.variants.map((v) => v.id);
+  const rids = rev.map((r) => r.id);
+
+  const [dr] = await sql.unsafe<{ c: number }[]>(
+    "SELECT count(*)::int AS c FROM reviews WHERE (id LIKE 'r-d-%' OR product_id LIKE 'p-d-%') AND NOT (id = ANY($1))",
+    [rids],
+  );
+  await sql.unsafe(
+    "DELETE FROM reviews WHERE (id LIKE 'r-d-%' OR product_id LIKE 'p-d-%') AND NOT (id = ANY($1))",
+    [rids],
+  );
+  await sql.unsafe(
+    "DELETE FROM cart_items WHERE variant_id LIKE 'v-d-%' AND NOT (variant_id = ANY($1))",
+    [vids],
+  );
+  const [regOi] = await sql.unsafe<{ r: string | null }[]>(
+    "SELECT to_regclass('public.order_items') AS r",
+  );
+  if (regOi.r) {
+    await sql.unsafe(
+      "UPDATE product_variants SET active=false WHERE id LIKE 'v-d-%' AND NOT (id = ANY($1)) " +
+        "AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id = product_variants.id)",
+      [vids],
+    );
+    await sql.unsafe(
+      "DELETE FROM product_variants WHERE id LIKE 'v-d-%' AND NOT (id = ANY($1)) " +
+        "AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id = product_variants.id)",
+      [vids],
+    );
+  } else {
+    await sql.unsafe(
+      "DELETE FROM product_variants WHERE id LIKE 'v-d-%' AND NOT (id = ANY($1))",
+      [vids],
+    );
+  }
+  // variant가 남은 stale 상품은 비활성화(주문 이력 표시용으로 보존), 없으면 삭제
+  await sql.unsafe(
+    "UPDATE products SET active=false WHERE id LIKE 'p-d-%' AND NOT (id = ANY($1)) " +
+      "AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id)",
+    [pids],
+  );
+  await sql.unsafe(
+    "DELETE FROM products WHERE id LIKE 'p-d-%' AND NOT (id = ANY($1)) " +
+      "AND NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id)",
+    [pids],
+  );
+  console.log("demo reconcile done (removed stale r-d reviews: " + dr.c + ")");
 }
 console.log("seed ok (phase <= " + phase + ")");
 await sql.end();

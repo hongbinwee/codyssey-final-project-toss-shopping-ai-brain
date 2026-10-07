@@ -1,13 +1,13 @@
-// 쇼핑 홈 — 카테고리 탭 + AI 진입 카드 + 상품 그리드. 검색은 #/search로 이동한다.
+// 쇼핑 홈 — 카테고리 그룹 탭 + 특가 레일 + AI 진입 카드 + 상품 그리드.
+// 탭의 category prop은 display-meta의 상위 그룹 id(digital/beauty/...)이며,
+// 상품은 한 번만 불러와 클라이언트에서 그룹으로 나눈다 (demo 규모 ~28개).
 import { useEffect, useState } from "react";
 import { api, type ApiResult } from "../api.ts";
-import type { SearchResult } from "../../contracts.ts";
+import type { ProductSummary, SearchResult } from "../../contracts.ts";
 import { ProductCard } from "../components/ProductCard.tsx";
 import { Empty, ErrorState } from "../components/CommerceState.tsx";
 import { IcSparkle } from "../icons.tsx";
-
-const CAT_LABEL: Record<string, string> = { monitor: "모니터" };
-const catLabel = (c: string) => CAT_LABEL[c] ?? c;
+import { CATEGORY_GROUPS, SECTION_LABEL, PRODUCT_META, groupOf, groupLabel } from "../display-meta.ts";
 
 export function Shopping({
   category,
@@ -22,29 +22,36 @@ export function Shopping({
 }) {
   const [res, setRes] = useState<ApiResult<SearchResult> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [cats, setCats] = useState<string[]>([]);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     setLoading(true);
-    api<SearchResult>(
-      "/api/products" + (category ? "?category=" + encodeURIComponent(category) : ""),
-    )
-      .then((r) => {
-        setRes(r);
-        // 탭 목록은 첫 성공 응답에서 한 번만 채운다 (필터링된 응답으로 덮지 않기 위함)
-        setCats((prev) =>
-          prev.length || !r.ok
-            ? prev
-            : [...new Set(r.data.items.map((i) => i.category))],
-        );
-      })
+    api<SearchResult>("/api/products?limit=50")
+      .then(setRes)
       .finally(() => setLoading(false));
-  }, [category, tick]);
+  }, [tick]);
+
+  const items = res?.ok ? res.data.items : [];
+  // 상품이 실제 있는 그룹만 탭으로 만든다.
+  const groups = CATEGORY_GROUPS.filter((g) =>
+    items.some((i) => groupOf(i.category) === g.id),
+  );
+  const shown = category
+    ? items.filter((i) => groupOf(i.category) === category)
+    : items;
+  // 홈 상단 특가 레일 — static sectionTags 기반(추천 엔진 없음, 04-C에서 확장)
+  const flash =
+    category === ""
+      ? items.filter(
+          (i) =>
+            i.availability !== "SOLD_OUT" &&
+            PRODUCT_META[i.product_id]?.sections?.includes("flash-sale"),
+        )
+      : [];
 
   return (
     <div className="screen">
-      {cats.length > 0 && (
+      {groups.length > 0 && (
         <div className="cat-tabs">
           <button
             className={"cat-tab" + (category === "" ? " on" : "")}
@@ -52,16 +59,31 @@ export function Shopping({
           >
             전체
           </button>
-          {cats.map((c) => (
+          {groups.map((g) => (
             <button
-              key={c}
-              className={"cat-tab" + (category === c ? " on" : "")}
-              onClick={() => onCategory(c)}
+              key={g.id}
+              className={"cat-tab" + (category === g.id ? " on" : "")}
+              onClick={() => onCategory(g.id)}
             >
-              {catLabel(c)}
+              {g.label}
             </button>
           ))}
         </div>
+      )}
+
+      {flash.length > 0 && (
+        <section className="rail-sec">
+          <h3 className="section-h rail-h">{SECTION_LABEL["flash-sale"]}</h3>
+          <div className="rail">
+            {flash.map((p: ProductSummary) => (
+              <ProductCard
+                key={p.product_id}
+                p={p}
+                onOpen={() => onOpenProduct(p.product_id)}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       <button className="ai-entry" onClick={onOpenAgent}>
@@ -72,7 +94,9 @@ export function Shopping({
         </span>
       </button>
 
-      <h3 className="section-h">전체 상품</h3>
+      <h3 className="section-h">
+        {category ? groupLabel(category) : "전체 상품"}
+      </h3>
 
       {loading ? (
         <div className="product-grid">
@@ -89,14 +113,14 @@ export function Shopping({
           text={"조회에 실패했어요 (" + res.error.code + ")"}
           onRetry={() => setTick((t) => t + 1)}
         />
-      ) : res.data.items.length === 0 ? (
-        <Empty text="조건에 맞는 상품이 없어요" />
-      ) : (
-        <div className="product-grid">
-          {res.data.items.map((p) => (
-            <ProductCard
-              key={p.product_id}
-              p={p}
+        ) : shown.length === 0 ? (
+          <Empty text="조건에 맞는 상품이 없어요" />
+        ) : (
+          <div className="product-grid">
+            {shown.map((p) => (
+              <ProductCard
+                key={p.product_id}
+                p={p}
               onOpen={() => onOpenProduct(p.product_id)}
             />
           ))}

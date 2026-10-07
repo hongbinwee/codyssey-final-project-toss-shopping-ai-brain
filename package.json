@@ -9,6 +9,7 @@
     "build": "node scripts/build-web.ts",
     "db:migrate": "node scripts/migrate.ts",
     "db:seed": "node scripts/seed.ts",
+    "db:seed:demo": "node scripts/seed.ts --demo",
     "test:unit": "node --test tests/unit/*.test.ts",
     "test:integration": "node --test --test-concurrency=1 tests/integration/*.test.ts",
     "test:e2e": "playwright test",

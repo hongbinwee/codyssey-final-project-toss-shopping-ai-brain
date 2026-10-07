@@ -33,7 +33,7 @@
 
 - 참고 캡처: `home/01`.
 - 관찰 구조: 검색 필드 → 카테고리 pill 칩 행(가로 스크롤, 선택 칩은 중성 밝기 상승 — 언더라인 아님) → 히어로 프로모 카드(밝은 배경+페이지 n|m) → 아이콘 단축키 행 → 개인화 상품 섹션('~님을 위한' + 칩) → 상품 그리드.
-- 구현(현재 1차 — 04-C에서 화면 단위 재구성 예정): 카테고리 pill 칩(전체 + `category` distinct. `.cat-tab` pill, `.on`=`--chip-on`+bold) → AI 진입 카드 → '전체 상품' 그리드.
+- 구현(04-B 기준 — 04-C에서 화면 단위 재구성 예정): 카테고리 pill 칩 = display-meta의 상위 그룹(전체 + 디지털/뷰티/패션/리빙/식품. fixture `monitor`는 디지털 그룹에 포함 — DB category 값은 유지하고 그룹 매핑만 UI에 둔다) → '지금 특가' 가로 레일(sectionTags=`flash-sale` 상품, static merchandising) → AI 진입 카드 → 상품 그리드. 상품은 `/api/products?limit=50` 1회 조회 후 클라이언트에서 그룹 필터링(서버 `category` 파라미터는 단일 값이라 그룹 표현 불가).
 - **[Superseded 2026-10-07]** 'AI 진입 카드가 프로모/merchandising 영역을 대신한다'는 판단 폐기 — merchandising block(프로모/특가/추천/배너)은 04-B Demo Catalog + demo/static UI로 별도 재현한다. **AI 진입점:** AI/Brain 진입점 자체는 향후 필요하지만, 홈 중심 대형 AI 카드의 현재 위치·형태는 확정된 방향이 아니다 — 04-C Home 재구성에서 Toss IA·merchandising 구조를 깨지 않는 위치로 결정한다. 단축키 행·페이징 히어로는 실제 기능 없이도 홈 구조 재현 범위에 포함(04-C에서 레퍼런스 대조 후 결정).
 - UI State: 로딩 스켈레톤(카드형 회색 블록), Error(재시도), Empty.
 - Backend: `GET /api/products?query=&category=` — 카테고리 필터는 서버 `category` 파라미터 사용.
@@ -55,8 +55,8 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 
 - 참고 캡처: `home/01`, `search/105`, `product-list` 계열.
 - 관찰: 2열, 정사각(1:1) 실사진, 좌상단 `n% 특가` 레드 pill, 이미지 우하단 장바구니 아이콘 버튼, 본문 = 상품명 2줄 → `n%`+가격(bold) → 단가 → `★평점(개수)` → `최대 N원 적립`.
-- 구현: 2열 그리드 + 1:1 이미지 + 상품명 2줄 클램프 + 가격 bold + `★평점 · 리뷰 n`. **할인율·단가·적립·담기 아이콘은 가격/할인 데이터가 DB에 없으므로 표시하지 않음** [Observed — 데이터 부재]. 품절은 이미지 딤드+`품절` 배지 유지.
-- 상품 이미지: `ProductSummary.image`(=`image_urls[0]`)이 있으면 사용. 현재 시드는 전부 빈 배열이라 **로컬 생성 이미지 `/assets/products/{product_id}.webp`로 fallback**(`onError` 시 기존 글자 플레이스홀더). 이 매핑은 테스트 환경용 프레젠테이션 계층 결정 — DB/시드 변경 없음.
+- 구현(04-B): 2열 그리드 + 1:1 이미지 + 상품명 2줄 클램프 + 가격 bold + `★평점 · 리뷰 n` + 좌상단 `특가` 배지(sections=flash-sale) + 할인율%(discount 컬러) + 원가 취소선 + 배송 라벨 — 전부 `display-meta.ts`의 표시 메타 기반 **[Project]**. 할인율은 `original_price_won` 대비 최저가 옵션가로 계산한다. 단가·적립·카드 위 담기 아이콘은 여전히 미구현(후속). 품절은 이미지 딤드+`품절` 배지 유지.
+- 상품 이미지: `ProductSummary.image`(=`image_urls[0]`)이 있으면 사용하고 없으면 로컬 생성 이미지 `/assets/products/{product_id}.webp`로 fallback(`onError` 시 글자 플레이스홀더). [04-B] demo-catalog는 image_urls에 실제 `/assets/products/p-d-*.webp`를 기록하고 파일도 함께 커밋한다 — fixture(p-a~c)는 image_urls가 비어 있어 convention fallback이 계속 동작한다.
 - Backend: `GET /api/products` 응답 그대로.
 
 ## 6. 검색 화면 [1차]
@@ -65,7 +65,7 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 - 관찰: (a) 진입 시 최근 검색어 행(시계 아이콘+단어+X 삭제). (b) 입력 중 자동완성 리스트 — **입력한 부분만 파란 강조**. (c) 결과 상단에 패싯/필터 칩 행 + '추천순 ⌄'. (d) 필터는 전체 페이지(탭+칩+'더 보기'+카운트 CTA). (e) 정렬은 바텀시트(선택 ✓+설명).
 - 구현 State: `idle`(최근 검색어 — localStorage, 삭제 가능, 최대 10개) → `typing`(자동완성 — `/api/products?query=` 상위 5개 이름, 입력 부분 accent 마크) → `submitted`(결과 그리드+카테고리 칩 행+정렬 트리거). Empty='조건에 맞는 상품이 없어요'(e2e 계약 유지), Error=재시도.
 - 정렬: 바텀시트 '추천순'/'가격 낮은 순' — 서버 `sort=RELEVANCE|PRICE_ASC` 그대로.
-- 필터: 카테고리 칩(전체+distinct). 토스식 전체 필터 페이지(가격대·브랜드·특징 탭)는 패싯 데이터 부족으로 **[후속 제안]**, 이번엔 칩 행으로 대체.
+- 필터: 카테고리 칩 = 결과에 존재하는 상위 그룹 칩(전체+그룹). 결과가 클라이언트 필터이므로 칩 선택 후에도 칩 목록이 유지된다. 토스식 전체 필터 페이지(가격대·브랜드·특징 탭)는 **[후속 제안]** 유지.
 - 키보드: 진입 시 autofocus, X 버튼으로 지우기(typing으로 복귀), Enter submit 시 recents 저장 + `?q=` 반영(뒤로가기로 이전 검색 복귀).
 - Backend: `GET /api/products`(query/category/sort 파라미터). 신규 엔드포인트 없음.
 

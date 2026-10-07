@@ -199,14 +199,39 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 700; font-size: 15px;
 }
+/* 카드 배지 — 썸네일 좌상단 칩 [Observed product-list] */
+.thumb-badge {
+  position: absolute; top: 8px; left: 8px;
+  background: var(--discount); color: #fff;
+  font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 6px;
+}
 .product-info { padding: 9px 2px 0; }
 .product-name {
   font-size: 15px; font-weight: 500; line-height: 1.38; margin-bottom: 4px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .product-price { font-size: 17px; font-weight: 800; margin-bottom: 3px; }
+.price-rate { color: var(--discount); margin-right: 4px; }
+.price-orig {
+  font-size: 12.5px; color: var(--muted);
+  text-decoration: line-through; margin-bottom: 3px;
+}
 .product-meta { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .product-meta svg { color: var(--star); }
+.product-meta .delivery-tag { margin-left: 2px; }
+.product-meta .delivery-tag::before { content: "· "; }
+
+/* 홈 특가 레일 — 가로 스크롤 상품 행 [Observed home merchandising] */
+.rail-sec { margin: 0 calc(-1 * var(--pad)); }
+.rail-h { margin-left: var(--pad); }
+.rail {
+  display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none;
+  padding: 0 var(--pad) 4px;
+}
+.rail::-webkit-scrollbar { display: none; }
+.rail .product-card { flex: 0 0 118px; }
+.rail .product-name { font-size: 13.5px; -webkit-line-clamp: 1; }
+.rail .product-price { font-size: 15px; }
 
 /* 스켈레톤 */
 .skel-card { display: flex; flex-direction: column; gap: 6px; }
@@ -305,14 +330,16 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
 .sort-item .desc { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
 .sort-check { margin-left: auto; color: var(--accent); display: flex; }
 
-/* W02 상세 (다음 단계 대상) */
+/* W02 상세 — 정사각 상품 이미지 [Observed product-detail] */
 .detail-hero {
-  aspect-ratio: 21/9; border-radius: var(--radius);
+  position: relative; aspect-ratio: 1; border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center;
   font-size: 64px; font-weight: 800; color: var(--thumb-fg);
   background: linear-gradient(160deg, var(--thumb-a), var(--thumb-b));
-  margin-bottom: 16px;
+  margin-bottom: 16px; overflow: hidden;
 }
+.detail-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.detail-hero[data-fallback]::after { content: attr(data-fallback); }
 .detail-name { margin: 0 0 4px; font-size: 22px; }
 .spec-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .chip {

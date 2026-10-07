@@ -73,6 +73,17 @@ describe("t1 catalog", () => {
     const rr = await getReviews({ product_id: "p-zzz" });
     assert.ok(!rr.ok && rr.error.code === "NOT_FOUND");
   });
+
+  test("demo catalog is isolated from test db", async () => {
+    // --demo 시드는 dev 전용이다. 테스트 적재 경로(setupTestDb)에 섞이면
+    // 아래 단정들이 깨지므로, 데모 네임스페이스 유입을 직접 검증한다.
+    const all = await searchProducts({ limit: 50 });
+    assert.ok(all.ok);
+    assert.equal(all.data.items.length, 3);
+    assert.ok(all.data.items.every((i) => !i.product_id.startsWith("p-d-")));
+    const dp = await getProduct({ product_id: "p-d-ear-lite" });
+    assert.ok(!dp.ok && dp.error.code === "NOT_FOUND");
+  });
 });
 
 // sql 풀 연결을 닫아야 서브프로세스가 종료하고 다음 파일로 진행된다.

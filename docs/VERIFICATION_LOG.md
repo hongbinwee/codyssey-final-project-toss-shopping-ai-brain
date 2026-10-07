@@ -179,3 +179,30 @@
 - COMMERCE_UI_SPEC.md 7-1에 다음 Phase(상세→옵션→카트) 스펙 기록: 구매 가능 기본 옵션 자동 선택, 품절 옵션 기본 선택 제외, 전부 품절일 때만 CTA disabled, 옵션 변경은 공용 BottomSheet, 선택·수량에 따라 가격/CTA 즉시 갱신.
 - 사고 기록: playwright 기본 outputDir(test-results)이 실행 시 폴더를 비워 기존 비교 캡처·분석 스크립트 삭제됨. 이후 스크린샷은 shots/compare/, 스크립트는 scripts/shoot-themes.mjs로 이동. 중복 실행으로 남은 고아 node --test 프로세스 14개는 사용자 승인 후 PID 명시로 정리.
 - live eval은 LLM_API_KEY 미설정으로 계속 BLOCKED.
+
+## 2026-10-08 04-B Demo Catalog 구현
+
+### 검증
+
+| 명령 / 확인 | 결과 |
+| --- | --- |
+| npm run db:seed:demo (dev DB commerce) | PASS — 데모 상품 25·variant 55·review 80 적재. dev DB 실측 products 28 / variants 61 / reviews 89 |
+| npm run db:seed:demo ×3 반복 실행 | PASS — 멱등. p-d-*/v-d-*/r-d-* reconcile 후 동일 행수 유지 |
+| node node_modules/typescript/bin/tsc --noEmit | PASS — 오류 0 |
+| node scripts/build-web.ts | PASS — web/app.js |
+| node --test tests/unit/*.test.ts | PASS — 18/18 |
+| node --test (integration 파일별 순차 실행) | PASS — cancel 18 / checkout 7 / health 2 / session 1 / t1-cart 30 / t1-catalog 6(데모 격리 단정 신설) / t2-orders 5 |
+| Playwright e2e | PASS — 14/14 |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
+| node scripts/eval.ts --mode=stub --split=holdout | PASS — 18/18 |
+| 브라우저 실검증 (localhost:3200, 390×844, demo-a) | PASS — 홈 특가 레일·그룹 탭 필터·검색 그룹 칩·상세 실사진 히어로·스펙 라벨 확인. 캡처: shots/demo-b/ (gitignore) |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
+
+메모:
+- Demo Catalog는 seed --demo로만 적재. 기본 seed(--phase)는 기존 deterministic fixture(catalog.json 3상품/6variant/8review)만 유지해 commerce_test에 데모 데이터가 유입되지 않는다. t1-catalog에 "demo catalog is isolated from test db" 단정 추가.
+- Demo reconcile: seed --demo 실행 시 p-d-* 네임스페이스 한정으로 FK 순서(order_items→cart_items→reviews→variants→products) 정리 후 재적재. order_items가 참조하는 상품은 삭제 대신 active=false. p-a/p-b/p-c·사용자·주문 등 기존 데이터는 건드리지 않는다.
+- 리뷰 수/평점은 실제 저장된 SYNTHETIC review row 기준으로 통일(review_count_display 미사용 — 대규모 표시 수가 필요하면 aggregate 통계와 sample text를 분리하는 별도 계약을 그때 설계).
+- 카테고리: 기존 fixture는 category=monitor 유지, 신규 데모는 digital/beauty/fashion/living/food 상위 카테고리. display-meta의 CATEGORY_GROUPS가 monitor를 디지털 UI 그룹에 묶어 표시.
+- 상품 이미지 25장은 imagegen으로 생성 후 600×600 WebP로 변환해 web/assets/products/에 배치(총 ~210KB). 무단 스크래핑·브랜드 자산 사용 없음.
+- 사고 기록: 병렬 재실행으로 남은 고아 node --test 프로세스가 commerce_test를 동시 reseed해 스위트가 간헐 지연. 임의 PID 강제종료는 자동 검토 거부로, 파일 단위 개별 실행으로 회귀 검증을 완료했다. 통합 스위트는 한 번에 하나만 실행할 것.
+- live eval은 LLM_API_KEY 미설정으로 계속 BLOCKED.

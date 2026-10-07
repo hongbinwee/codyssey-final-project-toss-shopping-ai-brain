@@ -5,6 +5,7 @@ import type {
   CartView, MatchedVariant, ProductDetail, ReviewsResult,
  } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
+import { PRODUCT_META, SPEC_LABEL } from "../display-meta.ts";
 
 export function Product({
   productId,
@@ -73,15 +74,27 @@ export function Product({
   if (!detail) return <Loading />;
   if (!detail.ok) return <ErrorState text="상품을 불러오지 못했어요" />;
   const p = detail.data.product;
+  const heroSrc = p.images?.[0] ?? "/assets/products/" + p.id + ".webp";
 
   return (
     <div className="screen">
-      <div className="detail-hero">{p.name.slice(0, 1)}</div>
+      <div className="detail-hero">
+        <img
+          src={heroSrc}
+          alt={p.name}
+          onError={(e) => {
+            // 이미지가 없으면 첫 글자 플레이스홀더로 대체한다.
+            const el = e.currentTarget;
+            el.style.display = "none";
+            el.parentElement?.setAttribute("data-fallback", p.name.slice(0, 1));
+          }}
+        />
+      </div>
       <h2 className="detail-name">{p.name}</h2>
       <div className="muted">{p.brand} · {p.description}</div>
       <div className="spec-chips">
         {Object.entries(p.specs).map(([k, v]) => (
-          <span key={k} className="chip">{k}: {v}</span>
+          <span key={k} className="chip">{SPEC_LABEL[k] ?? k}: {v}</span>
         ))}
       </div>
 
@@ -98,9 +111,6 @@ export function Product({
             >
               <span>
                 {Object.values(v.option_values).join(" · ")}{" "}
-                <span className="muted">
-                  {v.effective_specs.resolution} · {v.effective_specs.refresh_rate}
-                </span>
               </span>
               <span>
                 {fmtWon(v.unit_price_won)}

@@ -111,16 +111,17 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 | 과거 결정 (Superseded) | 현재 결정 | 변경 근거 |
 | --- | --- | --- |
 | Toss Navigation을 프로젝트용으로 단순화한다 | 토스 로고·상표·고유 자산을 제외하고 Navigation 구조·탭 수/배치·선택 상태·높이·아이콘/라벨 관계·가로 스크롤·화면 내 위치를 레퍼런스대로 최대한 따른다 | 독창적 네비게이션은 목표가 아니며, IA 차이가 '토스쇼핑 유사 환경' 판단을 깨뜨림 |
-| 상품 3개(전부 모니터)로 Commerce UI 검증이 충분하다 | 기존 fixture 보존 + 약 20~30개 Demo Catalog 추가 계획(04-B) | 카테고리 레일·추천·특가 등 Home merchandising을 실제 데이터로 검증 불가 |
+| 상품 3개(전부 모니터)로 Commerce UI 검증이 충분하다 | 기존 fixture 보존 + 25개 Demo Catalog 추가 완료(04-B, 2026-10-08) | 카테고리 레일·추천·특가 등 Home merchandising을 실제 데이터로 검증 불가 |
 | 홈의 AI 진입 카드가 merchandising 영역을 대신한다 | merchandising block(프로모/특가/추천/기획전/배너)을 demo/static UI로 별도 재현. AI 진입점은 유지하되 홈 중심 대형 카드의 위치·형태는 미확정 — 04-C Home 재구성에서 Toss IA·merchandising을 깨지 않는 곳으로 결정 | merchandising 밀도가 토스쇼핑 홈의 핵심 시각 특성 |
 | 개별 컴포넌트 유사도가 화면 구조보다 우선이다 | 화면 단위 IA·콘텐츠 밀도·수직 구조의 재구성이 우선 | 색상/컴포넌트가 유사해도 화면 전체 인상이 다르면 목표 미달 |
 | Brain 개발이 현재 우선순위다 | Commerce Environment(로드맵 04~09) 완성 후 Brain(11~12) | Brain 검증 환경이 먼저 실제 서비스 수준이어야 함. 기존 Tool Registry·Stub·Backend는 보존하되 Brain 완성으로 간주하지 않음 |
 | 04 홈·검색·목록 1차 구현이 최종 완료다 | 기능적 1차 구현만 완료. Visual QA 목표 미달이므로 04 Toss Shopping Shell은 진행 중 | 390×844 실제 비교에서 구조적 유사성 부족 확인 |
 
-연결 계획(계획만, 미실행):
+연결 계획(계획만, 미실행) 및 04-B 구현 결정(2026-10-08):
 
 - **Demo Catalog(04-B, 방향 승인됨 — 세부 구현은 제안 후 승인):** 디지털/가전·패션·뷰티·생활·식품 카테고리 약 20~30개. 단순 화면 채우기가 아니라 이후 Shopping Brain이 사용할 데이터다. 상품 필드: category·image·정가/판매가·할인율·배송 정보·구조화 스펙·variants·재고/품절·rating·표시용 리뷰 수·실제 샘플 리뷰 텍스트·merchandising section tag(recommended/flash-sale/popular/new 등). 정합성: 상세 가격↔Cart/Checkout 서버 가격 일치, 옵션/재고는 실제 Backend 계약 연결, rating·review count 산출 방식 명시, 표시용 리뷰 수와 실제 리뷰 행 수가 다르면 명시적 모델링, 없는 리뷰를 Brain이 존재한다고 인식하지 않게 한다.
-- **Fixture 보호(04-B 선결):** 기존 p-a/p-b/p-c·V-A-24/V-A-27과 회귀 테스트 보존. 단, ID 유지만으로는 부족 — 검색 결과 개수·가격 조건·상품 집합을 고정값으로 가정하는 테스트가 있을 수 있으므로 deterministic fixture와 Demo Catalog 분리안을 04-B 시작 전에 제시·승인받는다(방법 미결정, 스키마 임의 변경 금지).
+- **Fixture 보호(04-B, 완료):** p-a/p-b/p-c·V-A-24/V-A-27·모든 기존 테스트 기댓값 불변(검색 '모니터'=3건, 가격 필터={p-a,p-b}, 리뷰 수 등). 분리 방식 = 파일 분리(db/seeds/demo-*.json) + seed.ts `--demo` 플래그로만 적재 — phase SEEDS에 넣지 않아 `setupTestDb`·eval 등 모든 테스트 경로와 구조적으로 분리. `commerce_test`에 데모가 없음을 단정하는 회귀 assertion을 t1-catalog에 추가. 네임스페이스 reconcile: seed에 없는 p-d-*/v-d-*/r-d-* 행을 FK 순서로 정리, order_items가 참조하는 variant는 삭제 대신 active=false로 보존(멱등).
+- **Demo Catalog(04-B, 2026-10-08 구현 완료):** 25개 데모 상품(디지털7·뷰티7·패션4·리빙4·식품3) + 55 variants + 80 합성 리뷰를 `db/seeds/demo-catalog.json`/`demo-reviews.json`으로 추가. 카테고리는 상위 그룹만 사용하고 fixture `monitor`는 변경하지 않음 — `src/web/display-meta.ts`의 CATEGORY_GROUPS가 UI '디지털'에 묶는다. 정가·배송 라벨·섹션 태그·스펙 한글 라벨은 DB가 아니라 display-meta(PRODUCT_META·SECTION_LABEL·SPEC_LABEL)에서 관리(migration 없음). 실제 가격·재고·주문은 서버/DB가 정본. review_count_display는 쓰지 않음 — 표시 수·평점은 실제 reviews 행 기준. 상품 이미지는 생성 webp(`/assets/products/p-d-*.webp`, 25장) 커밋, 실제 상표·쇼핑몰 이미지 미사용.
 - **Personalization:** 'OOO님을 위한 추천'은 초기 static/demo → Brain 구현 후 교체 가능한 구조.
 - **Theme override(제안·미구현):** 개발/QA용 `?theme=light|dark|system`. 사용자용 수동 토글은 없음.
 - **재구현하지 않는 것:** 토스 브랜드 자산(로고·전용 폰트·아이콘 원본·문구), 오늘의 뽑기/스크롤하기/포인트 피드/미니맵 등 Brain 무관 기능, 판매자센터·실제 정산.

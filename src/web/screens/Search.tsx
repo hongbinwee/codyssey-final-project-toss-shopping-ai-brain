@@ -7,6 +7,7 @@ import { ProductCard } from "../components/ProductCard.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
 import { Empty, ErrorState } from "../components/CommerceState.tsx";
 import { IcBack, IcCart, IcCheck, IcChevronDown, IcClock, IcClose, IcSearch } from "../icons.tsx";
+import { CATEGORY_GROUPS, groupOf, groupLabel } from "../display-meta.ts";
 
 const RECENTS_KEY = "recent-searches";
 const loadRecents = (): string[] => {
@@ -19,10 +20,6 @@ const loadRecents = (): string[] => {
 };
 const saveRecents = (list: string[]) =>
   localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, 10)));
-
-// 카테고리 id -> 표시 라벨. 없는 id는 원문 노출(시드 확장 시 자동 반영).
-const CAT_LABEL: Record<string, string> = { monitor: "모니터" };
-const catLabel = (c: string) => CAT_LABEL[c] ?? c;
 
 type Sort = "RELEVANCE" | "PRICE_ASC";
 const SORT_LABEL: Record<Sort, string> = {
@@ -100,13 +97,13 @@ export function Search({
     if (!submitted) return;
     setLoading(true);
     api<SearchResult>(
-      "/api/products?query=" + encodeURIComponent(submitted) +
-        (cat ? "&category=" + encodeURIComponent(cat) : "") +
-        "&sort=" + sort,
+      // 카테고리 칩은 상위 그룹(digital/beauty/...)으로, 결과에서 클라이언트 필터한다.
+      // 서버 category 파라미터는 단일 값만 받아 monitor가 디지털 그룹에 못 들어가므로 쓰지 않는다.
+      "/api/products?query=" + encodeURIComponent(submitted) + "&sort=" + sort,
     )
       .then(setRes)
       .finally(() => setLoading(false));
-  }, [submitted, cat, sort, tick]);
+  }, [submitted, sort, tick]);
 
   const submit = (q: string) => {
     const v = q.trim();
@@ -132,8 +129,12 @@ export function Search({
   const mode =
     text !== submitted ? (text ? "suggest" : "recents") : submitted ? "results" : "recents";
 
-  // 결과에 등장한 카테고리로 필터 칩을 만든다 (데이터 없는 필터는 보여주지 않는다)
-  const cats = res?.ok ? [...new Set(res.data.items.map((i) => i.category))] : [];
+  // 결과에 등장한 상위 그룹으로 필터 칩을 만든다 (데이터 없는 필터는 보여주지 않는다)
+  const resItems = res?.ok ? res.data.items : [];
+  const cats = CATEGORY_GROUPS.filter((g) =>
+    resItems.some((i) => groupOf(i.category) === g.id),
+  ).map((g) => g.id);
+  const shown = cat ? resItems.filter((i) => groupOf(i.category) === cat) : resItems;
 
   return (
     <div className="search-screen">
@@ -230,7 +231,7 @@ export function Search({
                 className={"fchip" + (cat === c ? " on" : "")}
                 onClick={() => setCat(c)}
               >
-                {catLabel(c)}
+                {groupLabel(c)}
               </button>
             ))}
             <button className="fchip sort-trigger" onClick={() => setSortOpen(true)}>
@@ -252,11 +253,11 @@ export function Search({
               text={"조회에 실패했어요 (" + res.error.code + ")"}
               onRetry={() => setTick((t) => t + 1)}
             />
-          ) : res.data.items.length === 0 ? (
+          ) : shown.length === 0 ? (
             <Empty text="조건에 맞는 상품이 없어요" />
           ) : (
             <div className="product-grid">
-              {res.data.items.map((p) => (
+              {shown.map((p) => (
                 <ProductCard
                   key={p.product_id}
                   p={p}
