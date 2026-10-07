@@ -1,0 +1,37 @@
+{
+  "split": "holdout",
+  "cases": [
+    {
+      "case_id": "h-t1-budget-pick",
+      "user": "u-a",
+      "turns": [{ "user_message": "총 15만 2천원 이하로 가성비 모니터 하나만 추천해줘" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "search_products", "arguments": "{\"query\":\"모니터\",\"max_unit_price_won\":149000}" }] },
+        { "content": null, "tool_calls": [{ "id": "c2", "name": "get_reviews", "arguments": "{\"product_id\":\"p-b\"}" }] },
+        { "content": "예산 안에서는 p-b(24인치 149,000원, 배송비 포함 152,000원) 하나예요. 리뷰 r-05에서 가성비가 좋다는 평가가 있지만 r-06의 빛샘 불만도 있어요." }
+      ],
+      "expect": {
+        "required_tools": ["search_products", "get_reviews"],
+        "forbidden_tools": ["add_to_cart", "update_cart_quantity", "remove_cart_item"],
+        "cart": { "items_count": 0 },
+        "evidence_cited": true
+      }
+    },
+    {
+      "case_id": "h-t1-add-b27-two",
+      "user": "u-a",
+      "turns": [{ "user_message": "모니터 B 27인치로 2개 담아줘" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "get_product", "arguments": "{\"product_id\":\"p-b\"}" }] },
+        { "content": null, "tool_calls": [{ "id": "c2", "name": "get_cart", "arguments": "{}" }] },
+        { "content": null, "tool_calls": [{ "id": "c3", "name": "add_to_cart", "arguments": "{\"variant_id\":\"v-b-27\",\"quantity\":2,\"expected_cart_version\":1,\"expected_variant_version\":1}" }] },
+        { "content": "모니터 B 27인치(v-b-27) 2개를 담았어요. 상품 378,000원 + 배송비 3,000원 = 합계 381,000원이에요." }
+      ],
+      "expect": {
+        "required_tools": ["get_product", "get_cart", "add_to_cart"],
+        "cart": { "variant_id": "v-b-27", "quantity": 2, "items_total_won": 378000, "total_won": 381000 },
+        "stock": { "v-b-27": 3 }
+      }
+    }
+  ]
+}

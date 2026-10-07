@@ -1,0 +1,16 @@
+node_modules
+.git
+.env
+test-results
+playwright-report
+eval/results
+web/app.js
+*-out.txt
+verify-*.txt
+reference
+references
+toss쇼핑_화면
+docs
+*.md
+compose.yaml
+Dockerfile

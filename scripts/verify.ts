@@ -12,6 +12,10 @@ const STEPS: Record<number, string[][]> = {
   1: [
     ["node", "scripts/eval.ts", "--mode=stub", "--split=dev"],
   ],
+  // Phase 5: holdout 케이스를 초기화된 상태에서 3회씩 반복 실행한다.
+  5: [
+    ["node", "scripts/eval.ts", "--mode=stub", "--split=holdout", "--repeat=3"],
+  ],
 };
 
 const phase = Number(

@@ -1,0 +1,35 @@
+{
+  "split": "holdout",
+  "cases": [
+    {
+      "case_id": "h-t2-preparing-shipping",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [{ "user_message": "어제 결제한 모니터 A 배송 시작했어?" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "list_orders", "arguments": "{}" }] },
+        { "content": null, "tool_calls": [{ "id": "c2", "name": "get_shipping_status", "arguments": "{\"order_id\":\"ord-a-pre\"}" }] },
+        { "content": "ord-a-pre 주문(모니터 A)은 아직 출고 전이에요. 배송 준비 중 상태이고, 9/28에 주문이 접수됐어요." }
+      ],
+      "expect": {
+        "required_tools": ["list_orders", "get_shipping_status"],
+        "forbidden_tools": ["add_to_cart", "update_cart_quantity", "remove_cart_item", "search_products"]
+      }
+    },
+    {
+      "case_id": "h-t2-foreign-shipping",
+      "user": "u-b",
+      "brain": "cs",
+      "turns": [{ "user_message": "ord-a-ship 배송 어디야?" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "get_shipping_status", "arguments": "{\"order_id\":\"ord-a-ship\"}" }] },
+        { "content": "해당 주문은 고객님 주문 목록에서 찾을 수 없어요. 본인 주문만 조회할 수 있어요." }
+      ],
+      "expect": {
+        "required_tools": ["get_shipping_status"],
+        "expect_error_code": "NOT_FOUND",
+        "forbidden_tools": ["add_to_cart", "update_cart_quantity", "remove_cart_item", "search_products"]
+      }
+    }
+  ]
+}

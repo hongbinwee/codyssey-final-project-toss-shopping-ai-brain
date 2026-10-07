@@ -89,3 +89,15 @@ Phase 4 추가 결정:
 | 자격 조건(p0-v1) | 소유 주문·CONFIRMED·결제 PAID+환불 NONE·취소 요청 없음·배송 PREPARING. 배송 레코드 없으면 SHIPPING_UNVERIFIED(불가) | 환불액=payments.paid_amount_won 전액, 주문 합계와 불일치 시 DATA_INCONSISTENT로 중단 |
 | 취소-출고 경합 | cancel과 shipOrder가 같은 orders 행 FOR UPDATE로 직렬화 — 패자는 CONFIRMATION_STALE(버전 범프) 또는 INVALID_STATE | REQUESTED와 IN_TRANSIT 동시 성립 불가(설계 §8.1) |
 | e2e 상품 격리 | t3-cancel은 모니터 C(v-c-27) 구매 — checkout-t2(v-b-24)와 다른 옵션 | 재고 차감이 옵션 버전을 올리는 것은 문서화된 정상 동작. 병렬 스펙끼리 같은 옵션을 사면 STALE_QUOTE가 의도대로 발생하므로 상품을 분리 |
+
+Phase 5 추가 결정:
+
+| 항목 | 결정 | 이유/메모 |
+| --- | --- | --- |
+| holdout 케이스 | dev와 표현·예산·옵션·주문 대상을 다르게 한 6개(T1×2: 152,000 cap 추천/v-b-27×2개, T2×2: PREPARING 설명/타인 주문 조회, T3×2: 배송 정보 없음 불가/2턴 확인 전 실행 차단) | 시드 주문 집합이 고정돼 있어 대상 조합은 한정적 — 변형은 표현·사유·상태 축으로 |
+| 반복 실행 | `--repeat=N`을 eval에 추가하고 케이스당 cleanUserData+resetHistory+새 provider로 3회 | 각 반복이 초기화된 동일 조건에서 실행돼야 재현성 있는 분모가 된다 |
+| eval arg 버그 | `--k=v`를 인식 못해 flag가 무시되던 파서를 `--k=v`/`k=v` 모두 허용으로 수정 | silent misconfiguration — 잘못된 split/mode로 PASS가 보고될 수 있던 실질적 위험. Phase 5에서 발견·수정 |
+| 배포 아티팩트 | 단일 stage Dockerfile(node:24-alpine, npm ci 전체, node src/server.ts) | esbuild가 서버 시작 시 웹 번들을 만들므로 devDependencies 필요. 멀티 스테이지 슬리밍은 P0 과잉. 이미지에 .env/문서/테스트 결과를 넣지 않는 .dockerignore 포함 |
+| 배포 실행 | 로컬 빌드·기동·health/SPA까지 검증하고 외부 배포는 BLOCKED | 배포처 계정/레지스트리가 미정 — 준비물과 절차만 확정해 README에 기록 |
+| 접근 코드 운영 | TEST_USER_CODES env가 코드→사용자 매핑. 사용자 테스트용 계정도 seed가 아니라 env로 추가 | 코드 목록은 Source에 있지만 테스트용 코드는 전달용으로만 쓰고 클라이언트/로그 노출 금지 — 공용 actor 선택·DB reset·시뮬레이터는 API에 노출되지 않는 구조 유지 |
+| core-journeys 범위 | 기존 스펙이 덮는 경로는 반복하지 않고 미커버 필수 상태 5건만 작성 | ponytail: 전체 여정 재실행보다 커버리지 갭을 채우는 게 목적. 읽기 위주라 전용 사용자·재고 격리 불필요 |

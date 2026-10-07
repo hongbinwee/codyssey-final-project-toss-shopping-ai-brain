@@ -112,3 +112,23 @@
 메모:
 - e2e 병렬 충돌 수정: t3-cancel이 checkout-t2와 같은 옵션(v-b-24)을 구매해 한쪽이 STALE_QUOTE(재고 차감→옵션 버전 증가는 설계상 정상 거절). t3는 아무 스펙도 안 쓰는 모니터 C(v-c-27)로 격리. 도메인 규칙은 변경하지 않음.
 - checkout-t2의 '주문 상세' 헤딩 대기 5s→15s (병렬 부하 시 응답 지연 플레이크 방지, t3와 동일 기준).
+
+## 2026-10-07 Phase 5
+
+### 통합 검증 — core journeys·holdout 평가·배포 준비
+
+| 명령 | 결과 |
+| --- | --- |
+| node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 (6케이스×3회, 회마다 사용자 데이터 초기화). T1: 예산 152,000 cap 추천·v-b-27 2개 담기 / T2: PREPARING 설명·타인 주문 NOT_FOUND / T3: 배송정보없음 불가·2턴 확인 전 실행 차단 |
+| docker build -t ai-commerce-p0:test . | PASS — 이미지 빌드 성공 |
+| docker run (host.docker.internal DB, stub) → /health + / | PASS — {"ok":true,"db":"connected"}, SPA HTML 서빙 확인 후 컨테이너 정리 |
+| node scripts/verify.ts --phase=5 | PASS — tsc/build + unit 18/18 + integration 58/58 + e2e 14/14(core-journeys 5건 포함) + dev eval 16/16 + holdout eval 18/18(6×3) |
+
+메모:
+- eval arg 파서 버그 수정: `--k=v`가 매칭되지 않아 --split/--mode가 조용히 무시되던 문제. 기존 호출이 우연히 기본값과 일치해 지금까지 드러나지 않았다. `--k=v`와 `k=v` 둘 다 허용하도록 교정.
+- eval에 `--repeat=N` 추가: 케이스를 N회 실행하며 회마다 cleanUserData+resetHistory+새 provider. 결과 id는 `case#rN`.
+- verify.ts STEPS[5]: holdout stub eval 3회를 누적 게이트에 추가.
+- core-journeys.spec.ts는 기존 스펙이 덮지 않는 필수 상태만(검색 없음/품절 옵션 비활성/배송 정보 없음/DELIVERED 취소 불가/CS NO_INFORMATION). 중복 여정은 다시 검증하지 않는다.
+- Dockerfile은 로컬 빌드·기동·health/SPA까지 검증. 외부 배포(레지스트리/호스트)는 계정 미정으로 BLOCKED — 배포 절차는 README에 기록.
+- 실사용자 5명 테스트는 사람이 수행할 작업. USER_TEST_REPORT.md에 프로토콜·기록 양식을 준비하고 미실시로 표시.
+- live eval은 LLM_API_KEY 미설정으로 계속 BLOCKED.

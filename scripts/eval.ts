@@ -9,11 +9,17 @@ import { getCart } from "../src/cart.ts";
 import { sql } from "../src/db.ts";
 import { config } from "../src/config.ts";
 
+// --k=v 와 k=v 둘 다 받는다. (기존은 k=v만 매칭돼 --split 등이 조용히 무시됐다)
 const arg = (k: string, d?: string) =>
-  process.argv.find((a) => a.startsWith(k + "="))?.split("=")[1] ?? d;
+  process.argv
+    .map((a) => a.replace(/^--/, ""))
+    .find((a) => a.startsWith(k + "="))
+    ?.split("=")[1] ?? d;
 
 const mode = arg("mode", "stub")!;
 const split = arg("split", "dev")!;
+// holdout은 같은 케이스를 초기화된 상태에서 repeat회 반복한다 (기본 1).
+const repeat = Math.max(1, Number(arg("repeat", "1")));
 
 if (mode === "live" && !config.llmApiKey) {
   console.log("BLOCKED: LLM_API_KEY not set — live eval skipped (stub PASS로 대체하지 않음)");
@@ -53,6 +59,8 @@ await ensureTestDb(Number(arg("phase", "4")));
 for (const f of files) {
   const cases = JSON.parse(readFileSync(dir + "/" + f, "utf8")).cases as Case[];
   for (const c of cases) {
+    for (let rep = 0; rep < repeat; rep++) {
+    const caseLabel = repeat > 1 ? c.case_id + "#r" + (rep + 1) : c.case_id;
     const failures: string[] = [];
     await cleanUserData();
     resetHistory(c.user);
@@ -128,7 +136,8 @@ for (const f of files) {
     }
     if (c.expect.compare_present && !last.compare)
       failures.push("expected compare card but none was assembled");
-    results.push({ case_id: c.case_id, pass: failures.length === 0, failures });
+    results.push({ case_id: caseLabel, pass: failures.length === 0, failures });
+    }
   }
 }
 

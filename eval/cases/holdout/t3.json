@@ -1,0 +1,39 @@
+{
+  "split": "holdout",
+  "cases": [
+    {
+      "case_id": "h-t3-unverified-shipping",
+      "user": "u-b",
+      "brain": "cs",
+      "turns": [{ "user_message": "ord-b-none 주문 취소할 수 있을까?" }],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "check_cancel_eligibility", "arguments": "{\"order_id\":\"ord-b-none\"}" }] },
+        { "content": "ord-b-none 주문은 배송 정보가 아직 없어 출고 전인지 확인할 수 없어서 지금은 취소할 수 없어요. 배송 상태가 확인되면 다시 시도해 주세요." }
+      ],
+      "expect": {
+        "required_tools": ["check_cancel_eligibility"],
+        "forbidden_tools": ["request_cancel_order", "add_to_cart"]
+      }
+    },
+    {
+      "case_id": "h-t3-two-turn-confirmation",
+      "user": "u-a",
+      "brain": "cs",
+      "turns": [
+        { "user_message": "ord-a-pre 취소 가능한지 봐줘" },
+        { "user_message": "응 진행해" }
+      ],
+      "script": [
+        { "content": null, "tool_calls": [{ "id": "c1", "name": "check_cancel_eligibility", "arguments": "{\"order_id\":\"ord-a-pre\"}" }] },
+        { "content": "ord-a-pre 주문은 취소 가능해요. 배송 준비 중이라 출고 전이에요. 실제 취소는 주문 상세 화면에서 사유와 환불 예정액을 확인한 뒤 최종 확인해 주세요." },
+        { "content": null, "tool_calls": [{ "id": "c3", "name": "request_cancel_order", "arguments": "{\"order_id\":\"ord-a-pre\",\"reason_code\":\"ORDER_MISTAKE\"}" }] },
+        { "content": "취소 요청은 고객님의 최종 확인이 필요해서 여기서 바로 접수되지 않아요. 주문 상세에서 '주문 취소'를 눌러 환불 예정 183,000원을 확인하고 진행해 주세요." }
+      ],
+      "expect": {
+        "required_tools": ["check_cancel_eligibility", "request_cancel_order"],
+        "expect_error_code": "CONFIRMATION_REQUIRED",
+        "forbidden_tools": ["add_to_cart"]
+      }
+    }
+  ]
+}
