@@ -3,6 +3,8 @@
 > 2026-10-05 · 텍스트 와이어프레임 계획 v1. 범위 기준은 [CORE_TASK_SCOPE.md](CORE_TASK_SCOPE.md), 제품 방향은 [SHOPPING_BRAIN_VISION.md](SHOPPING_BRAIN_VISION.md)다. 아래 배치·통합·전환·실패 대응은 프로젝트 설계이며 토스 앱의 관찰 사실과 구분한다. 코드·DB 스키마·API 계약은 구현하지 않는다.
 
 > **[2026-10-07 방향 업데이트]** W01의 '최소 홈'(검색+상품 그리드+AI 진입 행)과 "프로모션·보상 영역을 덜어낸다"는 기준은 Superseded — 현재 방향은 토스쇼핑 홈을 화면 단위 IA·콘텐츠 밀도까지 재구성하고 merchandising은 demo/static으로 재현한다(로드맵 04-B~04-C, PROJECT_CONTEXT.md §현재 프로젝트 방향). W02~W06·A01/A02의 화면 책임·Tool 연결·실패 상태 규칙은 여전히 유효하다.
+>
+> **[2026-10-07 우선순위]** 이 문서는 **업무 규칙·Backend 정책·사용자 Journey의 본질적 요구**의 근거로 유효하다. 반면 화면 배치·Navigation·옵션 선택 UX·Bottom Sheet·CTA 상태·Interaction·Visual 구조는 **[docs/COMMERCE_UI_SPEC.md](docs/COMMERCE_UI_SPEC.md)가 정본**이다 — 이 문서의 화면 표와 충돌하면 UI Spec과 레퍼런스 캡처를 우선한다.
 
 ## 1. 최소 화면 구성
 
@@ -72,6 +74,8 @@ flowchart TD
 | **연결 Tool** | `get_product()` · `get_reviews()` · `add_to_cart()` · `get_cart()` |
 | **성공/실패 상태** | 담기 성공은 저장된 카트 확인 후 피드백·카트 보기로 표시한다. **옵션 품절:** 해당 옵션 비활성·이유 표시, 임의 대체 금지. **리뷰 근거 부족:** 실사용 판단의 한계를 표시하고 확인된 스펙은 별도로 제공한다. 실행 전 가격/재고 변경은 최신 정보 확인 후 재요청하게 한다. Tool 실패/결과 미확정은 성공으로 표시하지 않는다. |
 | **이전/다음 화면** | 이전: W01 / W03 / A01의 후보·근거. 다음: W03 또는 A01. 뒤로는 진입 경로를 복원하며, 옵션 선택만으로 주문서를 열지 않는다. |
+
+> **[Superseded 2026-10-07 → UI_SPEC §7-1]** W02의 "옵션은 본문에 배치"와 "필요한 옵션을 모두 고르기 전 담기 CTA 비활성" 규칙은 폐기됐다. 현재 기준([docs/COMMERCE_UI_SPEC.md](docs/COMMERCE_UI_SPEC.md) §7-1): 진입 시 구매 가능한 기본 옵션 자동 선택, 품절 옵션은 기본 선택 제외(표시·disabled), 옵션 변경은 공용 BottomSheet, 구매 가능 옵션이 하나도 없을 때만 CTA disabled, 선택·수량 변경 시 가격/CTA 즉시 갱신.
 
 ### W03
 

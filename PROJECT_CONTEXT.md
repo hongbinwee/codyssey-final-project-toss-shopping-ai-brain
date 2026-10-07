@@ -8,7 +8,7 @@
 
 ### 방향 변경 배경
 
-초기 전략은 "핵심 구매 기능 + 주문/배송/취소 Backend + AI Tool interface + 간소화된 쇼핑 UI"로 Brain 실행 환경을 먼저 검증하는 것이었다. Backend(카탈로그·카트·주문·결제·배송·취소, Tool Registry, Guardrail, 멱등성, 평가)는 이 방향으로 Phase 0~5까지 완성됐다.
+초기 전략은 "핵심 구매 기능 + 주문/배송/취소 Backend + AI Tool interface + 간소화된 쇼핑 UI"로 Brain 실행 환경을 먼저 검증하는 것이었다. Backend(카탈로그·카트·주문·결제·배송·취소, Tool Registry, Guardrail, 멱등성, 평가)는 이 방향으로 Phase 0~5까지 로컬 구현·검증이 완료됐다(live LLM eval·외부 배포·실사용자 검증은 미완료 — 로드맵 12~13).
 
 그러나 실제 화면을 사용해 본 결과 Frontend가 토스쇼핑의 구매 환경과 너무 달랐다 — 상품 3개·단일 카테고리라 콘텐츠 밀도가 없고, merchandising/프로모션 구조가 없으며, Header·Search·Navigation의 Information Architecture가 실제 앱과 다르다. 앱을 처음 열었을 때 '토스쇼핑을 참고한 서비스'라는 인상이 나지 않았다. 너무 단순한 데모 쇼핑몰 위에서는 "실제 Commerce 환경에서 동작하는 AI Agent"를 증명하기 어렵다고 판단해 방향을 수정한다.
 
@@ -18,13 +18,18 @@
 ### 무엇을 구현하고 무엇을 생략하는가
 
 - **실제 Flow로 동작해야 하는 핵심 Commerce 기능:** 검색, 카테고리/상품 탐색, 상품 상세, 리뷰, 옵션, 장바구니, 주문/모의 결제, 주문 내역, 배송, 취소.
-- **구현하지 않는 Brain 무관 사업 기능:** 오늘의 뽑기, 스크롤하기, 포인트 피드, 미니맵, 게임성 요소, 판매자센터, 실제 정산 — 데모 UI조차 만들지 않는다.
-- **demo/static으로 재현하는 영역:** Home의 시각 구성에 필요한 프로모션·특가·추천·기획전·배너 등 merchandising block — 실제 Backend 없이 시드 데이터로 표현한다.
+- **구현하지 않는 Brain 무관 사업 기능(영역 D):** 오늘의 뽑기, 스크롤하기, 포인트 피드, 미니맵, 게임성 요소, 판매자센터, 실제 정산 — 기능과 데모 UI 모두 만들지 않는다. 단, 해당 영역의 시각적 slot이 Home 구조 재현에 필요하면 구매 관련 shortcut으로 대체할 수 있다(기능 자체는 구현하지 않음). 영역별 분류는 docs/COMMERCE_UI_SPEC.md §4-1의 A/B/C/D 매핑을 따른다.
+- **구조 재현 + 구매 목적지 대체(영역 B):** Toss Home의 shortcut/navigation 중 프로젝트 목적과 직접 연결되지 않는 목적지는 같은 화면 구조를 유지하면서 카테고리·특가·인기 상품·주문·추천 등 구매 관련 목적지로 대체할 수 있다.
+- **demo/static으로 재현하는 영역(영역 C):** Home의 시각 구성에 필요한 프로모션·특가·추천·기획전·배너 등 merchandising block — 실제 Backend 없이 시드 데이터로 표현한다.
 - 원칙: *시각적 쇼핑 환경과 구매 경험은 최대한 충실히 재현하되, 프로젝트 목적과 무관한 사업 기능까지 구현하지 않는다.*
 
 ### Demo Catalog 방향 (계획 — 04-B에서 승인 후 실행)
 
-현재 상품 3개(전부 모니터)는 레퍼런스급 홈·검색·카테고리·추천 UI를 검증하기에 부족하다. 기존 fixture(p-a/p-b/p-c, V-A-24 재고5·V-A-27 재고0)와 테스트 결정성을 보존한 채 디지털/가전·패션·뷰티·생활·식품 등 약 20~30개 상품을 추가한다. 상품에는 image·정가/판매가·할인율·평점·리뷰 수·배지·배송 정보·variants·품절·merchandising section tag(`recommended`/`flash-sale`/`popular`/`new` 등)를 두고, 추천 엔진 없이 section tag 기반으로 Home merchandising을 구성한다. 스키마/Seed 변경이 필요한 필드는 04-B 시작 전 별도 승인.
+현재 상품 3개(전부 모니터)는 레퍼런스급 홈·검색·카테고리·추천 UI를 검증하기에 부족하다. 디지털/가전·패션·뷰티·생활·식품 등 약 20~30개 상품을 추가하는 방향은 확정됐다. Demo Catalog는 단순 화면 채우기가 아니라 이후 Shopping Brain이 사용할 데이터다. 상품은 필요에 따라 다음을 지원한다: category·상품 image·정가/판매가·할인율·배송 정보·구조화된 specifications·variants·재고/품절 상태·rating·표시용 리뷰 수·실제 샘플 리뷰 텍스트·merchandising section tag(`recommended`/`flash-sale`/`popular`/`new` 등). 추천 엔진 없이 section tag 기반으로 Home merchandising을 구성한다.
+
+**Fixture 보호(04-B 선결):** 기존 p-a/p-b/p-c·V-A-24/V-A-27과 기존 회귀 테스트는 반드시 보존한다. 단, 기존 ID만 유지한다고 테스트가 보호되지는 않는다 — 기존 테스트가 검색 결과 개수·가격 조건 결과·특정 상품 집합을 고정값으로 가정할 수 있으므로, **deterministic fixture와 Demo Catalog를 분리하는 구체안을 04-B 시작 전에 제시하고 승인받는다.** 이 문서에서 분리 방법을 확정하지 않는다.
+
+**정합성 원칙:** 상세 화면 가격과 Cart/Checkout의 서버 가격이 모순되지 않아야 한다. 옵션·재고는 실제 Backend 계약과 연결된다. rating·review count가 어떻게 계산되는지 명시한다. 표시용 리뷰 수와 실제 Brain이 읽을 리뷰 행 수가 다르면 그 차이를 명시적으로 모델링하고, 실제 없는 리뷰를 Brain이 존재한다고 인식하게 만들지 않는다. 정확한 schema/migration은 04-B 구현 전 별도 제안 후 승인받아 변경한다.
 
 ### Personalization과 Brain의 관계
 
@@ -37,7 +42,9 @@
 ### 현재 로드맵
 
 ```text
-01 Core Backend / Phase 5            ✅ 완료
+01 Core Backend / Phase 5            ✅ 로컬 구현·검증 완료
+                                     (live LLM eval·외부 배포·실사용자는
+                                      로드맵 12~13에서 수행)
 02 Commerce Audit                    ✅ 완료 (docs/COMMERCE_AUDIT.md)
 03 Design System Foundation          ✅ 완료 (docs/COMMERCE_DESIGN_SYSTEM.md)
 
@@ -48,8 +55,16 @@
    04-D Navigation 재구성            ▶ 다음 (레퍼런스 구조 최대 충실)
    04-E Screenshot / Visual QA       ▶ 다음
 
-   완료 조건: 앱을 처음 열었을 때 Toss Shopping Reference를 기반으로
-   만들어졌다는 것이 명확하게 느껴질 수준의 구조적/시각적 유사성.
+   완료 조건 (04-E Visual QA — 주관적 '유사한 느낌'이 아닌 아래 절차로 판정):
+   - 기준 viewport 390x844에서 실제 Toss Shopping Reference와 구현
+     Screenshot을 나란히 비교한다 (첫 화면 + 주요 스크롤 구간 모두).
+   - Header/Search·상단 Navigation·promotion/merchandising·
+     recommendation 섹션·product grid·하단 Navigation을 영역별로 대조한다.
+   - Light/Dark는 Reference가 관측된 범위에서만 비교한다(현재 캡처는
+     전부 Dark — Light는 라이트 캡처 확보 전까지 제한적 검증).
+   - 자동 테스트 통과만으로 완료 처리하지 않는다. 최종 승인자는 사용자.
+   - 미세 1~2px·animation 차이는 08에서 보정하되, IA·section order·
+     content density·navigation 구조가 Reference와 크게 다르면 04 미완료.
 
 05 Product Detail / Review / Option / Cart
 06 Checkout / Payment / Order / Shipment / Cancel
@@ -80,6 +95,12 @@
 | 8 | SHOPPING_BRAIN_VISION.md | 장기 Brain 제품 비전 — **현재 구현 범위 아님** |
 
 규칙: 같은 목적의 새 문서를 만들지 않는다. 방향·기술 결정은 IMPLEMENTATION_DECISIONS.md에 누적한다. 새 결정이 오래된 문서와 충돌하면 삭제하지 말고 Superseded 표시 후 정본을 가리킨다.
+
+### Reference 자료 (Git 외 별도 자산)
+
+- `reference/toss-shopping/screenshots/` — Toss Shopping 실제 캡처 130장(폴더별 분류)과 `docs/`의 분석 문서 5종. **스크린샷은 Git에 포함되지 않는 별도 자료**다(`.gitignore`, 약 79MB). 분석 문서는 커밋돼 있다.
+- 새로 합류한 팀원/AI는 사용자에게 이 자료를 별도로 전달받아야 한다. 공유 저장소 위치는 **미정(TBD)**.
+- **Reference 없이는 Visual Fidelity 작업을 완료로 표시하지 않는다.** 04-E Visual QA는 이 자료와의 나란한 스크린샷 비교를 전제로 한다.
 
 ### Superseded 결정 요약
 

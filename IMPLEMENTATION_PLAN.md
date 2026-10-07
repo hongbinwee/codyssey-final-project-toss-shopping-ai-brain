@@ -1,6 +1,6 @@
 # AI Commerce P0 Implementation Plan
 
-> **[2026-10-07]** Phase 0~5(Backend·Tool·Eval·배포 아티팩트)는 이 계획대로 완료됐다. 이후 로드맵(04 Toss Shopping Shell → 05~08 Commerce UI → 11~12 Brain)은 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) §현재 프로젝트 방향으로 이관 — Brain 우선순위는 Commerce Environment 완성 이후로 조정됐다. Phase 구조·Global Constraints·검증 기준은 여전히 유효.
+> **[2026-10-07]** Phase 0~5의 **로컬 구현과 로컬 검증**(unit·integration·e2e·stub eval·holdout·Docker 빌드)은 이 계획대로 완료됐다. 미완료로 남은 것 — 실제 LLM live eval(LLM_API_KEY 미설정 BLOCKED)·외부 배포·실사용자 5명 테스트·피드백 반영 — 은 PROJECT_CONTEXT.md 로드맵 12~13에서 수행한다. 이후 로드맵(04 Toss Shopping Shell → 05~08 Commerce UI → 11~12 Brain)은 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) §현재 프로젝트 방향을 따른다. Phase 구조·Global Constraints·검증 기준은 여전히 유효. 단, 이 문서의 W01~W06·A01/A02 화면 표는 업무 규칙·계약 근거일 뿐 **UI 구현 정본이 아니다** — 화면 배치·Navigation·옵션 UX·Bottom Sheet·CTA 상태·Interaction은 [docs/COMMERCE_UI_SPEC.md](docs/COMMERCE_UI_SPEC.md)가 우선한다.
 
 > **For agentic workers:** 다른 모델이 이 계획을 Phase별로 실행한다. 해당 스킬이 제공되는 환경에서는 `superpowers:executing-plans`를 사용한다. 스킬이 없는 환경에서도 아래 체크박스·검증 기준을 그대로 따른다. 이 문서 작성은 코드 구현 착수를 의미하지 않으며, 구현 완료 표시는 실제 검증 결과가 있을 때만 한다.
 

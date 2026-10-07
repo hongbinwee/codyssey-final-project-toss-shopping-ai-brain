@@ -1,6 +1,6 @@
 # 구현 모델 인계 — AI Commerce P0
 
-> **[2026-10-07]** 이 문서는 설계→구현 인계 시점의 스냅샷이다. Phase 0~5는 완료됐고, 현재 최상위 방향·로드맵은 PROJECT_CONTEXT.md §현재 프로젝트 방향을 따른다(Commerce Environment 선행 → Brain).
+> **[2026-10-07]** 이 문서는 설계→구현 인계 시점의 스냅샷이다. Phase 0~5의 **로컬 구현·검증**은 완료됐고(live LLM eval·외부 배포·실사용자는 미완료 — 로드맵 12~13에서 수행), 현재 최상위 방향·로드맵은 PROJECT_CONTEXT.md §현재 프로젝트 방향을 따른다(Commerce Environment 선행 → Brain). **이 문서의 화면 설명은 UI 구현 정본이 아니다** — 화면 배치·Interaction·CTA 상태는 docs/COMMERCE_UI_SPEC.md가 우선한다.
 
 2026-10-05 KST · 설계에서 구현으로 넘어가기 위한 인계 스냅샷. 작성: 현재 Codex 세션. 다음 구현 모델/담당자: 미정. 작업 폴더: `C:\문서\codyssey_final`.
 
@@ -19,7 +19,7 @@
 | 1 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) | 프로젝트 배경·포트폴리오·미션 조건. 오래된 ‘범위 미정’ 표는 현재 P0를 취소하는 지시가 아님 |
 | 2 | [CORE_TASK_SCOPE.md](CORE_TASK_SCOPE.md) | 지금 구현할 세 과제와 제외 범위의 기준 |
 | 3 | [SHOPPING_BRAIN_VISION.md](SHOPPING_BRAIN_VISION.md) | 장기 제품 방향. 여기 나온 모든 기능을 P0에 넣지 않음 |
-| 4 | [WIREFRAME_PLAN.md](WIREFRAME_PLAN.md) | W01~W06 화면·A01/A02 패널·필수 실패 상태 |
+| 4 | [WIREFRAME_PLAN.md](WIREFRAME_PLAN.md) | W01~W06 화면·A01/A02 패널·필수 실패 상태. 업무 규칙·Journey 근거로 유효 — 화면 배치·옵션 UX 등 UI 상세는 docs/COMMERCE_UI_SPEC.md가 정본 |
 | 5 | [DATA_TOOL_DESIGN.md](DATA_TOOL_DESIGN.md) | 12개 논리 테이블·13개 Tool의 계약, 상태·승인·중복 방지 규칙 |
 | 6 | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | 위 설계를 작은 단위로 실행할 계획. 마지막 절이 첫 Slice의 완료 판정표 |
 

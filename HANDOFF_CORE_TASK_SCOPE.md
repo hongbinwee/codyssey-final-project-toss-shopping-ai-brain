@@ -1,5 +1,7 @@
 # Handoff — AI Commerce 핵심 과제 범위와 후속 설계
 
+> **[2026-10-07]** 역사적 인계 기록. 범위 규칙의 근거로는 유효하나, 화면 배치·Interaction 등 UI 구현 상세의 정본이 아니다 — UI 구현은 docs/COMMERCE_UI_SPEC.md와 reference/toss-shopping 캡처를 우선한다. 최상위 방향은 PROJECT_CONTEXT.md §현재 프로젝트 방향.
+
 - 기준일: **2026-10-05 KST**. 이번 대화에서 확정한 방향과 작성한 범위 문서를 인계한다.
 - 범위: 영상 분석 이후의 **개발 범위 축소·디자인 조건·CORE_TASK_SCOPE.md 작성**. 프로젝트 전체 구현·통합 현황의 선언이 아니다.
 - 작성자: 현재 채팅의 Codex. 후속 담당자와 팀 전체 합의 여부는 미확인.

@@ -2,6 +2,8 @@
 
 목적: `COMMERCE_DESIGN_SYSTEM.md`의 토큰과 토스쇼핑 캡처를 컴포넌트 단위 구현 기준으로 번역한다. 각 항목은 **참고 캡처 → 관찰한 디자인·동작 → 구현할 UI State → 연결 Backend/API** 순서다. 토스 브랜드 자산(로고·아이콘·문구)은 복제하지 않고 구조와 상호작용만 따른다.
 
+우선순위: 이 문서는 **화면 배치·Navigation·옵션 UX·Bottom Sheet·CTA 상태·Interaction·Visual 구조의 UI 구현 정본**이다. `WIREFRAME_PLAN.md`·`HANDOFF_*.md`·`IMPLEMENTATION_PLAN.md`의 화면 표는 업무 규칙·Backend 정책·사용자 Journey 요구의 근거로 유효하나, UI 상세가 충돌하면 이 문서와 `reference/toss-shopping/` 캡처를 우선한다.
+
 범위 표기: **[1차]** = 이번 프런트엔드 단계(홈·검색·목록·탐색)에 구현, **[후속]** = 상품 상세·카트·주문 단계, **[제외]** = P0 외.
 
 ## 1. 모바일 우선 셸
@@ -20,7 +22,7 @@
 
 ## 3. 하단 Bottom Navigation [1차]
 
-- 참고 캡처: `home/01` 하단 5탭(홈/혜택/쇼핑/습관/전체).
+- 참고 캡처: `home/01` 하단 5탭(홈/혜택/쇼핑/증권/전체).
 - 관찰: 높이 ~56pt, 상단 구분선, 선택 탭 밝은 아이콘+라벨, 미선택은 muted.
 - **[Superseded 2026-10-07]** 이전에는 '토스 앱 전체 네비이므로 우리 플로우용으로 단순화'로 판단했으나 폐기 — 새 방향은 브랜드 자산을 제외하고 탭 수·배치·선택 상태·높이·아이콘/라벨 관계·가로 스크롤·화면 내 위치까지 레퍼런스를 최대한 따른다(IMPLEMENTATION_DECISIONS 2026-10-07). **04-D에서 재구성한다.**
 - 현재 구현(1차, 조정 대상): 홈/검색/장바구니/내 주문/AI 5탭, `icons.tsx` SVG 통일 — 탭 라벨은 우리 플로우 매핑이 필요한 부분만 조정하고 나머지 형식은 레퍼런스 추종.
@@ -32,16 +34,29 @@
 - 참고 캡처: `home/01`.
 - 관찰 구조: 검색 필드 → 카테고리 pill 칩 행(가로 스크롤, 선택 칩은 중성 밝기 상승 — 언더라인 아님) → 히어로 프로모 카드(밝은 배경+페이지 n|m) → 아이콘 단축키 행 → 개인화 상품 섹션('~님을 위한' + 칩) → 상품 그리드.
 - 구현(현재 1차 — 04-C에서 화면 단위 재구성 예정): 카테고리 pill 칩(전체 + `category` distinct. `.cat-tab` pill, `.on`=`--chip-on`+bold) → AI 진입 카드 → '전체 상품' 그리드.
-- **[Superseded 2026-10-07]** 'AI 진입 카드가 프로모/merchandising 영역을 대신한다'는 판단 폐기 — merchandising block(프로모/특가/추천/배너)은 04-B Demo Catalog + demo/static UI로 별도 재현하고 AI 카드는 추가 요소로 둔다. 단축키 행·페이징 히어로는 실제 기능 없이도 홈 구조 재현 범위에 포함(04-C에서 레퍼런스 대조 후 결정).
+- **[Superseded 2026-10-07]** 'AI 진입 카드가 프로모/merchandising 영역을 대신한다'는 판단 폐기 — merchandising block(프로모/특가/추천/배너)은 04-B Demo Catalog + demo/static UI로 별도 재현한다. **AI 진입점:** AI/Brain 진입점 자체는 향후 필요하지만, 홈 중심 대형 AI 카드의 현재 위치·형태는 확정된 방향이 아니다 — 04-C Home 재구성에서 Toss IA·merchandising 구조를 깨지 않는 위치로 결정한다. 단축키 행·페이징 히어로는 실제 기능 없이도 홈 구조 재현 범위에 포함(04-C에서 레퍼런스 대조 후 결정).
 - UI State: 로딩 스켈레톤(카드형 회색 블록), Error(재시도), Empty.
 - Backend: `GET /api/products?query=&category=` — 카테고리 필터는 서버 `category` 파라미터 사용.
+
+### 4-1. Toss Home 영역별 Scope 매핑
+
+Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자가 임의로 Toss 부가 기능을 만들어 Scope를 확장하지 않는다.
+
+| 상태 | 의미 | 해당 영역 |
+| --- | --- | --- |
+| **A. 실제 기능 구현** | Backend 연결로 실제 동작 | 검색, 상품 탐색·카테고리, 장바구니, 상품 상세·리뷰·옵션, 주문/모의 결제, 주문 내역, 배송, 취소 |
+| **B. 구조 재현 + 구매 목적지 대체** | Toss와 같은 화면 구조를 유지하되 목적지를 우리 구매 기능으로 연결 | Brain과 직접 무관한 shortcut/navigation 목적지 → 카테고리·특가·인기 상품·주문·추천 등 구매 관련 목적지로 대체 가능 |
+| **C. 정적/Demo UI** | 실제 Backend 없이 Seed/static으로 시각 구조만 재현 | 특가 프로모션·배너·기획전·추천 섹션·merchandising block, Brain 구현 전의 static personalization |
+| **D. 제외** | 기능·데모 UI 모두 구현하지 않음 | 오늘의 뽑기·포인트 피드·미니맵·고양이/게임성 요소·토스 생태계 전용 비쇼핑 기능 |
+
+단, D 영역의 시각적 slot이 Home 구조 재현에 중요하면 C/B로 대체할 수 있다(기능 자체는 만들지 않는다). 정확한 목적지 매핑과 섹션 구성은 04-C 구현 전에 구체안 제시 후 승인받는다.
 
 ## 5. 상품 카드 / 목록 [1차]
 
 - 참고 캡처: `home/01`, `search/105`, `product-list` 계열.
 - 관찰: 2열, 정사각(1:1) 실사진, 좌상단 `n% 특가` 레드 pill, 이미지 우하단 장바구니 아이콘 버튼, 본문 = 상품명 2줄 → `n%`+가격(bold) → 단가 → `★평점(개수)` → `최대 N원 적립`.
 - 구현: 2열 그리드 + 1:1 이미지 + 상품명 2줄 클램프 + 가격 bold + `★평점 · 리뷰 n`. **할인율·단가·적립·담기 아이콘은 가격/할인 데이터가 DB에 없으므로 표시하지 않음** [Observed — 데이터 부재]. 품절은 이미지 딤드+`품절` 배지 유지.
-- 상품 이미지: `ProductSummary.image`(=`image_urls[0]`)이 있으면 사용. 현재 시드는 전부 빈 배열이라 **로컬 생성 이미지 `/assets/products/{product_id}.png`로 fallback**(`onError` 시 기존 글자 플레이스홀더). 이 매핑은 테스트 환경용 프레젠테이션 계층 결정 — DB/시드 변경 없음.
+- 상품 이미지: `ProductSummary.image`(=`image_urls[0]`)이 있으면 사용. 현재 시드는 전부 빈 배열이라 **로컬 생성 이미지 `/assets/products/{product_id}.webp`로 fallback**(`onError` 시 기존 글자 플레이스홀더). 이 매핑은 테스트 환경용 프레젠테이션 계층 결정 — DB/시드 변경 없음.
 - Backend: `GET /api/products` 응답 그대로.
 
 ## 6. 검색 화면 [1차]
@@ -83,4 +98,4 @@
 - DB 시드 확장(상품 수·카테고리·이미지 URL)·판매자센터·정산 — 별도 승인 필요, 이번에 제안만 기록.
 
 ---
-근거: `docs/COMMERCE_DESIGN_SYSTEM.md`(토큰·실측), `reference/toss-shopping/screenshots/` 22장 열람, `src/catalog.ts` API 계약. 미관측 동작은 구현하지 않고 [Inferred]로만 표기.
+근거: `docs/COMMERCE_DESIGN_SYSTEM.md`(토큰·실측), `reference/toss-shopping/screenshots/` 22장 열람, `src/catalog.ts` API 계약. 미관측 동작을 Toss Shopping의 실제 동작이라고 주장하지 않는다. 단, Backend 정책상 필요한 상태·오류·프로젝트 UX 결정은 [Project]/[Inferred]로 명시해 구현할 수 있다 — 관찰 사실과 프로젝트 결정의 구분을 유지하는 것이 원칙이다.

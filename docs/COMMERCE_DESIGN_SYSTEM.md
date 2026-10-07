@@ -6,10 +6,12 @@
 
 ## 0. 표기 원칙
 
-- `[Observed]` = `reference/toss-shopping/screenshots/` 실측값(픽셀 색상 추출 + 화면 열람). 스크린샷 해상도 880×1920px이며 약 2x 스케일로 보고 pt 환산했다.
-- `[TDS]` = 공개 문서(tossmini-docs.toss.im/tds-mobile, tds-react-native)의 공식 토큰. **토스쇼핑 앱의 확정값이 아니라 공통 규칙으로만 사용한다.**
-- `[Inferred]` = 캡처에서 확인되나 정확한 수치 측정이 불가한 추정값.
-- `[Project]` = 레퍼런스에 대응물이 없거나 데이터·스코프 차이로 우리가 정한 값.
+- `[Observed]` = `reference/toss-shopping/screenshots/`에서 **직접 확인·측정한 사실**(픽셀 색상 추출·화면 열람). 가능하면 캡처 파일과 영역을 함께 표시한다. 스크린샷 해상도는 880×1920px이다.
+- `[TDS]` = 공개 문서(tossmini-docs.toss.im/tds-mobile, tds-react-native)의 공식 공통 규칙. **토스쇼핑 앱의 확정값이 아니다.**
+- `[Inferred]` = 간접 추론값 — 880px 스크린샷을 약 2x로 가정한 논리 pt 환산·비율/위치 추정 등. **스케일 환산 결과는 Observed가 아니라 Inferred다.**
+- `[Project]` = 레퍼런스에 대응물이 없거나 데이터·스코프 차이로 우리가 채택한 구현값.
+
+문서 표의 측정값과 `styles.css`의 채택값이 다르면 §2-1·§5의 semantic 토큰이 정본이다. [Observed] 측정값이 곧 구현값이라고 오해하지 않게, 실제 채택 여부는 [Project]로 구분한다.
 
 공개 TDS에는 라이트 테마 토큰만 있고 다크 테마 토큰표는 비공개다. 또한 **수집된 토스쇼핑 캡처 130장은 전부 다크 테마**라('light'로 분류된 7장은 밝은 상품 사진 오탐), Dark 토큰은 `[Observed]` 실측을, Light 토큰은 `[TDS]`+`[Inferred]`만 근거로 둔다.
 
@@ -211,4 +213,4 @@ TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`
 
 ---
 작성 근거: `reference/toss-shopping/screenshots/` 중 home/01, product-detail/04·095·069, cart/44, checkout/051, orders/079·080·084·085·088·089, payment/077·131, search/101·102·103·105·110, reviews/19, cs/057·062 직접 열람 + 픽셀 색상 측정. TDS 값은 공개 문서 검색 결과이며 쇼핑 앱 확정값이 아니다.
-v2 변경: Light/Dark semantic 토큰표(2-1) 신설, Iconography(2-2) 신설, 공통 상태 스펙 신설, 홈 카테고리 pill 반영, Pretendard 도입 반영, §5 제안→반영 상태로 갱신. 구현 검증은 `test-results/compare/{light,dark}_*.png`(390×844, colorScheme 컨텍스트)로 수행.
+v2 변경: Light/Dark semantic 토큰표(2-1) 신설, Iconography(2-2) 신설, 공통 상태 스펙 신설, 홈 카테고리 pill 반영, Pretendard 도입 반영, §5 제안→반영 상태로 갱신. 구현 검증은 `shots/compare/{light,dark}_*.png`(390×844, colorScheme 컨텍스트)로 수행 — playwright가 `test-results/`를 실행 시 비우므로 스크린샷 산출물은 `shots/`에 둔다.

@@ -2,6 +2,8 @@
 
 명령 실행과 결과를 기록한다.
 
+> 표기 규칙: Phase 0~5의 'PASS/완료'는 **로컬 구현 + 로컬 검증** 기준이다. live LLM eval(LLM_API_KEY 미설정 BLOCKED)·외부 배포·실사용자 테스트는 미완료이며 로드맵 12~13에서 수행한다(PROJECT_CONTEXT.md §현재 프로젝트 방향). 과거 기록은 당시 사실을 보존하되, Superseded된 결정은 그대로 두고 [Superseded] 표시로 현재 결정과 연결한다.
+
 ## 2026-10-05 Phase 0
 
 ### 환경 복구 후 재검증 (Docker PostgreSQL 5432)
@@ -145,14 +147,14 @@
 | node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
 | node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 |
 | node scripts/build-web.ts | PASS — web/app.js |
-| 브라우저 실검증 (localhost:3200, 390×844, demo-a) | PASS — 홈/검색(최근·자동완성·결과·정렬시트·가격순·빈결과)·카테고리 필터 시각 확인. 캡처: test-results/compare/impl_*.png vs ref_*.png |
+| 브라우저 실검증 (localhost:3200, 390×844, demo-a) | PASS — 홈/검색(최근·자동완성·결과·정렬시트·가격순·빈결과)·카테고리 필터 시각 확인. 캡처: 당시 test-results/compare/(playwright가 폴더를 비움) → 현재 shots/compare/{impl,ref}_*.png |
 | /assets/products/*.webp 정적 서빙 | PASS — 200 |
 | node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
 
 메모:
 - 이번 변경은 프런트(스타일/화면/정적 자산) 위주. Backend API·DB 스키마·Tool 계약은 변경 없음.
 - 상품 이미지는 DB image_urls가 비어 있어 프런트 convention 매핑(/assets/products/{id}.webp)으로 해결. DB 시드 변경 없음. 시드 확장(상품 수/할인·적립 필드)은 미승인 제안 상태.
-- 레퍼런스 대비 의도적 차이: 히어로 캐러셀·아이콘 그리드 대신 AI 카드, 하단 네비는 토스 앱 전체가 아닌 쇼핑 범위(홈/검색/장바구니/내 주문/AI), 토스 브랜드 자산 미사용.
+- 레퍼런스 대비 의도적 차이: 히어로 캐러셀·아이콘 그리드 대신 AI 카드, 하단 네비는 토스 앱 전체가 아닌 쇼핑 범위(홈/검색/장바구니/내 주문/AI), 토스 브랜드 자산 미사용. **[Superseded 2026-10-07]** 이 '의도적 차이'는 당시 결정의 이력 기록이다 — Navigation 쇼핑 범위 단순화·AI 카드가 merchandising을 대신한다는 판단은 방향 재정립으로 폐기됐다(docs/IMPLEMENTATION_DECISIONS.md 2026-10-07 절). 현재 기준: Navigation·merchandising 모두 레퍼런스 구조 충실.
 - 미해결 차이: 상품 카드 할인 배지/원가 취소선/적립 pill/카드 위 장바구니 아이콘은 데이터 필드 부재로 미구현(제안 대기).
 
 ## 2026-10-07 디자인 시스템 정본화 + 홈·검색·목록 Visual 보정
