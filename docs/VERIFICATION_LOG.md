@@ -147,7 +147,7 @@
 | node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
 | node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 |
 | node scripts/build-web.ts | PASS — web/app.js |
-| 브라우저 실검증 (localhost:3200, 390×844, demo-a) | PASS — 홈/검색(최근·자동완성·결과·정렬시트·가격순·빈결과)·카테고리 필터 시각 확인. 캡처: 당시 test-results/compare/(playwright가 폴더를 비움) → 현재 shots/compare/{impl,ref}_*.png |
+| 브라우저 실검증 (localhost:3200, 390×844, demo-a) | PASS — 홈/검색(최근·자동완성·결과·정렬시트·가격순·빈결과)·카테고리 필터 시각 확인. 캡처: 당시 test-results/compare/(playwright가 폴더를 비워 삭제됨 — 복원되지 않음). 현재 비교 캡처는 이후 Light/Dark 재촬영분 `shots/compare/light_*.png`·`dark_*.png` 10장 |
 | /assets/products/*.webp 정적 서빙 | PASS — 200 |
 | node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
 

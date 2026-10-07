@@ -31,11 +31,11 @@
 | 용도 | 추정 크기/굵기 | 근거 |
 | --- | --- | --- |
 | 대형 가격(상세) | 20~22pt, Heavy/Bold | 상세 '20,800원' 영역이 이름의 ~1.5배 [Observed 비율, Inferred 수치] |
-| 화면 타이틀/질문 | 19~20pt, Bold | '취소하는 이유는 무엇인가요?', '어떤 수단으로 결제할까요?' [Observed] |
-| 섹션 헤더 | 15~17pt, Bold | '전체 리뷰', '배송지', '결제 정보' [Observed] |
+| 화면 타이틀/질문 | 19~20pt, Bold | '취소하는 이유는 무엇인가요?', '어떤 수단으로 결제할까요?' — 요소·굵기 [Observed], 크기 환산 [Inferred] |
+| 섹션 헤더 | 15~17pt, Bold | '전체 리뷰', '배송지', '결제 정보' — 요소·굵기 [Observed], 크기 환산 [Inferred] |
 | 상품명/본문 | 14~15pt, Medium | 카드·리스트 본문 [Inferred] |
 | 보조/메타 | 12~13pt, Regular | '100g당 N원', '최대 N원 적립', 리뷰 메타 [Inferred] |
-| CTA 라벨 | 17~18pt, Bold | '구매하기', 'n원 결제하기' [Observed] |
+| CTA 라벨 | 17~18pt, Bold | '구매하기', 'n원 결제하기' — 요소·굵기 [Observed], 크기 환산 [Inferred] |
 | 배지/칩 | 11~12pt, Bold | 'n% 특가', '역대급 특가' [Inferred] |
 
 참고 — TDS 공식 타이포 `[TDS]`(pt): T3 22/31, T4 20/29, T5 17/25.5, T6 15/22.5, T7 13/19.5, st8 19/28. 라이트 테마 기준이며 쇼핑 앱 측정값과 반드시 일치하지 않으므로 매핑 참고로만 쓴다.
@@ -60,7 +60,7 @@
 | 라이트 카드(프로모/이미지 배경) | `#F7F0EB` 등 밝은 톤 | 홈 히어로 카드, 상품 사진 배경 — 다크 UI 안에서 이미지 카드만 밝게 처리 |
 | 오버레이 딤 | 검정 55~70% | 바텀시트/슬라이드 패널 배경 |
 
-TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`, `grey900 #191F28`, `grey500 #8B95A1`, `grey600 #6B7684`. 실측 블루 `#2975F4`·레드 `#ED2C3B`가 TDS와 근사하므로, **프로젝트 토큰은 실측값을 표준으로 하고 TDS를 fallback 근거로 둔다.** 현재 `styles.css`의 `--bg #17171c`·`--accent #3182f6`은 방향이 맞지만 카드·칩·레드 계열 정밀 조정이 필요하다.
+TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`, `grey900 #191F28`, `grey500 #8B95A1`, `grey600 #6B7684`. 실측 블루 `#2975F4`·레드 `#ED2C3B`가 TDS와 근사하므로, **프로젝트 토큰은 실측값을 표준으로 하고 TDS를 fallback 근거로 둔다.** *(과거 기록 — semantic token 도입 전 초기 `styles.css`에는 `--bg #17171c`·`--accent #3182f6`이 있었다.)* **현재 정본은 §2-1·§5의 semantic token 표다** — 실제 구현값은 그 표를 따른다.
 
 ## 2-1. 구현 Semantic Token (Light / Dark)
 
@@ -85,7 +85,7 @@ TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`
 | `--discount` 특가/할인 레드 | `#f04452` | [TDS] red500 | `#ed2c3b` | [Observed] |
 | `--rate` 할인율 텍스트 | `#3182f6` | [Inferred] | `#a5b4d4` | [Observed] 라이트 스틸 |
 | `--star` 평점 ★ | `#f7b500` | [Inferred] 웜 옐로 | `#f7b500` | [Inferred] |
-| `--overlay` 시트 딤 | black 40% | [Inferred] | black 62% | [Observed] 55~70% |
+| `--overlay` 시트 딤 | black 40% | [Inferred] | black 62% | 관측 범위 55~70% [Observed] → 채택 62% [Project] |
 
 비고: 카트 배지 레드는 `--discount` 재사용(캡처 `#ae1231~`#d6293f` 대열과 근사). Light 테마는 실측 캡처가 없어 향후 라이트 캡처가 생기면 `[Observed]`로 재검증한다.
 
@@ -183,7 +183,7 @@ TDS 공식 라이트 토큰 `[TDS]`(참고): `blue500 #3182F6`, `red500 #F04452`
 | --- | --- | --- |
 | Loading | 스켈레톤 블록 — 상품 그리드는 `.skel-card`(카드 형태 회색 블록), 리스트는 회색 바. 스피너보다 형태 스켈레톤 우선 | [Observed] 채팅·리스트 스켈레톤 |
 | Empty | 점선 테두리 카드 + 중앙 보조 텍스트 ('조건에 맞는 상품이 없어요', '최근 검색 기록이 없어요'). 과장된 일러스트 없이 텍스트 중심 | [Project] — 레퍼런스에 대응 empty 미촬영 |
-| Disabled | 회색 필 + 낮은 대비 텍스트, `opacity ~0.45` 또는 회색 버튼 ('품절', '다음' 미선택) | [Observed] |
+| Disabled | 회색 필 + 낮은 대비 텍스트, `opacity ~0.45` 또는 회색 버튼 ('품절', '다음' 미선택) | 비활성 회색 버튼 [Observed], opacity 수치 [Inferred] |
 | Sold Out | 이미지 위 딤 + '품절' 오버레이 또는 `품절` 레드 배지, CTA 비활성 | [Observed] |
 | Error | `error.code` 표시 + 재시도 버튼. 전체 화면 전환보다 인라인 복구 우선 | [Project] |
 | 선택(Selection) | accent 테두리 + 약한 tint 배경(`--sel`), 또는 행 우측 accent `IcCheck` | [Observed] 정렬 시트 ✓, 옵션 카드 |
