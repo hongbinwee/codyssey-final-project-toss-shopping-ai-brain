@@ -69,7 +69,8 @@ export const TOP_TABS = [
 export const CONTENT_TABS = new Set(["beauty", "food"]);
 
 // 히어로 슬라이드 — 홈은 카드형(좌텍스트+우이미지), 뷰티/식품은 풀블리드 이미지형.
-export const HOME_HERO = ["p-d-ear-pro", "p-d-chair-1", "p-d-sun-mineral"];
+// 원본 홈 히어로는 식품·생활 계열 중심이어서 카테고리를 섞는다 [Observed 01].
+export const HOME_HERO = ["p-d-cof-1", "p-d-sun-mineral", "p-d-chair-1"];
 export const GROUP_HERO: Record<string, string[]> = {
   beauty: ["p-d-sun-mineral", "p-d-lip", "p-d-tone"],
   food: ["p-d-cof-1", "p-d-pro-1", "p-d-cof-2"],

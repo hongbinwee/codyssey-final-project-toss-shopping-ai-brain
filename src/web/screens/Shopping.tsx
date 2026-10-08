@@ -68,7 +68,7 @@ function Hero({
 }
 
 /* ── 리스트형 딜 카드 — 특가/시즌 탭의 큰 이미지 카드 [Observed 34/50] ── */
-function DealCard({ p, onOpen }: { p: ProductSummary; onOpen: () => void }) {
+function DealCard({ p, dealTag, onOpen }: { p: ProductSummary; dealTag?: string; onOpen: () => void }) {
   const [imgErr, setImgErr] = useState(false);
   const meta = PRODUCT_META[p.product_id];
   const rate = rateOf(p);
@@ -81,7 +81,9 @@ function DealCard({ p, onOpen }: { p: ProductSummary; onOpen: () => void }) {
         ) : (
           <img src={productImg(p)} alt={p.name} loading="lazy" onError={() => setImgErr(true)} />
         )}
-        {rate > 0 && <span className="thumb-badge">{rate}% 특가</span>}
+        {rate > 0 && (
+          <span className="thumb-badge">{dealTag ? dealTag + " " + rate + "%" : rate + "% 특가"}</span>
+        )}
         <span className="deal-cart" aria-hidden><IcCart size={18} /></span>
       </div>
       <div className="deal-info">
@@ -150,12 +152,38 @@ function HomeView({
   const byId = new Map(items.map((i) => [i.product_id, i]));
   const hero = HOME_HERO.map((id) => byId.get(id)).filter(Boolean) as ProductSummary[];
   const maxRate = Math.max(0, ...items.map(rateOf));
-  // 정적 추천 — recommended 태그 우선, 나머지는 API 순서 유지(stable).
-  const ordered = [...items].sort(
-    (a, b) =>
-      (PRODUCT_META[b.product_id]?.sections?.includes("recommended") ? 1 : 0) -
-      (PRODUCT_META[a.product_id]?.sections?.includes("recommended") ? 1 : 0),
-  );
+  // 정적 추천 — 그룹별 recommended 우선 정렬 후 카테고리 라운드로빈.
+  // 홈 첫 화면이 디지털 등 한 카테고리로 치우치지 않게 섞는다 [Observed: 원본은 식품·생활 중심 혼합].
+  const GROUP_ORDER = ["food", "beauty", "living", "digital", "fashion"];
+  const buckets = new Map<string, ProductSummary[]>();
+  for (const p of items) {
+    const g = groupOf(p.category);
+    const arr = buckets.get(g);
+    if (arr) arr.push(p);
+    else buckets.set(g, [p]);
+  }
+  for (const arr of buckets.values()) {
+    arr.sort(
+      (a, b) =>
+        (PRODUCT_META[b.product_id]?.sections?.includes("recommended") ? 1 : 0) -
+        (PRODUCT_META[a.product_id]?.sections?.includes("recommended") ? 1 : 0),
+    );
+  }
+  const keys = [
+    ...GROUP_ORDER.filter((g) => buckets.has(g)),
+    ...[...buckets.keys()].filter((g) => !GROUP_ORDER.includes(g)),
+  ];
+  const ordered: ProductSummary[] = [];
+  for (let i = 0, more = true; more; i++) {
+    more = false;
+    for (const g of keys) {
+      const p = buckets.get(g)![i];
+      if (p) {
+        ordered.push(p);
+        more = true;
+      }
+    }
+  }
   const shortcuts: { icon: ComponentType<{ size?: number }>; label: string; run: () => void }[] = [
     { icon: IcGrid, label: "카테고리", run: () => onNav("category") },
     { icon: IcTag, label: "오늘의 특가", run: () => onNav("sale") },
@@ -278,9 +306,11 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 
 function SaleView({
   items,
+  onNav,
   onOpen,
 }: {
   items: ProductSummary[];
+  onNav: (cat: string) => void;
   onOpen: (id: string) => void;
 }) {
   const [left, setLeft] = useState("00:00:00");
@@ -305,8 +335,35 @@ function SaleView({
       i.availability !== "SOLD_OUT" &&
       PRODUCT_META[i.product_id]?.sections?.includes("flash-sale"),
   );
+  const promo = deals[0];
   return (
     <>
+      {/* 상단 프로모 카드 + 보조 탭 [Observed 34]. 미지원 탭은 disabled로 Demo임을 드러낸다. */}
+      {promo && (
+        <button className="sale-promo" onClick={() => onOpen(promo.product_id)}>
+          <span className="sp-txt">
+            <b>
+              오늘만 이 가격
+              <br />
+              하루 특가 모음
+            </b>
+            <span className="sp-sub">매일 자정 새로운 특가</span>
+          </span>
+          <img src={productImg(promo)} alt="" />
+        </button>
+      )}
+      <nav className="sale-tabs">
+        <button className="sale-tab on">하루 특가</button>
+        <button className="sale-tab" disabled title="준비 중">
+          셀러 특가
+        </button>
+        <button className="sale-tab" onClick={() => onNav("season")}>
+          기획전
+        </button>
+        <button className="sale-tab" disabled title="준비 중">
+          쿠폰 혜택
+        </button>
+      </nav>
       <div className="sale-timer">
         <IcClock size={15} />
         <b>{left}</b>
@@ -314,7 +371,7 @@ function SaleView({
       </div>
       <h2 className="sale-title">오늘만 이 가격에 살 수 있어요</h2>
       {deals.map((p) => (
-        <DealCard key={p.product_id} p={p} onOpen={() => onOpen(p.product_id)} />
+        <DealCard key={p.product_id} p={p} dealTag="하루특가" onOpen={() => onOpen(p.product_id)} />
       ))}
     </>
   );
@@ -485,7 +542,7 @@ export function Shopping({
       ) : view === "category" ? (
         <CategoryBrowser items={items} onNav={onNav} />
       ) : view === "sale" ? (
-        <SaleView items={items} onOpen={onOpenProduct} />
+        <SaleView items={items} onNav={onNav} onOpen={onOpenProduct} />
       ) : view === "season" ? (
         <SeasonView items={items} userName={userName} onOpen={onOpenProduct} />
       ) : (

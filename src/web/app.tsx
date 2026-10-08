@@ -95,6 +95,14 @@ function App() {
   });
   const [cart, setCart] = useState<CartView | null>(null);
   const [search, setSearch] = useState("");
+  // 쇼핑 홈 스크롤 시 검색 필드가 사라지고 플로팅 아이콘만 남는다 [Observed home/02]
+  const [miniTop, setMiniTop] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setMiniTop(window.scrollY > 72);
+    onScroll();
+    addEventListener("scroll", onScroll, { passive: true });
+    return () => removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     api<{ user: { display_name: string } }>("/api/session").then((r) => {
@@ -121,11 +129,13 @@ function App() {
   };
   const cartCount = cart?.items.length ?? 0;
   const showNav = NAV_ROUTES.has(route.name);
+  // 쇼핑/검색 화면은 Toss 기준 좁은 좌우 여백을 쓴다 [Observed ~10px]
+  const shopPad = route.name === "shop" || route.name === "search";
 
   return (
-    <div className={"shell" + (showNav ? " has-nav" : "")}>
+    <div className={"shell" + (showNav ? " has-nav" : "") + (shopPad ? " shop-pad" : "")}>
       {route.name === "shop" && (
-        <header className="top">
+        <header className={"top" + (miniTop ? " mini" : "")}>
           <form
             className="search-field"
             onSubmit={(e) => {
@@ -156,6 +166,25 @@ function App() {
             {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
           </button>
         </header>
+      )}
+      {route.name === "shop" && miniTop && (
+        <div className="float-nav">
+          <button
+            className="float-btn"
+            aria-label="검색"
+            onClick={() => goto({ name: "search", query: "" })}
+          >
+            <IcSearch size={19} />
+          </button>
+          <button
+            className="float-btn"
+            aria-label="장바구니"
+            onClick={() => goto({ name: "cart" })}
+          >
+            <IcCart size={19} />
+            {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+          </button>
+        </div>
       )}
       {BACK_ROUTES.has(route.name) && (
         <header className="backbar">

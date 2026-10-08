@@ -298,4 +298,40 @@ Side Astra 재검수에서 남은 Major 2건(demo seed 원자성 부재, DB 가�
 
 - 캡처: `shots/04c/` — dark/light 각 11장 + `cmp_*.jpg` 병렬 비교 6장(홈 첫 화면·스크롤·뷰티·특가·시즌·카테고리).
 - 대조 결과: 수직 구역 순서(헤더→탭→히어로→혜택→숏컷→추천→그리드)·히어로 카드형 슬라이드+페이지 인디케이터·숏컷 레일 밀도·2열 카드 계층이 레퍼런스와 구조적으로 일치. Light는 실제 토스 Light 레퍼런스 부재로 [Project]/[TDS] 토큰 기준.
-- 남은 차이(04-D/08 범위로 기록): 하단 네비(토스=홈/혜택/쇼핑/증권/전체 vs 우리=홈/검색/장바구니/내 주문/AI), 스크롤 시 헤더 플로팅 축소(우리는 sticky 유지), 카드 이미지 radius 미세 차이(~14-16px vs 12px), 토스 카드의 '30일 최저가/N명/적립' 행은 근거 데이터 없어 의도적 미구현.
+- 남은 차이(04-D/08 범위로 기록): 하단 네비(토스=홈/혜택/쇼핑/증권/전체 vs 우리=홈/검색/장바구니/내 주문/AI), 스크롤 시 헤더 플로팅 축소(당시 sticky — **[아래 04-C Correction에서 구현됨]**), 카드 이미지 radius 미세 차이(~14-16px vs 12px), 토스 카드의 '30일 최저가/N명/적립' 행은 근거 데이터 없어 의도적 미구현.
+
+## 2026-10-08 04-C Visual Correction Pass
+
+사용자 Visual QA 보류에 따른 좁은 보정 — 전체 재개발 없이 비교 캡처에서 확인된 차이만 수정했다.
+
+### 수정 범위
+
+- **Product Card anatomy** [Observed `home/02`·`product-list/34`]: 다크 셸 위 라이트 카드(`--pcard` light `#fff` / dark `#b6b6b6`)로 이미지·정보 영역 일체화 — radius ~14px+overflow hidden, 이미지 ~1.12:1+하단 카드색 페이드, 본문 다크 텍스트, 할인율%=가격과 동일 다크색(레드는 이미지 배지만), 우하단 흰 원형 카트 버튼, 카드 마진·grid gap ~10px(`.shell.shop-pad`로 shop/search 라우트만 `--pad:10px`, 나머지 라우트는 20px 유지).
+- **특가 탭 구조 복원** [Observed `product-list/34`]: 프로모 카드(좌 텍스트+우 이미지) → 보조탭(하루 특가/셀러 특가/기획전/쿠폰 혜택 — 하루 특가 활성, 기획전→시즌 탭, 나머지 2개는 Backend 없어 disabled '준비 중') → 자정 카운트다운 → DealCard(좌상 '하루특가 n%' 배지+우하 원형 카트 아이콘).
+- **Hero 크기 보정**: 슬라이드 높이 186→~232px, 할인율 14.5/상품명 20/가격 21px(800), 이미지 영역 45%.
+- **스크롤 헤더** [Observed `home/02`]: shop 라우트 scrollY>72px → `.top.mini`(검색필드 소멸) + 플로팅 검색·카트 버튼(카트 배지 유지). 다른 라우트 영향 없음.
+- **Home 상품 구성**: recommended 우선 + 카테고리 라운드로빈 정렬로 식품/뷰티/리빙/디지털/패션 혼합 노출(기존 디지털 편중 해소). Hero 콘텐츠도 커피/선크림/의자로 다양화.
+- 숏컷 아이콘: 54px 원형 → 46px squircle(토스 관찰 형태).
+- 변경 파일: `src/web/{app.tsx,display-meta.ts,styles.css,screens/Shopping.tsx}` — Backend/DB/Seed 변경 없음.
+
+### 검증
+
+| 명령 / 확인 | 결과 |
+| --- | --- |
+| node node_modules/typescript/bin/tsc --noEmit | PASS |
+| node scripts/build-web.ts | PASS |
+| node --test tests/unit/*.test.ts | PASS — 18/18 |
+| integration 파일별 순차 | PASS — cancel-confirmation 9 / cancel-race 3 / cancel-recovery 6 / checkout 7 / demo-seed 5 / health 2 / session-api 1 / t1-catalog 6 / t2-orders 5 / t1-cart 20 — 전부 개별 PASS |
+| Playwright e2e | PASS — 14/14 |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
+| node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
+
+메모(기존 환경 이슈, 이번 변경과 무관 — 프런트 전용 변경): `t1-cart`는 20개 테스트 모두 개별 통과하나 `after(sql.end())` 이후 워커 프로세스가 수 분간 종료되지 않는 기존 지연이 재현됨(DB 잠금·미커밋 트랜잭션 없음 확인). 04-C 이전 턴에서도 동일 증상이 보고·기록된 상태.
+
+### Visual QA (390×844, Reference 대조)
+
+- 비교 캡처: `shots/04c/qa/` — 01_home_first·02_home_scrolled·03_hero_slide·04_beauty·05_sale·06_light (Reference|Implementation 병렬).
+- 자체 확인: 라이트 카드 anatomy·특가 상단 구조(프로모/보조탭/타이머)·히어로 비중·스크롤 플로팅 헤더·카테고리 혼합 노출이 Reference와 구조적으로 일치.
+- 남은 차이: 하단 네비(04-D 범위), 토스 카드의 '30일 최저가/N명 구매/적립' 행은 근거 데이터 없어 의도적 미구현, 카드 이미지 radius 등 미세 수치는 08 Visual Polish 범위.
+- **최종 Visual 승인 = 사용자 대기 중 (04-C 미확정).**
