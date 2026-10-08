@@ -11,10 +11,10 @@ import { Orders } from "./screens/Orders.tsx";
 import { OrderDetail } from "./screens/OrderDetail.tsx";
 import { AgentPanel, type AgentReply } from "./components/AgentPanel.tsx";
 import type { AgentBrain } from "./api.ts";
-import { IcBack, IcCart, IcHome, IcReceipt, IcSearch, IcSparkle } from "./icons.tsx";
+import { IcBack, IcCart, IcHome, IcReceipt, IcSearch, IcSparkle, IcUser } from "./icons.tsx";
 
 type Route =
-  | { name: "shop"; category: string }
+  | { name: "shop"; category: string; sub: string }
   | { name: "search"; query: string }
   | { name: "product"; id: string }
   | { name: "cart" }
@@ -32,7 +32,7 @@ function parseHash(): Route {
   if (path === "/checkout") return { name: "checkout" };
   if (path === "/orders") return { name: "orders" };
   if (path.startsWith("/orders/")) return { name: "order", id: decodeURIComponent(path.slice(8)) };
-  return { name: "shop", category: params.get("cat") ?? "" };
+  return { name: "shop", category: params.get("cat") ?? "", sub: params.get("sub") ?? "" };
 }
 
 const goto = (r: Route) => {
@@ -43,7 +43,9 @@ const goto = (r: Route) => {
     : r.name === "checkout" ? "#/checkout"
     : r.name === "orders" ? "#/orders"
     : r.name === "order" ? "#/orders/" + encodeURIComponent(r.id)
-    : "#/" + (r.category ? "?cat=" + encodeURIComponent(r.category) : "");
+    : "#/" + (r.category
+        ? "?cat=" + encodeURIComponent(r.category) + (r.sub ? "&sub=" + encodeURIComponent(r.sub) : "")
+        : "");
 };
 
 function Login({ onLogin }: { onLogin: (name: string) => void }) {
@@ -140,6 +142,13 @@ function App() {
           </form>
           <button
             className="icon-btn"
+            aria-label="내 쇼핑"
+            onClick={() => goto({ name: "orders" })}
+          >
+            <IcUser size={23} />
+          </button>
+          <button
+            className="icon-btn"
             aria-label="장바구니"
             onClick={() => goto({ name: "cart" })}
           >
@@ -163,15 +172,18 @@ function App() {
         {route.name === "shop" && (
           <Shopping
             category={route.category}
-            onCategory={(c) => goto({ name: "shop", category: c })}
+            sub={route.sub}
+            userName={user}
+            onNav={(c, s) => goto({ name: "shop", category: c, sub: s ?? "" })}
             onOpenProduct={(id) => goto({ name: "product", id })}
-            onOpenAgent={() => setAgentOpen("shopping")}
+            onOpenOrders={() => goto({ name: "orders" })}
+            onOpenCart={() => goto({ name: "cart" })}
           />
         )}
         {route.name === "search" && (
           <Search
             query={route.query}
-            onBack={() => goto({ name: "shop", category: "" })}
+            onBack={() => goto({ name: "shop", category: "", sub: "" })}
             onSubmit={(q) => goto({ name: "search", query: q })}
             onOpenProduct={(id) => goto({ name: "product", id })}
             cartCount={cartCount}
@@ -189,7 +201,7 @@ function App() {
           <Cart
             cart={cart}
             onCartLoaded={setCart}
-            onOpenShop={() => goto({ name: "shop", category: "" })}
+            onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
             onCheckout={() => goto({ name: "checkout" })}
           />
         )}
@@ -202,7 +214,7 @@ function App() {
         {route.name === "orders" && (
           <Orders
             onOpenOrder={(id) => goto({ name: "order", id })}
-            onOpenShop={() => goto({ name: "shop", category: "" })}
+            onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
           />
         )}
         {route.name === "order" && (
@@ -215,7 +227,7 @@ function App() {
       </main>
       {showNav && (
         <nav className="bottom-nav">
-          <button className="nav-item on" onClick={() => goto({ name: "shop", category: "" })}>
+          <button className="nav-item on" onClick={() => goto({ name: "shop", category: "", sub: "" })}>
             <IcHome size={22} />홈
           </button>
           <button className="nav-item" onClick={() => goto({ name: "search", query: "" })}>

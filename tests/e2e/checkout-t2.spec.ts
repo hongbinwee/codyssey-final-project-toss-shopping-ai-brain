@@ -6,7 +6,7 @@ async function login(page: import("@playwright/test").Page) {
   await page.goto("/");
   await page.getByPlaceholder("접근 코드").fill("e2e-c");
   await page.getByRole("button", { name: "시작하기" }).click();
-  await expect(page.getByRole("button", { name: /AI에게 조건/ })).toBeVisible();
+  await expect(page.getByPlaceholder("상품 검색")).toBeVisible();
 }
 
 test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
@@ -45,7 +45,7 @@ test("cs panel: created order -> shipping status explanation (stub)", async ({
   page,
 }) => {
   await login(page);
-  await page.getByRole("button", { name: "내 주문" }).click();
+  await page.locator(".bottom-nav").getByRole("button", { name: "내 주문" }).click();
   // 이전 테스트가 만든 주문을 연다
   await page.getByText("코드뷰 모니터 B").first().click();
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();

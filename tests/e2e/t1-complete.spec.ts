@@ -5,7 +5,7 @@ async function login(page: import("@playwright/test").Page) {
   // 병렬 실행에서 카트 상태가 섞이지 않도록 이 스펙은 u-b를 쓴다.
   await page.getByPlaceholder("접근 코드").fill("e2e-b");
   await page.getByRole("button", { name: "시작하기" }).click();
-  await expect(page.getByRole("button", { name: /AI에게 조건/ })).toBeVisible();
+  await expect(page.getByPlaceholder("상품 검색")).toBeVisible();
 }
 
 test("t1 complete: cart quantity update -> remove -> empty state", async ({

@@ -6,7 +6,7 @@ async function login(page: import("@playwright/test").Page) {
   await page.goto("/");
   await page.getByPlaceholder("접근 코드").fill("e2e-d");
   await page.getByRole("button", { name: "시작하기" }).click();
-  await expect(page.getByRole("button", { name: /AI에게 조건/ })).toBeVisible();
+  await expect(page.getByPlaceholder("상품 검색")).toBeVisible();
 }
 
 test("t3: checkout order -> A02 confirm -> cancel REQUESTED on W06", async ({ page }) => {
@@ -55,7 +55,7 @@ test("t3: shipped order is ineligible in A02 (e2e-a seed order)", async ({ page 
   await page.goto("/");
   await page.getByPlaceholder("접근 코드").fill("e2e-a");
   await page.getByRole("button", { name: "시작하기" }).click();
-  await page.getByRole("button", { name: "내 주문" }).click();
+  await page.locator(".bottom-nav").getByRole("button", { name: "내 주문" }).click();
   await page.getByText("코드뷰 모니터 B").first().click(); // ord-a-ship (배송 중)
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
   await page.getByRole("button", { name: "주문 취소" }).click();

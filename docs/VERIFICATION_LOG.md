@@ -266,3 +266,36 @@ Side Astra 재검수에서 남은 Major 2건(demo seed 원자성 부재, DB 가�
 메모:
 - 실패 주입은 테스트에서 `ALTER TABLE products ADD CONSTRAINT chk_demo_tx CHECK (id <> 'p-d-tone') NOT VALID`로 수행 — 운영 seed 경로에 디버그 옵션을 두지 않았다. 기존 행 검증을 건너뛰는 NOT VALID이지만 신규 write(upsert)에는 적용돼 트랜잭션 중간 실패를 만든다.
 - 검증 초기 `DEMO_DBS` 상수가 모듈 하단에 선언돼 TDZ로 전 테스트가 실패하던 결함을 발견·수정(선언을 데모 분기 위로 이동) — 실패→수정→통과 이력.
+
+## 2026-10-08 04-C Toss Shopping Home Reconstruction
+
+홈 전체 IA를 토스쇼핑 캡처 기준으로 재구축했다(코드 변경: src/web/{app.tsx,icons.tsx,display-meta.ts,screens/Shopping.tsx,components/ProductCard.tsx,styles.css}). 대형 AI 카드는 홈에서 제거하고 진입점은 하단 네비 `AI` 탭으로 유지한다.
+
+### e2e 보정 (UI 구조 변경에 따른 기대 조건 갱신 — 단정 완화 아님)
+
+- 로그인 완료 신호: 제거된 홈 AI 카드 버튼 `/AI에게 조건/` → 홈 헤더의 `상품 검색` placeholder로 변경(5개 spec).
+- `내 주문` strict-mode 충돌: 신설된 홈 숏컷 `.sc-item`과 하단 네비 `.nav-item`이 동일 라벨 → 테스트의 클릭 대상을 `.bottom-nav`로 스코프(5곳). 숏컷 라벨은 유지(사용자 지정 예시).
+
+### 실행 환경 이슈 (코드와 무관)
+
+- 이전 세션의 고아 `node --test t1-cart`(PID 34428)는 세션 리셋으로 이미 소멸 확인 → 단독 재실행 PASS(20/20).
+- Playwright 연속 재실행 간 `ERR_CONNECTION_REFUSED` = 이전 실행의 고아 3100 webServer를 `reuseExistingServer`가 재사용하다가 프로세스가 중간 소멸한 것. 3100 리스너 소멸 확인 후 단일 실행 시 정상.
+
+### 검증
+
+| 명령 / 확인 | 결과 |
+| --- | --- |
+| node node_modules/typescript/bin/tsc --noEmit | PASS |
+| node scripts/build-web.ts | PASS |
+| node --test tests/unit/*.test.ts | PASS — 18/18 |
+| integration 전체 | PASS — 64건. 스위트 1회 실행은 러너 프로세스 소멸로 로그 53건까지 기록(모두 PASS) → 나머지 t1-catalog 6·t2-orders 5를 파일별 실행해 전부 PASS |
+| Playwright e2e | PASS — 14/14 (보정 후 클린 단일 실행) |
+| node scripts/eval.ts --mode=stub --split=dev | PASS — 16/16 |
+| node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 |
+| node scripts/eval.ts --mode=live | BLOCKED — LLM_API_KEY 미설정 (유지) |
+
+### Visual QA (390×844, reference 대조)
+
+- 캡처: `shots/04c/` — dark/light 각 11장 + `cmp_*.jpg` 병렬 비교 6장(홈 첫 화면·스크롤·뷰티·특가·시즌·카테고리).
+- 대조 결과: 수직 구역 순서(헤더→탭→히어로→혜택→숏컷→추천→그리드)·히어로 카드형 슬라이드+페이지 인디케이터·숏컷 레일 밀도·2열 카드 계층이 레퍼런스와 구조적으로 일치. Light는 실제 토스 Light 레퍼런스 부재로 [Project]/[TDS] 토큰 기준.
+- 남은 차이(04-D/08 범위로 기록): 하단 네비(토스=홈/혜택/쇼핑/증권/전체 vs 우리=홈/검색/장바구니/내 주문/AI), 스크롤 시 헤더 플로팅 축소(우리는 sticky 유지), 카드 이미지 radius 미세 차이(~14-16px vs 12px), 토스 카드의 '30일 최저가/N명/적립' 행은 근거 데이터 없어 의도적 미구현.

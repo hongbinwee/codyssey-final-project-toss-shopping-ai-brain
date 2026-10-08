@@ -7,7 +7,7 @@ test("t1 slice: login -> search -> product -> add option -> cart totals", async 
   // 로그인 (테스트 접근 코드)
   await page.getByPlaceholder("접근 코드").fill("e2e-a");
   await page.getByRole("button", { name: "시작하기" }).click();
-  await expect(page.getByRole("button", { name: /AI에게 조건/ })).toBeVisible();
+  await expect(page.getByPlaceholder("상품 검색")).toBeVisible();
 
   // W01: 검색
   await page.getByPlaceholder("상품 검색").fill("모니터");

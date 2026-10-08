@@ -8,7 +8,7 @@ async function login(page: import("@playwright/test").Page, code: string) {
   await page.goto("/");
   await page.getByPlaceholder("접근 코드").fill(code);
   await page.getByRole("button", { name: "시작하기" }).click();
-  await expect(page.getByRole("button", { name: /AI에게 조건/ })).toBeVisible();
+  await expect(page.getByPlaceholder("상품 검색")).toBeVisible();
 }
 
 test("empty search result state", async ({ page }) => {
@@ -32,7 +32,7 @@ test("soldout option is disabled on product detail", async ({ page }) => {
 
 test("order without shipment shows NO_INFORMATION on W06", async ({ page }) => {
   await login(page, "e2e-b");
-  await page.getByRole("button", { name: "내 주문" }).click();
+  await page.locator(".bottom-nav").getByRole("button", { name: "내 주문" }).click();
   await page.getByText("코드뷰 모니터 B").first().click(); // ord-b-none (shipment 없음)
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
   await expect(page.getByText("배송 정보가 아직 등록되지 않았어요")).toBeVisible();
@@ -40,7 +40,7 @@ test("order without shipment shows NO_INFORMATION on W06", async ({ page }) => {
 
 test("delivered order is cancel-ineligible in A02", async ({ page }) => {
   await login(page, "e2e-a");
-  await page.getByRole("button", { name: "내 주문" }).click();
+  await page.locator(".bottom-nav").getByRole("button", { name: "내 주문" }).click();
   await page.getByText("코드뷰 모니터 C").first().click(); // ord-a-done (DELIVERED)
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
   await page.getByRole("button", { name: "주문 취소" }).click();
@@ -51,7 +51,7 @@ test("delivered order is cancel-ineligible in A02", async ({ page }) => {
 
 test("cs panel explains NO_INFORMATION order (stub)", async ({ page }) => {
   await login(page, "e2e-b");
-  await page.getByRole("button", { name: "내 주문" }).click();
+  await page.locator(".bottom-nav").getByRole("button", { name: "내 주문" }).click();
   await page.getByText("코드뷰 모니터 B").first().click();
   await page.getByRole("button", { name: "AI에게 이 주문 물어보기" }).click();
   const panel = page.locator(".agent-panel");

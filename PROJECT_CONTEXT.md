@@ -51,7 +51,7 @@
 04 Toss Shopping Shell               🟡 진행 중
    04-A 기본 Home/Search/List UI     ✅ 1차 기능 구현 완료 (Visual 목표 미달 — 아래 참조)
    04-B Demo Catalog Expansion       ✅ 완료 (seed safety correction 포함)
-   04-C Toss Shopping Home 재구성    ▶ 다음 (화면 단위 IA·밀도 역설계)
+   04-C Toss Shopping Home 재구성    ✅ 구현 완료 — 사용자 Visual 승인 대기
    04-D Navigation 재구성            ▶ 다음 (레퍼런스 구조 최대 충실)
    04-E Screenshot / Visual QA       ▶ 다음
 

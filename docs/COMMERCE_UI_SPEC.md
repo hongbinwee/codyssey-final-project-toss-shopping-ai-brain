@@ -17,7 +17,7 @@
 
 - 참고 캡처: `home/01`, `search/101`.
 - 관찰: 홈 헤더 = 둥근 검색 필드(돋보기+placeholder) + 우측 마이·장바구니 아이콘(카트는 빨간 숫자 배지). 상세는 이미지 위 오버레이 아이콘(백/공유/검색/카트) **[후속]**. 스크롤 시 헤더 변화는 미정밀 관찰 [Inferred] — 이번엔 고정(sticky)만.
-- 구현 State: 기본(홈) = 검색 input + 카트 아이콘(배지); 검색 화면 = `‹` 뒤로가기 + input + X 지우기; 서브 화면(상세·카트·주문)은 다음 단계에서 뒤로가기 헤더 추가.
+- 구현 State: 기본(홈) = 검색 input + 프로필 아이콘 + 카트 아이콘(배지); 검색 화면 = `‹` 뒤로가기 + input + X 지우기; 서브 화면(상세·카트·주문)은 다음 단계에서 뒤로가기 헤더 추가. [04-C] 프로필 아이콘 추가 — 토스의 '마이' 목적지는 우리 서비스에 없어 **내 주문으로 대체 [Project]**.
 - Backend: 카트 배지 = `GET /api/cart`의 `items.length`(기존 `refreshCart` 재사용).
 
 ## 3. 하단 Bottom Navigation [1차]
@@ -33,8 +33,8 @@
 
 - 참고 캡처: `home/01`.
 - 관찰 구조: 검색 필드 → 카테고리 pill 칩 행(가로 스크롤, 선택 칩은 중성 밝기 상승 — 언더라인 아님) → 히어로 프로모 카드(밝은 배경+페이지 n|m) → 아이콘 단축키 행 → 개인화 상품 섹션('~님을 위한' + 칩) → 상품 그리드.
-- 구현(04-B 기준 — 04-C에서 화면 단위 재구성 예정): 카테고리 pill 칩 = display-meta의 상위 그룹(전체 + 디지털/뷰티/패션/리빙/식품. fixture `monitor`는 디지털 그룹에 포함 — DB category 값은 유지하고 그룹 매핑만 UI에 둔다) → '지금 특가' 가로 레일(sectionTags=`flash-sale` 상품, static merchandising) → AI 진입 카드 → 상품 그리드. 상품은 `/api/products?limit=50` 1회 조회 후 클라이언트에서 그룹 필터링(서버 `category` 파라미터는 단일 값이라 그룹 표현 불가).
-- **[Superseded 2026-10-07]** 'AI 진입 카드가 프로모/merchandising 영역을 대신한다'는 판단 폐기 — merchandising block(프로모/특가/추천/배너)은 04-B Demo Catalog + demo/static UI로 별도 재현한다. **AI 진입점:** AI/Brain 진입점 자체는 향후 필요하지만, 홈 중심 대형 AI 카드의 현재 위치·형태는 확정된 방향이 아니다 — 04-C Home 재구성에서 Toss IA·merchandising 구조를 깨지 않는 위치로 결정한다. 단축키 행·페이징 히어로는 실제 기능 없이도 홈 구조 재현 범위에 포함(04-C에서 레퍼런스 대조 후 결정).
+- 구현(04-C — Toss IA 재구성 완료): 상단 콘텐츠 탭(쇼핑 홈/뷰티/식품/카테고리/특가/시즌 추천 — 텍스트 탭 + 선택 pill, 가로 스크롤) → 카드형 히어로 캐러셀(scroll-snap, 슬라이드 ~88%+peek, 좌 텍스트·우 상품 이미지, 우하단 `n|N` 인디케이터, 크림 카드 고정색 [Observed]) → 혜택 스트립('특가·배송 혜택 모아보기' + 실제 최대 할인율 계산 → 특가 탭) → 숏컷 아이콘 레일 9개(실 목적지만: 카테고리/오늘의 특가/뷰티/식품/디지털/패션/리빙/내 주문/장바구니) → 개인화 추천 섹션(`{userName}님을 위한 추천 상품` + sectionTags=recommended 우선 정렬) → 2열 상품 그리드. 탭별 콘텐츠: 뷰티·식품=커버형 히어로(풀블리드 이미지+그라데이션+흰 텍스트)+서브카테고리 아이콘 레일+그룹 그리드; 카테고리=좌측 세로 레일+우측 원형 서브카테고리 그리드+전체보기; 특가=자정 카운트다운+'오늘만 이 가격에 살 수 있어요'+DealCard(16:10 이미지); 시즌 추천=풀블리드 기획전 배너+DealCard. 상품 데이터는 `/api/products?limit=50` 1회 조회 후 클라이언트 그룹 필터링(서버 `category` 파라미터는 단일 값).
+- **[Superseded 2026-10-07]** 'AI 진입 카드가 프로모/merchandising 영역을 대신한다'는 판단 폐기 — merchandising block(프로모/특가/추천/배너)은 04-B Demo Catalog + demo/static UI로 별도 재현한다. **AI 진입점:** AI/Brain 진입점 자체는 향후 필요하지만, 홈 중심 대형 AI 카드는 폐기됐다 — [04-C 구현] 홈에서 대형 AI 카드 제거 완료, 진입점은 하단 네비 `AI` 탭으로 유지. 이후 더 자연스러운 진입점은 Brain 통합 단계에서 결정. 단축키 행·페이징 히어로는 레퍼런스 대조 후 실제 구현에 포함됐다(숏컷은 실 목적지만 연결).
 - UI State: 로딩 스켈레톤(카드형 회색 블록), Error(재시도), Empty.
 - Backend: `GET /api/products?query=&category=` — 카테고리 필터는 서버 `category` 파라미터 사용.
 
@@ -55,7 +55,7 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 
 - 참고 캡처: `home/01`, `search/105`, `product-list` 계열.
 - 관찰: 2열, 정사각(1:1) 실사진, 좌상단 `n% 특가` 레드 pill, 이미지 우하단 장바구니 아이콘 버튼, 본문 = 상품명 2줄 → `n%`+가격(bold) → 단가 → `★평점(개수)` → `최대 N원 적립`.
-- 구현(04-B): 2열 그리드 + 1:1 이미지 + 상품명 2줄 클램프 + 가격 bold + `★평점 · 리뷰 n` + 좌상단 `특가` 배지(sections=flash-sale) + 할인율%(discount 컬러) + 원가 취소선 + 배송 라벨 — 전부 `display-meta.ts`의 표시 메타 기반 **[Project]**. 할인율은 `original_price_won` 대비 최저가 옵션가로 계산한다. 단가·적립·카드 위 담기 아이콘은 여전히 미구현(후속). 품절은 이미지 딤드+`품절` 배지 유지.
+- 구현(04-C 기준): 2열 그리드 + 1:1 이미지 + 상품명 2줄 클램프 + 가격 bold + `★평점(리뷰 n)` + 좌상단 `n% 특가` 레드 pill(실제 할인율 — sections=flash-sale) + 할인율%(discount 컬러) + 원가 취소선 + 배송 라벨 + 카드 우하단 카트 아이콘(장식 — 카드 전체가 상세 진입이며 바로 담기는 지원하지 않는다 [Project]) — 전부 `display-meta.ts`의 표시 메타 기반. 할인율은 `original_price_won` 대비 최저가 옵션가로 계산한다. **단가·'30일 최저가'·적립·'N만 명 구매'·광고 배지는 근거 데이터가 없어 구현하지 않는다**(근거 없는 수치 표시 금지 원칙). 품절은 이미지 딤드+`품절` 배지 유지.
 - 상품 이미지: `ProductSummary.image`(=`image_urls[0]`)이 있으면 사용하고 없으면 로컬 생성 이미지 `/assets/products/{product_id}.webp`로 fallback(`onError` 시 글자 플레이스홀더). [04-B] demo-catalog는 image_urls에 실제 `/assets/products/p-d-*.webp`를 기록하고 파일도 함께 커밋한다 — fixture(p-a~c)는 image_urls가 비어 있어 convention fallback이 계속 동작한다.
 - Backend: `GET /api/products` 응답 그대로.
 

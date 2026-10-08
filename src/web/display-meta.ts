@@ -33,9 +33,83 @@ export interface ProductMeta {
   original_price_won?: number;
   // "오늘출발"/"내일도착" 같은 도착 라벨. 배송비는 서버 shipping_fee_won이 정본.
   delivery?: string;
-  // 홈 섹션 태그. 04-B에서는 flash-sale 레일만 표시하고 나머지는 04-C에서 활용한다.
+  // 홈 섹션 태그. 정적 merchandising용 — 추후 Brain 추천 결과로 교체 가능.
   sections?: ("flash-sale" | "popular" | "new" | "recommended" | "value")[];
 }
+
+// 카드/히어로 공통 표시 계산. 실제 주문 가격은 항상 서버 값이 정본이다.
+import type { ProductSummary } from "../contracts.ts";
+export const minPriceOf = (p: ProductSummary) =>
+  Math.min(...p.matched_variants.map((v) => v.unit_price_won));
+export const rateOf = (p: ProductSummary) => {
+  const o = PRODUCT_META[p.product_id]?.original_price_won;
+  const m = minPriceOf(p);
+  return o && o > m ? Math.round(((o - m) / o) * 100) : 0;
+};
+
+// 로컬 생성 webp 컨벤션 — 시드 image_urls가 비어 있을 때의 표시 경로.
+export const productImg = (p: { product_id: string; image: string | null }) =>
+  p.image ?? `/assets/products/${p.product_id}.webp`;
+
+// ── 04-C 홈 재구성용 merchandising 데이터 ─────────────────────────────
+// 캡처 [Observed] 구조: 히어로(텍스트+이미지) → 혜택 행 → 숏컷 → 추천 그리드.
+
+// 상단 쇼핑 탭. Toss의 OASIS는 우리 식품 콘텐츠로 대체한 [Project] 매핑.
+// 디지털·패션·리빙은 탭에 없고 카테고리/숏컷으로 진입한다.
+export const TOP_TABS = [
+  { id: "", label: "쇼핑 홈" },
+  { id: "beauty", label: "뷰티" },
+  { id: "food", label: "식품" },
+  { id: "category", label: "카테고리" },
+  { id: "sale", label: "특가" },
+  { id: "season", label: "시즌 추천" },
+] as const;
+
+// 콘텐츠 홈으로 렌더하는 탭(히어로+서브카테고리+그리드). 나머지 그룹 id는 리스팅.
+export const CONTENT_TABS = new Set(["beauty", "food"]);
+
+// 히어로 슬라이드 — 홈은 카드형(좌텍스트+우이미지), 뷰티/식품은 풀블리드 이미지형.
+export const HOME_HERO = ["p-d-ear-pro", "p-d-chair-1", "p-d-sun-mineral"];
+export const GROUP_HERO: Record<string, string[]> = {
+  beauty: ["p-d-sun-mineral", "p-d-lip", "p-d-tone"],
+  food: ["p-d-cof-1", "p-d-pro-1", "p-d-cof-2"],
+};
+
+// 시즌 추천 탭 상품 — 쌀쌀한 계절 홈카페/무드 컨셉의 데모 큐레이션 [Project].
+export const SEASONAL = [
+  "p-d-lamp-2", "p-d-cof-1", "p-d-cof-2", "p-d-pro-1", "p-d-tee-2", "p-d-chair-2",
+];
+
+// 카테고리 브라우저의 서브카테고리 원형 아이콘 그리드 [Project].
+// productIds는 대표 이미지와 ?sub= 필터링에 쓰인다.
+export interface Subcat { id: string; label: string; productIds: string[] }
+export const SUBCATS: Record<string, Subcat[]> = {
+  digital: [
+    { id: "earbuds", label: "이어폰", productIds: ["p-d-ear-lite", "p-d-ear-pro", "p-d-ear-ultra"] },
+    { id: "keyboard", label: "키보드", productIds: ["p-d-key-87", "p-d-key-61"] },
+    { id: "battery", label: "보조배터리", productIds: ["p-d-bat-10", "p-d-bat-20"] },
+    { id: "monitor", label: "모니터", productIds: ["p-a", "p-b", "p-c"] },
+  ],
+  beauty: [
+    { id: "sun", label: "선케어", productIds: ["p-d-sun-mineral", "p-d-sun-aqua", "p-d-sun-stick"] },
+    { id: "cleansing", label: "클렌징", productIds: ["p-d-foam-1", "p-d-foam-2"] },
+    { id: "makeup", label: "메이크업", productIds: ["p-d-lip", "p-d-tone"] },
+  ],
+  fashion: [
+    { id: "tee", label: "티셔츠", productIds: ["p-d-tee-1", "p-d-tee-2"] },
+    { id: "shoes", label: "스니커즈", productIds: ["p-d-sn-1", "p-d-sn-2"] },
+  ],
+  living: [
+    { id: "chair", label: "의자", productIds: ["p-d-chair-1", "p-d-chair-2"] },
+    { id: "light", label: "조명", productIds: ["p-d-lamp-1", "p-d-lamp-2"] },
+  ],
+  food: [
+    { id: "coffee", label: "커피", productIds: ["p-d-cof-1", "p-d-cof-2"] },
+    { id: "protein", label: "프로틴", productIds: ["p-d-pro-1"] },
+  ],
+};
+export const subcatOf = (group: string, sub: string) =>
+  SUBCATS[group]?.find((s) => s.id === sub);
 
 export const SECTION_LABEL: Record<string, string> = {
   "flash-sale": "지금 특가",

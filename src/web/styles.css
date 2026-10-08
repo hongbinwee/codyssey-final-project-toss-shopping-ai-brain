@@ -150,37 +150,200 @@ button svg { display: block; }
 main { flex: 1; padding: 0 var(--pad) 110px; }
 .screen { padding-top: 6px; }
 
-/* 홈 카테고리 — 가로 스크롤 pill 칩, 선택은 중성 밝기 상승 [Observed home/01] */
-.cat-tabs {
-  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
-  padding: 2px 0 4px; margin-bottom: 12px;
+/* 상단 쇼핑 탭 — 텍스트 탭 가로 스크롤, 선택은 pill 배경 [Observed home/01] */
+.shop-tabs {
+  display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 calc(-1 * var(--pad)) 4px; padding: 0 var(--pad) 8px;
 }
-.cat-tabs::-webkit-scrollbar { display: none; }
-.cat-tab {
-  flex-shrink: 0; padding: 8px 14px;
-  background: var(--chip); border: none; border-radius: 999px;
-  color: var(--text-2); font-size: 13.5px; cursor: pointer; white-space: nowrap;
+.shop-tabs::-webkit-scrollbar { display: none; }
+.shop-tab {
+  flex-shrink: 0; border: none; background: none; cursor: pointer;
+  padding: 7px 11px; border-radius: 14px;
+  font-size: 15px; font-weight: 500; color: var(--text-2); white-space: nowrap;
 }
-.cat-tab.on { background: var(--chip-on); color: var(--text); font-weight: 700; }
+.shop-tab.on { background: var(--chip-on); color: var(--text); font-weight: 700; }
 
-/* AI 진입 카드 — 프로젝트 고유 요소 [Project] */
-.ai-entry {
-  width: 100%; text-align: left;
-  display: flex; align-items: center; gap: 12px;
-  background: linear-gradient(135deg, var(--ai-a), var(--ai-b));
-  color: var(--text); border: 1px solid var(--ai-line);
-  border-radius: var(--radius); padding: 16px;
-  font-size: 15px; cursor: pointer;
+/* 히어로 캐러셀 — 카드형(좌 텍스트+우 이미지), 다크에서도 크림 카드 유지 [Observed] */
+.hero-track {
+  display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; margin: 6px calc(-1 * var(--pad)) 0; padding: 0 var(--pad);
 }
-.ai-entry:hover { filter: brightness(1.04); }
-.ai-entry-ico { color: var(--accent); flex-shrink: 0; display: flex; }
-.ai-entry b { display: block; font-weight: 700; }
-.ai-entry-sub { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ai-sub); }
+.hero-track::-webkit-scrollbar { display: none; }
+.hero-slide {
+  position: relative; flex: 0 0 calc(100% - 24px); scroll-snap-align: start;
+  height: 186px; border: none; border-radius: 18px; overflow: hidden;
+  background: #f4efe7; color: #211c17;
+  text-align: left; cursor: pointer; padding: 0;
+  display: flex; align-items: stretch;
+}
+.hero-txt {
+  flex: 1; min-width: 0; padding: 20px 0 18px 20px;
+  display: flex; flex-direction: column; align-items: flex-start;
+}
+.hero-rate { color: var(--discount); font-size: 14px; font-weight: 700; }
+.hero-name {
+  font-size: 18px; font-weight: 800; line-height: 1.3; margin-top: 6px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.hero-price { font-size: 19px; font-weight: 800; margin-top: 3px; }
+.hero-sub { margin-top: auto; font-size: 12px; color: #8b8378; }
+.hero-img { width: 46%; height: 100%; object-fit: cover; }
+.hero-idx {
+  position: absolute; right: 12px; bottom: 12px; z-index: 2;
+  background: rgba(0, 0, 0, 0.68); color: #fff;
+  font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 11px;
+}
+/* cover형 — 이미지 전체 + 하단 그라데이션 텍스트 (뷰티/식품 탭) [Observed 26] */
+.hero-slide.cover { background: var(--field); }
+.hero-slide.cover .hero-bg {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+}
+.hero-slide.cover .hero-txt {
+  position: relative; z-index: 1; justify-content: flex-end;
+  padding: 0 0 34px 20px; color: #fff;
+}
+.hero-slide.cover .hero-txt::before {
+  content: ""; position: absolute; inset: -20px -200px -34px -20px; z-index: -1;
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.6) 100%);
+}
+.hero-slide.cover .hero-name { color: #fff; }
+.hero-slide.cover .hero-price { color: #fff; }
+.hero-slide.cover .hero-sub { color: rgba(255, 255, 255, 0.75); }
+.hero-slide.cover .hero-rate {
+  color: #fff; background: var(--discount);
+  padding: 2px 7px; border-radius: 7px; font-size: 12px;
+}
+
+/* 혜택·안내 행 — 원본 포인트 행의 위치/밀도, 구매 관련 merchandising으로 대체 [Project] */
+.benefit {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  margin: 14px 0 0; padding: 2px 2px;
+  background: none; border: none; cursor: pointer; color: var(--text);
+}
+.benefit b { font-size: 16.5px; font-weight: 800; }
+.benefit-chip {
+  background: var(--accent); color: #fff;
+  font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 12px;
+}
+
+/* 숏컷 아이콘 레일 — 원형 아이콘 + 라벨 가로 스크롤 [Observed home/01] */
+.shortcut-rail {
+  display: flex; gap: 14px; overflow-x: auto; scrollbar-width: none;
+  margin: 12px calc(-1 * var(--pad)) 0; padding: 6px var(--pad) 2px;
+}
+.shortcut-rail::-webkit-scrollbar { display: none; }
+.sc-item {
+  flex: 0 0 auto; width: 62px; border: none; background: none; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 0;
+}
+.sc-ico {
+  width: 54px; height: 54px; border-radius: 50%;
+  background: var(--chip); color: var(--text-2);
+  display: flex; align-items: center; justify-content: center;
+}
+.sc-item:active .sc-ico { background: var(--chip-on); }
+.sc-label { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+
+/* 콘텐츠 홈 서브카테고리 레일 — 라운드 스퀘어 아이콘 [Observed 26] */
+.icon-rail {
+  display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none;
+  margin: 16px calc(-1 * var(--pad)) 0; padding: 2px var(--pad);
+}
+.icon-rail::-webkit-scrollbar { display: none; }
+.icon-rail .sub-item { flex: 0 0 auto; width: 66px; }
+
+/* 카테고리 브라우저 — 좌측 세로 레일 + 우측 원형 서브카테고리 그리드 [Observed 28] */
+.cat-browser { display: flex; margin: 4px calc(-1 * var(--pad)) 0; }
+.cat-rail {
+  flex: 0 0 96px; padding-left: var(--pad);
+  display: flex; flex-direction: column; gap: 2px; align-self: flex-start;
+}
+.cat-rail-i {
+  border: none; background: none; cursor: pointer; text-align: left;
+  padding: 10px 12px; border-radius: 12px;
+  font-size: 14.5px; color: var(--text-2);
+}
+.cat-rail-i.on { background: var(--chip-on); color: var(--text); font-weight: 700; }
+.cat-pane { flex: 1; min-width: 0; padding-right: var(--pad); }
+.cat-pane-head { display: flex; justify-content: space-between; align-items: baseline; }
+.cat-pane-head b { font-size: 16.5px; }
+.cat-all {
+  border: none; background: none; cursor: pointer;
+  color: var(--muted); font-size: 13px;
+  display: flex; align-items: center; gap: 1px;
+}
+.sub-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 20px 8px; margin-top: 20px;
+}
+.sub-item {
+  border: none; background: none; cursor: pointer; padding: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.sub-circle {
+  width: 62px; height: 62px; border-radius: 50%; overflow: hidden;
+  background: var(--chip);
+  display: flex; align-items: center; justify-content: center;
+}
+.sub-circle.sq { border-radius: 18px; width: 56px; height: 56px; }
+.sub-circle img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sub-label { font-size: 12.5px; color: var(--text-2); }
+
+/* 특가 탭 — 카운트다운 + 큰 이미지 딜 카드 [Observed 34] */
+.sale-timer {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--discount); font-size: 13.5px; margin-top: 14px;
+}
+.sale-timer b { font-variant-numeric: tabular-nums; font-weight: 700; }
+.sale-title { font-size: 19px; font-weight: 800; margin: 6px 0 16px; }
+.deal-card {
+  display: block; width: 100%; border: none; background: none;
+  padding: 0; cursor: pointer; text-align: left; margin-bottom: 24px;
+  color: var(--text);
+}
+.deal-thumb {
+  position: relative; border-radius: 16px; overflow: hidden;
+  aspect-ratio: 1.55; background: var(--field);
+}
+.deal-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.deal-cart {
+  position: absolute; right: 10px; bottom: 10px;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(0, 0, 0, 0.36); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.deal-name {
+  font-size: 14.5px; line-height: 1.4; margin-top: 10px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.deal-price { font-size: 19px; font-weight: 800; margin-top: 4px; }
+.deal-price .price-orig { display: inline; margin-left: 6px; font-size: 14px; }
+
+/* 시즌 추천 탭 — 풀블리드 캠페인 배너 [Observed 50] */
+.season-hero {
+  position: relative; margin: 6px calc(-1 * var(--pad)) 0; height: 196px;
+  overflow: hidden;
+  background: linear-gradient(118deg, #3c322a 0%, #5c4a3c 55%, #82644e 100%);
+}
+.season-img {
+  position: absolute; right: -6px; bottom: 0; height: 88%; object-fit: contain;
+}
+.season-txt {
+  position: absolute; left: 22px; top: 30px; z-index: 1;
+  color: #fff; display: flex; flex-direction: column;
+}
+.season-txt b { font-size: 21px; font-weight: 800; line-height: 1.38; }
+.season-txt span { margin-top: 10px; font-size: 13px; color: rgba(255, 255, 255, 0.72); }
+.accent { color: var(--accent); font-style: normal; }
+.rec-h { margin-top: 24px; }
+.list-h .cnt { margin-left: 6px; font-size: 13px; font-weight: 500; }
+
 .section-h { margin: 20px 0 12px; font-size: 16px; font-weight: 700; }
 
 /* 상품 그리드·카드 — 2열, 정사각 이미지, 텍스트는 이미지 아래, 카드 배경 없음 [Observed] */
 .product-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 10px; }
 .product-card {
+  position: relative;
   text-align: left; cursor: pointer; padding: 0;
   background: none; border: none; color: var(--text);
   display: flex; flex-direction: column;
@@ -220,18 +383,14 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 .product-meta svg { color: var(--star); }
 .product-meta .delivery-tag { margin-left: 2px; }
 .product-meta .delivery-tag::before { content: "· "; }
-
-/* 홈 특가 레일 — 가로 스크롤 상품 행 [Observed home merchandising] */
-.rail-sec { margin: 0 calc(-1 * var(--pad)); }
-.rail-h { margin-left: var(--pad); }
-.rail {
-  display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none;
-  padding: 0 var(--pad) 4px;
+.product-meta .delivery-tag.first::before { content: ""; }
+/* 카드 우하단 카트 아이콘 — 상세로 이동(옵션 선택 진입) [Observed card] */
+.card-cart {
+  position: absolute; right: 0; bottom: 0;
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--line); color: var(--muted);
+  display: flex; align-items: center; justify-content: center;
 }
-.rail::-webkit-scrollbar { display: none; }
-.rail .product-card { flex: 0 0 118px; }
-.rail .product-name { font-size: 13.5px; -webkit-line-clamp: 1; }
-.rail .product-price { font-size: 15px; }
 
 /* 스켈레톤 */
 .skel-card { display: flex; flex-direction: column; gap: 6px; }
