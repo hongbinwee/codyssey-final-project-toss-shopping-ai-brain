@@ -28,6 +28,9 @@
   --pcard: #ffffff;
   --ptext: #1d1f24;
   --psub: #5f646c;
+  --pchip: #f2f4f6;        /* [Project] 라이트 카드 위 혜택 칩 */
+  --pline: #d8dbe0;        /* [Project] 카드 메타 구분 바 */
+  --cartline: #8b95a1;     /* [TDS 근사] 윤곽선 쇼핑백 아이콘 */
   --radius: 14px;
   --radius-sm: 10px;
   --nav-h: 60px;
@@ -58,6 +61,9 @@
     --overlay: rgba(0, 0, 0, 0.62);
     --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
     --pcard: #b6b6b6;    /* [Observed] 다크 셸 위 라이트 그레이 카드 */
+    --pchip: #dddddd;    /* [Observed] 카드 혜택 칩 배경 */
+    --pline: #9a9ca0;    /* [Observed 근사] 카드 메타 구분 바 */
+    --cartline: #ffffff; /* [Observed] 카드 우하단 밝은 윤곽선 쇼핑백 */
   }
 }
 * { box-sizing: border-box; }
@@ -391,6 +397,12 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 .list-h .cnt { margin-left: 6px; font-size: 13px; font-weight: 500; }
 
 .section-h { margin: 20px 0 12px; font-size: 16px; font-weight: 700; }
+/* 추천 섹션의 합성 지표 안내 칩 — Toss의 AI/광고 칩 슬롯을 정직한 표기로 대체 */
+.demo-chip {
+  margin-left: 7px; padding: 2px 6px; border-radius: 6px;
+  border: 1px solid var(--line); color: var(--muted);
+  font-size: 10px; font-weight: 600; vertical-align: 2px;
+}
 
 /* 상품 그리드·카드 — 2열. 다크 셸 위 라이트 카드 일체형(이미지+텍스트 같은 면) [Observed home/02] */
 .product-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; }
@@ -426,32 +438,53 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
   background: var(--discount); color: #fff;
   font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px;
 }
-.product-info { padding: 8px 14px 16px; }
+.product-info { padding: 6px 10px 12px; }
 .product-name {
   font-size: 13.5px; font-weight: 500; line-height: 1.42; margin-bottom: 5px;
   color: var(--ptext); min-height: 38px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-/* 할인율은 가격과 같은 다크 텍스트 [Observed — 빨간 %가 아님] */
-.product-price { font-size: 17px; font-weight: 800; margin-bottom: 3px; color: var(--ptext); }
+/* 할인율은 가격과 같은 다크 텍스트, ~19-20px 굵은 행 [Observed — 빨간 %가 아님] */
+.product-price {
+  font-size: 19px; font-weight: 800; margin-bottom: 2px;
+  color: var(--ptext); letter-spacing: -0.02em;
+}
 .price-rate { color: var(--discount); margin-right: 4px; }
 .product-card .price-rate { color: var(--ptext); }
+/* 그리드 카드는 정가 취소선을 달지 않는다 [Observed home/02] — deal-card만 사용 */
 .price-orig {
   font-size: 12px; color: var(--psub);
   text-decoration: line-through; margin-bottom: 3px;
 }
-.product-meta { font-size: 11.5px; color: var(--psub); display: flex; align-items: center; gap: 4px; }
+/* 조건부 "지금 30일 내 최저가 ↓" — 조용한 그레이 라벨 [Observed] */
+.product-lowest {
+  font-size: 12px; font-weight: 500; color: var(--psub);
+  margin: 0 0 2px; letter-spacing: -0.01em;
+}
+.signal-demo {
+  margin-left: 3px; font-size: 9px; font-weight: 500;
+  color: var(--psub); opacity: 0.78; vertical-align: 1px;
+}
+.product-meta { font-size: 11.5px; color: var(--psub); display: flex; align-items: center; gap: 5px; }
 .product-meta svg { color: var(--star); }
+.product-meta .meta-item { display: inline-flex; align-items: center; gap: 3px; }
+.product-meta .meta-eye { color: var(--psub); }
+/* 카드 위 별점은 노랑이 아니라 다크 텍스트에 가깝다 [Observed] */
+.product-card .product-meta .meta-star { color: var(--ptext); }
+.product-meta .meta-sep { width: 1px; height: 9px; background: var(--pline); }
 .product-card .muted { color: var(--psub); }
-.product-meta .delivery-tag { margin-left: 2px; }
-.product-meta .delivery-tag::before { content: "· "; }
-.product-meta .delivery-tag.first::before { content: ""; }
-/* 카드 우하단 카트 아이콘 — 라이트 카드 위 흰 원형 버튼 [Observed card] */
+/* 하단 혜택/배송 칩 — 라이트 그레이 pill + 다크 텍스트 [Observed chip] */
+.product-chips { margin-top: 9px; }
+.product-chip {
+  display: inline-block; background: var(--pchip); color: var(--ptext);
+  font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 8px;
+  letter-spacing: -0.01em;
+}
+/* 카드 우하단 카트 아이콘 — 배경 없는 얇은 윤곽선 쇼핑백 [Observed card] */
 .card-cart {
-  position: absolute; right: 10px; bottom: 10px;
-  width: 32px; height: 32px; border-radius: 50%;
-  border: none; background: #fff; color: #33373d;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.14);
+  position: absolute; right: 12px; bottom: 12px;
+  width: auto; height: auto; border: none; background: none;
+  color: var(--cartline);
   display: flex; align-items: center; justify-content: center;
 }
 

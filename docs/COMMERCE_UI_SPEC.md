@@ -54,10 +54,15 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 
 ## 5. 상품 카드 / 목록 [1차]
 
+- **갱신 메모 (2026-10-09):** 아래의 과거 04-C 구현/Correction 설명 중 가격 취소선, 별점 색, 카트 버튼 배경, 지표 미구현 여부는 C안 Product Card 보완으로 대체되었다. 현재 기준은 다음 항목을 적용한다.
 - 참고 캡처: `home/01`, `search/105`, `product-list` 계열.
 - 관찰: 2열, 정사각(1:1) 실사진, 좌상단 `n% 특가` 레드 pill, 이미지 우하단 장바구니 아이콘 버튼, 본문 = 상품명 2줄 → `n%`+가격(bold) → 단가 → `★평점(개수)` → `최대 N원 적립`.
 - 구현(04-C 기준): 2열 그리드 + 1:1 이미지 + 상품명 2줄 클램프 + 가격 bold + `★평점(리뷰 n)` + 좌상단 `n% 특가` 레드 pill(실제 할인율 — sections=flash-sale) + 할인율%(discount 컬러) + 원가 취소선 + 배송 라벨 + 카드 우하단 카트 아이콘(장식 — 카드 전체가 상세 진입이며 바로 담기는 지원하지 않는다 [Project]) — 전부 `display-meta.ts`의 표시 메타 기반. 할인율은 `original_price_won` 대비 최저가 옵션가로 계산한다. **단가·'30일 최저가'·적립·'N만 명 구매'·광고 배지는 근거 데이터가 없어 구현하지 않는다**(근거 없는 수치 표시 금지 원칙). 품절은 이미지 딤드+`품절` 배지 유지.
 - **[04-C Correction — 카드 해부 [Observed `home/02`·`product-list/34`]]** 다크 셸 위에서 카드 정보 영역은 **라이트 카드(--pcard: light `#fff` / dark `#b6b6b6`)**로 구현된다(이미지·텍스트가 하나의 카드 배경에 연결). 카드 radius ~14px+overflow hidden, 이미지 비율 ~1.12:1이며 하단이 카드 배경색으로 페이드(`mask-image` 그라데이션). 본문 텍스트는 카드 위 다크 컬러(--ptext/#1d1f24), **할인율 %도 가격과 같은 다크색**(빨간 강조는 이미지 위 `n% 특가` 배지만 해당). 카트 아이콘은 카드 우하단 **흰 원형 버튼**. 카드 좌우 마진 ~10px, 그리드 gap ~10px.
+- **현재 구현 [04-C Product Card C]:** 2열 그리드 + 약 1:1 이미지 + 좌상단 레드 특가 배지 + 상품명 최대 2줄 + 할인율과 판매가 같은 줄(다크 계열, 19px) + 조건부 30일 최저가 + 조회/평점 메타 + 배송 칩 + 배경 없는 작은 쇼핑백 윤곽선. 그리드 카드의 정가 취소선은 숨기며 특가 DealCard에서는 유지한다. 카드 전체는 상세 진입이고 쇼핑백은 장식 [Project].
+- 현재가·옵션·재고·리뷰 수는 API `ProductSummary`가 정본이다. 할인율은 `original_price_won` 대비 서버 최저 옵션가로 계산하고, 리뷰 수는 실제 `rating_summary.count`만 표시한다. 배송 칩은 `PRODUCT_META.delivery` Demo 라벨이다. 적립 정책·판매량·광고 데이터는 없어 관련 수치를 표시하지 않는다.
+- **Product Signals [Project, UI 표시용]:** `display-meta.ts`의 조회 신호는 `metric=UNIQUE_VISITORS`, 고유 방문자 수, 집계 기간, 기준 시각, 출처 유형(`INTERNAL | EXTERNAL | SYNTHETIC`) 및 출처명을 가진다. 페이지뷰와 고유 방문자는 별도 의미다. 합성 표본은 카드에 `데모`로 보이며 값이 없으면 숨긴다.
+- **30일 최저가 규칙:** Boolean 최저가 플래그를 저장하지 않는다. 가격 관측점은 `product_id`, `variant_id`, 관측 시각, 관측가, 출처 유형, 출처명을 가진다. 카드가 표시하는 현재 최저 옵션과 같은 variant 및 같은 출처의 최근 30일 관측만 집계한다. 현재 서버 가격이 그 관측 최저가 이하일 때만 문구를 표시하고, 데이터가 없거나 기간이 지났거나 현재가가 더 높으면 숨긴다. 현재 표본은 `SYNTHETIC`이며 실제 수집 API/DB/Migration은 없다.
 - 상품 이미지: `ProductSummary.image`(=`image_urls[0]`)이 있으면 사용하고 없으면 로컬 생성 이미지 `/assets/products/{product_id}.webp`로 fallback(`onError` 시 글자 플레이스홀더). [04-B] demo-catalog는 image_urls에 실제 `/assets/products/p-d-*.webp`를 기록하고 파일도 함께 커밋한다 — fixture(p-a~c)는 image_urls가 비어 있어 convention fallback이 계속 동작한다.
 - Backend: `GET /api/products` 응답 그대로.
 

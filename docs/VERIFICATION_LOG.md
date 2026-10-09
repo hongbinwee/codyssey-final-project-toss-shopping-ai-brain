@@ -335,3 +335,34 @@ Side Astra 재검수에서 남은 Major 2건(demo seed 원자성 부재, DB 가�
 - 자체 확인: 라이트 카드 anatomy·특가 상단 구조(프로모/보조탭/타이머)·히어로 비중·스크롤 플로팅 헤더·카테고리 혼합 노출이 Reference와 구조적으로 일치.
 - 남은 차이: 하단 네비(04-D 범위), 토스 카드의 '30일 최저가/N명 구매/적립' 행은 근거 데이터 없어 의도적 미구현, 카드 이미지 radius 등 미세 수치는 08 Visual Polish 범위.
 - **최종 Visual 승인 = 사용자 대기 중 (04-C 미확정).**
+
+## 2026-10-09 04-C Product Card C안 보완
+
+사용자 승인 C안에 따라 Product Card의 관측 지표와 시각 계층을 보완했다. 04-C의 사용자 Visual QA는 계속 대기 상태다.
+
+### 변경
+
+- 그리드 카드의 정가 취소선을 제거하고, 이미지 배지 아래에 할인율+판매가를 한 줄로 강조했다. 특가 DealCard의 정가 취소선은 유지한다.
+- 상품명 2줄·카드 내 여백·배송 칩·평점 메타를 정리하고, 별점을 다크 톤으로 맞췄다. 우하단 카트는 배경 없는 작은 윤곽선 쇼핑백으로 변경했다.
+- UI 전용 `ProductSignals`를 추가했다. 조회수는 페이지뷰와 구분된 고유 방문자 수·집계기간·기준시각·출처유형·출처명을 가진다. 합성값에는 카드에서 '데모'를 표시한다.
+- 30일 최저가는 고정 Boolean 대신 `product_id + variant_id + source_name`별 시점·가격 관측표본에서 계산한다. 같은 옵션·같은 출처의 최근 30일 표본만 사용하며, 현재 서버 가격이 계산된 최저가 이하일 때만 노출한다. 표본이 없거나 만료·가격 초과 시 숨긴다.
+- DB/Migration·상품 Seed·외부 API·조회 수집·적립 정책은 추가하지 않았다. 현재 Product Signals 표본은 `SYNTHETIC`이다.
+
+### 검증
+
+| 명령 / 확인 | 결과 |
+| --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit` | PASS |
+| `node scripts/build-web.ts` | PASS |
+| `node --test tests/unit/*.test.ts` | PASS — 21/21 (조회수 포맷, 동일 옵션 30일 최저가, 현재가가 최저가보다 높을 때 숨김, 관측기간 만료) |
+| Playwright E2E | PASS — 14/14. 첫 시도는 Docker Desktop 정지로 readiness 실패; Docker Desktop과 DB 컨테이너를 기존 `pgdata` volume으로 기동한 뒤 재실행 통과 |
+| `node scripts/eval.ts --mode=stub --split=dev` | PASS — 16/16 |
+| `node scripts/eval.ts --mode=stub --split=holdout --repeat=3` | PASS — 18/18 |
+| Integration 전체 | 이번 변경은 Frontend·표시 신호 전용이므로 재실행하지 않음. 직전 기록의 직렬 Integration 64건 PASS 유지 |
+| Live Eval | 이번 변경에서 실행하지 않음(Brain/API 변경 없음); 기존 LLM key 미설정 BLOCKED 기록은 유지 |
+
+### Visual QA
+
+- 기준 390×844, Dark: Reference/Implementation 비교본 `shots/04c/qa/01_home_first.png`, `02_home_scrolled.png`, `03_hero_slide.png`, `04_beauty.png`, `05_sale.png`; Light 구현본은 `06_light.png`.
+- 확인: 그리드에서 배지·가격·30일 최저가·조회/평점·배송 칩·쇼핑백의 순서와 밀도가 보이고, 합성 신호에는 '데모'가 표시된다. Dark/light 모두 레이아웃이 유지된다.
+- 남은 Gap: 사용자 시각 승인 전 04-C를 종료하지 않는다. 하단 Navigation은 04-D 범위다.

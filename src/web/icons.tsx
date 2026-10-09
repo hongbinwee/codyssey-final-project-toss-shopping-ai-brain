@@ -41,6 +41,9 @@ export const IcClock = (p: P) => (
   <Svg {...p}><circle cx="12" cy="12" r="8" /><polyline points="12 7.5 12 12 15 14" /></Svg>
 );
 export const IcChevronDown = (p: P) => <Svg {...p}><polyline points="5.5 9 12 15.5 18.5 9" /></Svg>;
+export const IcEye = (p: P) => (
+  <Svg {...p}><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="3" /></Svg>
+);
 export const IcCheck = (p: P) => <Svg {...p}><polyline points="4.5 12.5 10 18 19.5 6.5" /></Svg>;
 export const IcStar = ({ size = 13, className }: P) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden className={className}>

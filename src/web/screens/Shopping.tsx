@@ -210,7 +210,13 @@ function HomeView({
           </button>
         ))}
       </div>
-      <h3 className="section-h rec-h">{userName}님을 위한 추천 상품</h3>
+      {/* 카드의 조회수·최저가는 SYNTHETIC 데모 지표 — 섹션에 데모임을 표시한다 */}
+      <h3 className="section-h rec-h">
+        {userName}님을 위한 추천 상품
+        <span className="demo-chip" title="카드의 조회수·최저가 표시는 시연용 합성 지표입니다">
+          데모 지표
+        </span>
+      </h3>
       <div className="product-grid">
         {ordered.map((p) => (
           <ProductCard key={p.product_id} p={p} onOpen={() => onOpen(p.product_id)} />
@@ -249,7 +255,12 @@ function GroupHome({
           ))}
         </div>
       )}
-      <h3 className="section-h rec-h">{userName}님을 위한 {groupLabel(cat)} 추천</h3>
+      <h3 className="section-h rec-h">
+        {userName}님을 위한 {groupLabel(cat)} 추천
+        <span className="demo-chip" title="카드의 조회수·최저가 표시는 시연용 합성 지표입니다">
+          데모 지표
+        </span>
+      </h3>
       {gItems.length === 0 ? (
         <Empty text="이 카테고리의 상품이 아직 없어요" />
       ) : (

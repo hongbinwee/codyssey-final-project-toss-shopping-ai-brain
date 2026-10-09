@@ -1,6 +1,6 @@
 // 04-B Demo Catalog — 화면 표시/merchandising 전용 메타.
 // 실제 가격·재고·리뷰 수는 항상 API 응답이 정본이다.
-// 이 파일에는 카드/홈 표시를 위한 UI 메타(정가 취소선, 배송 라벨, 섹션 태그)만 둔다.
+// 이 파일은 UI 메타와 출처가 명시된 Demo Product Signals만 관리한다.
 // Brain이나 추천 로직은 없으며, static 태그 기반으로 04-C Home 재구성 시 교체 가능한 형태다.
 
 // 상위 카테고리 그룹. DB products.category는 상품군 단위(digital/beauty/...)이고
@@ -29,7 +29,7 @@ export const groupLabel = (id: string): string =>
   CATEGORY_GROUPS.find((g) => g.id === id)?.label ?? id;
 
 export interface ProductMeta {
-  // 최저가 옵션 기준 정가. 카드의 할인율/취소선 표시에만 쓰인다 (주문 가격과 무관).
+  // 최저가 옵션 기준 정가. 할인율과 특가 DealCard 취소선 표시에만 쓰인다(주문 가격과 무관).
   original_price_won?: number;
   // "오늘출발"/"내일도착" 같은 도착 라벨. 배송비는 서버 shipping_fee_won이 정본.
   delivery?: string;
@@ -178,4 +178,146 @@ export const PRODUCT_META: Record<string, ProductMeta> = {
   "p-d-cof-1": { original_price_won: 14900, delivery: "오늘출발", sections: ["flash-sale", "value", "popular"] },
   "p-d-cof-2": { delivery: "오늘출발", sections: ["new"] },
   "p-d-pro-1": { original_price_won: 42000, delivery: "오늘출발", sections: ["flash-sale"] },
+};
+
+// ── 카드 보조 지표(신호) — 출처를 명시하는 확장 가능 계약 ────────────
+// "N명 조회"/"30일 내 최저가" 같은 행은 Toss 카드에 있지만 [Observed home/02]
+// 우리는 아직 실제 조회 집계·가격 이력 파이프라인이 없다. 향후 내부 이벤트
+// 집계(INTERNAL)나 외부 상품 API(EXTERNAL)로 같은 계약에 교체할 수 있게
+// 출처를 source로 명시하고, 지금 값은 전부 SYNTHETIC 시연용이다.
+// UI는 이 데이터를 실제 통계처럼 주장하지 않는다(섹션 데모 칩 + title).
+export type SignalSource = "INTERNAL" | "EXTERNAL" | "SYNTHETIC";
+
+export interface ViewCountSignal {
+  metric: "UNIQUE_VISITORS";
+  // 고유 방문자 수 — 총 페이지뷰와 구분한다.
+  unique_viewers: number;
+  window_days: number; // 집계 기간(일)
+  as_of: string;
+  source: SignalSource;
+  source_name: string;
+}
+export interface PriceObservation {
+  product_id: string;
+  variant_id: string;
+  observed_at: string;
+  price_won: number;
+  source: SignalSource;
+  source_name: string;
+}
+export interface ProductSignals {
+  view_count?: ViewCountSignal;
+  // Lowest 30-day value is derived from same-variant observations, never a boolean.
+  price_observations?: PriceObservation[];
+}
+
+const SYN = "SYNTHETIC" as const;
+const sourceName = "demo-price-history";
+const ago = (days: number) => new Date(Date.now() - days * 86400000).toISOString();
+const viewers: Record<string, number> = {
+  "p-b": 5200,
+  "p-d-ear-lite": 32400, "p-d-ear-pro": 18300, "p-d-key-87": 13600,
+  "p-d-bat-10": 19200, "p-d-bat-20": 8400, "p-d-sun-mineral": 45600,
+  "p-d-sun-aqua": 26100, "p-d-lip": 6800, "p-d-foam-1": 7400,
+  "p-d-tee-1": 12400, "p-d-sn-1": 15700, "p-d-chair-1": 9800,
+  "p-d-lamp-1": 11300, "p-d-cof-1": 22700, "p-d-pro-1": 8900,
+};
+const viewSignal = (unique_viewers: number): ViewCountSignal => ({
+  metric: "UNIQUE_VISITORS",
+  unique_viewers,
+  window_days: 30,
+  as_of: new Date().toISOString(),
+  source: SYN,
+  source_name: "demo-traffic-sample",
+});
+
+// [SYNTHETIC] sample points stand in for permitted product-price observations.
+// Each entry is tied to one product + variant + source; the card derives the low.
+const syntheticHistory = (
+  product_id: string,
+  variant_id: string,
+  current_won: number,
+  previous_low_won = current_won,
+): PriceObservation[] =>
+  [
+    { days: 29, price_won: current_won + 2000 },
+    { days: 14, price_won: previous_low_won },
+    { days: 1, price_won: current_won },
+  ].map(({ days, price_won }) => ({
+    product_id,
+    variant_id,
+    observed_at: ago(days),
+    price_won,
+    source: SYN,
+    source_name: sourceName,
+  }));
+
+const priceSeries: [string, string, number, number?][] = [
+  ["p-d-ear-lite", "v-d-ear-lite-w", 89000],
+  ["p-d-ear-pro", "v-d-ear-pro-w", 149000],
+  ["p-d-key-87", "v-d-key-87-w", 79000],
+  ["p-d-bat-10", "v-d-bat-10", 29000],
+  // Current 45,000 > observed low 43,000 → the claim should stay hidden.
+  ["p-d-bat-20", "v-d-bat-20", 45000, 43000],
+  ["p-d-sun-mineral", "v-d-sun-mineral", 18000],
+  ["p-d-lip", "v-d-lip-c", 14000],
+  ["p-d-foam-1", "v-d-foam-1", 8900],
+  ["p-d-tee-1", "v-d-tee-1-sw", 19000],
+  ["p-d-sn-1", "v-d-sn-1-240", 59000],
+  ["p-d-chair-1", "v-d-chair-1-g", 149000],
+  ["p-d-lamp-1", "v-d-lamp-1", 35000],
+  ["p-d-cof-1", "v-d-cof-1-200", 9900],
+  ["p-d-pro-1", "v-d-pro-1", 32000],
+];
+export const PRODUCT_SIGNALS: Record<string, ProductSignals> = Object.fromEntries(
+  Object.entries(viewers).map(([id, count]) => [id, { view_count: viewSignal(count) }]),
+);
+for (const [product_id, variant_id, current, previous] of priceSeries) {
+  PRODUCT_SIGNALS[product_id] ??= {};
+  PRODUCT_SIGNALS[product_id].price_observations = syntheticHistory(
+    product_id, variant_id, current, previous,
+  );
+}
+
+// "3만 명"/"1,500명" 형태. 10만 이상은 정수 만 단위 [Observed 형식 근사].
+export const fmtViewerCount = (n: number): string =>
+  n >= 10000 ? Math.floor(n / 10000) + "만 명" : n.toLocaleString("ko-KR") + "명";
+
+export interface Lowest30dResult {
+  variant_id: string;
+  current_price_won: number;
+  price_won: number;
+  source: SignalSource;
+}
+
+// 같은 상품/옵션/출처의 최근 30일 관측만 계산한다. 현재가가 최저가보다
+// 높거나 관측값이 없거나 오래됐으면 null → UI에 최저가 문구를 렌더하지 않는다.
+export const lowest30dFor = (
+  p: ProductSummary,
+  now = Date.now(),
+): Lowest30dResult | null => {
+  if (p.matched_variants.length === 0) return null;
+  const variant = p.matched_variants.reduce((best, v) =>
+    v.unit_price_won < best.unit_price_won ? v : best,
+  );
+  const cutoff = now - 30 * 86400000;
+  const groups = new Map<string, PriceObservation[]>();
+  for (const o of PRODUCT_SIGNALS[p.product_id]?.price_observations ?? []) {
+    const at = Date.parse(o.observed_at);
+    if (
+      o.product_id !== p.product_id || o.variant_id !== variant.variant_id ||
+      at < cutoff || at > now
+    ) continue;
+    const key = o.source + ":" + o.source_name;
+    groups.set(key, [...(groups.get(key) ?? []), o]);
+  }
+  const series = [...groups.values()].sort((a, b) =>
+    Math.max(...b.map((x) => Date.parse(x.observed_at))) -
+    Math.max(...a.map((x) => Date.parse(x.observed_at))),
+  )[0];
+  if (!series?.length) return null;
+  const low = Math.min(...series.map((o) => o.price_won));
+  return variant.unit_price_won <= low
+    ? { variant_id: variant.variant_id, current_price_won: variant.unit_price_won, price_won: low, source: series[0].source }
+    : null;
 };
