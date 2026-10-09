@@ -466,3 +466,14 @@ PM 독립검수 완료 — 04-C Visual FAIL(MJ01/MJ02 보정 후 재검수) / �
 ### QA 상태
 
 PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자 최종 Visual 승인 대기**. 04-D 미착수, Push 없음.
+
+→ 이후 **PMQA-04C-REVIEW-002** 최종 판정 전달(아래 섹션): 기술 검증 PASS · PM Visual CONDITIONAL PASS(주요 구조 보정), BLOCKER 0/열린 MAJOR 0, MINOR 4건→08 이관. 사용자 승인 게이트는 변함없이 유지.
+
+## 2026-10-10 · PMQA-04C-REVIEW-002 — PM 최종 독립 판정 (기록 전용)
+
+- 검증 대상: `4719e1b6a50388c5a5b3da43dba259d11e0f6414` (로컬, Push 없음) — 이후 후속은 docs-only 정정 커밋으로 코드 변화 없음.
+- PM이 직접 확인한 것: 실제 커밋 Diff(16파일 +224/−30)·최종 코드, native exit 로그(tsc 0 · build 0 · unit 27/27 · Integration 64/64 runner 정상 종료·skip 0 · E2E 14/14 --workers=1), 원본 Reference와 dark/light·교정 비교본·신호 카드 완전 노출 캡처. Backend/DB/Seed/fixture/가격·재고·Cart 업무 계약 변경 없음.
+- **판정: 기술 검증 PASS · PM Visual CONDITIONAL PASS(주요 구조 보정)** — BLOCKER 0 / 열린 MAJOR 0 (MJ01·MJ02 해결), MINOR 4건 → 08 Final Visual Polish 이관 기록.
+- 구분 기록 유지: eval 미재실행 한계(Frontend·harness 전용 변경 — VERIFY-001 stub dev16·holdout18 인용, Live eval은 키 없어 BLOCKED, 09 게이트 아님)와 최초 비상승 실행의 환경 실패(ECONNREFUSED, 샌드박스 TCP 차단) → 승인 실행 정상(64/64·exit 0)의 실패·복구 이력.
+- 원격 상태: 실제 원격 main = `689c12667371d910493afd420cf05b651ced103b` (PM hongbinwee 커넥터 확인). 로컬은 구현+docs-only 후속 커밋으로 ahead.
+- **이 판정은 사용자 최종 Visual 승인이나 04-C 마일스톤 완료가 아니다.** 사용자 Visual 미승인 / 04-D 미착수 / Push 없음 상태 유지 — 후속 구현은 사용자 승인 후.
