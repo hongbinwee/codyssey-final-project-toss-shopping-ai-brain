@@ -430,7 +430,7 @@ PM 독립검수 완료 — 04-C Visual FAIL(MJ01/MJ02 보정 후 재검수) / �
 ### 수정 범위
 
 - **MJ01 — 히어로 변형 분리** [Observed `home/26` vs `home/27`]: `.hero-slide.cover`를 `aspect-ratio:1`로 추가하고 cover의 `.hero-sub`을 `margin-top:8px`로 하단 텍스트 클러스터에 붙였다. cover 조건은 `cat==='beauty'`로 한정 — 뷰티는 Ref26의 정사각 커버, 식품은 Ref27의 가로 카드형(~1.5:1)을 따른다. 카드형 홈 히어로(~232px)는 변경 없음.
-- **MJ02 — 딜카드 변형 분리** [Observed `product-list/35` vs `home/50`]: 특가 DealCard를 `.deal-thumb { aspect-ratio:2.5 }`+하단 정보(상품명→가격·원가 취소선→★)+카드 full-bleed(`margin:0 -10px`)로 Ref35에 맞춤. 시즌 화면은 Ref50의 가로행 카드이므로 `DealCard`에 `row` 변형을 추가 — 정사각 썸네일(~140px)+우측 정보 클러스터(상품명 2줄·`rate% price`·★), 할인율은 레드 과용을 피해 --text-2.
+- **MJ02 — 딜카드 변형 분리** [Observed `product-list/35` vs `home/50`]: 특가 DealCard를 `.deal-thumb { aspect-ratio:2.5 }`+하단 정보(상품명→가격·원가 취소선→★)로 Ref35에 맞춤. 카드 full-bleed(`margin:0 -10px`)는 Ref35의 ~10px 가장자리와 다른 [Project] 구현 차이 — MINOR→08 이관. 시즌 화면은 Ref50의 가로행 카드이므로 `DealCard`에 `row` 변형을 추가 — 정사각 썸네일(~140px)+우측 정보 클러스터(상품명 2줄·`rate% price`·★), 할인율은 레드 과용을 피해 --text-2.
 - 특가 상단 정리: `.sale-promo/.sale-tabs/.sale-timer/.sale-title`의 폭·마진을 10px pad 컨텍스트로 정리.
 - `.signal-demo` 10px/opacity .9로 가독성 소폭 보정.
 - **테스트 허니스 결함 수정**: `tests/helpers/testdb.ts` `ensureTestDb`가 `connectDb` 덮어쓰기 전 `if (sql) await sql.end()`로 이전 pool을 종료 — VERIFY-001에서 기록된 t1-cart teardown hang(runner 미종료)의 원인 해소. 7개 integration 파일 `after(() => sql.end())`→`sql?.end()`(setup 실패 시 TypeError 방어).
@@ -446,7 +446,9 @@ PM 독립검수 완료 — 04-C Visual FAIL(MJ01/MJ02 보정 후 재검수) / �
 | `node --test --test-concurrency=1 tests/integration/*.test.ts` | PASS — 64/64, exit 0, **runner 정상 종료**(pool 누수 수정으로 VERIFY-001의 hang 해소 확인) |
 | `npx playwright test --workers=1` | PASS — 14/14, exit 0 |
 | `node scripts/eval.ts --mode=stub` (dev/holdout) | 미실행 — 이번 변경이 Frontend·테스트 허니스에 한정돼 agent 경로 비변경. VERIFY-001의 stub dev 16/16·holdout 18/18 기록을 유지. 한계: eval 미재실행 구간에 display-meta 변경이 포함돼 있으나 eval 입력은 DB/Tool 결과이므로 영향 없음을 근거로 인용 |
-| Live eval | BLOCKED — LLM_API_KEY 미설정(유지) |
+| Live eval | BLOCKED — LLM_API_KEY 미설정(유지). Live eval 미실행은 이번 09 Commerce Environment Freeze 게이트가 아니며 Brain 단계(로드맵 11~12)에서 수행 |
+
+이력: FIX-002 최초 비상승 Integration 실행은 샌드박스의 localhost TCP 차단으로 ECONNREFUSED+teardown TypeError(exit 1) 실패 — Docker 실제 Up/5432 확인 후 승인된 실행에서 64/64·exit 0 정상 종료(최종 PASS 변경 없음).
 
 ### 캡처 (390×844, Reference 대조)
 
@@ -459,6 +461,7 @@ PM 독립검수 완료 — 04-C Visual FAIL(MJ01/MJ02 보정 후 재검수) / �
 - PM이 fix002 신규 캡처를 직접 열람해 MJ01/MJ02의 주요 구조 보정을 확인했다 — 뷰티 정사각 커버+하단 클러스터, 식품 가로/좌텍스트·우이미지, 특가 2.5:1+하단 정보, 시즌 정사각+우측 정보. **전체 승인은 아직 아님** — 최종 코드/로그/커밋 및 사용자 Visual 승인이 남은 게이트다.
 - MINOR → 08 Final Visual Polish 이관(원인·이관 기록): (1) `.deal-card` full-bleed(x=0)가 Ref35/50의 ~10px 가장자리와 다름, (2) 정사각 상품 에셋을 2.5:1 cover로 쓰면서 커피/클렌징폼 상·하단 크롭이 큼(상품명/가격은 읽힘, Major 아님), (3) DealCard 쇼핑백의 반투명 원형 배경 vs Ref outline 차이, (4) 시즌 캠페인 배너 높이/여백.
 - PM 보완 지시 반영: Ref34→sale top / Ref35→sale scrolled 상태 분리 비교본 + 콘텐츠 폭 재합성 완료.
+- 검증 대상 커밋: `4719e1b6a50388c5a5b3da43dba259d11e0f6414` (로컬, Push 없음). PM 최종 verdict는 후속 문서 체크포인트로 연결 예정 — 사용자 Visual 승인 전까지 04-C 미확정.
 
 ### QA 상태
 
