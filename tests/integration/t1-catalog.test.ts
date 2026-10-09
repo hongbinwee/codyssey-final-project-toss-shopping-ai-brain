@@ -87,4 +87,5 @@ describe("t1 catalog", () => {
 });
 
 // sql 풀 연결을 닫아야 서브프로세스가 종료하고 다음 파일로 진행된다.
-after(() => sql.end());
+// setup이 실패해 connectDb가 안 됐을 때는 닫을 pool이 없다 — ?.로 방어한다.
+after(() => sql?.end());

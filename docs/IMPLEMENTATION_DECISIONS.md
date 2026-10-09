@@ -133,6 +133,6 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 | 역할 분담 | Main SWE Thread(코드·테스트·문서·로컬 커밋 전담) / PM Thread(읽기 전용 독립검수·지시·회수) | 사용자 운영 결정 — PM 검수와 사용자 승인은 별개 게이트. 04-C 최종 Visual 승인자는 사용자 |
 | 원격 저장소 접근 [Superseded: '로컬 git 인증/fetch 우선' 해석] | 원격 조회·Push는 연결된 hongbinwee GitHub 커넥터를 우선하고, 불가능하면 구체적 제약·대안을 보고한다. 로컬 인증 재설정(PAT/SSH/GCM) 시도와 project99hong-ai 계정 접근은 하지 않는다 | PM이 커넥터로 실제 원격 main=689c126을 직접 확인. 로컬 GCM은 유효 자격 없고 gh는 무권한 계정 — 단 '로컬 원격 작업 절대 금지'가 아니라 우선순위와 보고 경로의 문제로 기록한다 |
 | Push 판정 | branch ref 이동만으로 Push 성공이라 하지 않는다 — 실제 commit/tree/blob 객체의 원격 도달과 로컬/원격 HEAD 일치를 확인한다 | PMQA-GIT-POLICY-20261010 |
-| Integration 판정 구분 | 개별 assertion PASS 수와 runner 전체 정상 종료 PASS를 구분해 기록한다 | suite runner가 최종 요약 없이 소멸하는 기존 증상. PM read-only 원인 후보: t1-cart.test.ts의 두 suite가 각각 ensureTestDb→connectDb를 호출하고 src/db.ts connectDb가 이전 pool을 닫지 않아 첫 pool이 누수 — 기존 harness 결함이며 후속 teardown 보정 대상 |
+| Integration 판정 구분 | 개별 assertion PASS 수와 runner 전체 정상 종료 PASS를 구분해 기록한다 | VERIFY-001(2026-10-10)에서 suite runner가 개별 64/64 PASS 후 최종 요약 없이 종료되지 않고 잔존(hang)해 수동 종료했던 증상. 원인 확정: t1-cart.test.ts의 두 suite가 각각 ensureTestDb→connectDb를 호출하고 tests/helpers/testdb.ts가 이전 pool을 종료하지 않아 첫 pool이 누수 — FIX-002(2026-10-10)에서 ensureTestDb가 connectDb 덮어쓰기 전 `sql?.end()`로 이전 pool을 종료하도록 수정, 이후 Integration 64/64 PASS+runner 정상 종료 확인. '개별 PASS 수'와 'runner 정상 종료'를 구분해 기록하는 원칙은 유지한다 |
 | 카드 합성 신호 표기 | SYNTHETIC 조회수·최저가는 화면에 '데모' 배지로 출처를 표시한다 | 사용자 C안 승인(2026-10-09) — 근거 없는 통계를 실측처럼 보이게 하지 않는다 |
 

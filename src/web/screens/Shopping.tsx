@@ -68,13 +68,13 @@ function Hero({
 }
 
 /* ── 리스트형 딜 카드 — 특가/시즌 탭의 큰 이미지 카드 [Observed 34/50] ── */
-function DealCard({ p, dealTag, onOpen }: { p: ProductSummary; dealTag?: string; onOpen: () => void }) {
+function DealCard({ p, dealTag, row, onOpen }: { p: ProductSummary; dealTag?: string; row?: boolean; onOpen: () => void }) {
   const [imgErr, setImgErr] = useState(false);
   const meta = PRODUCT_META[p.product_id];
   const rate = rateOf(p);
   const min = minPriceOf(p);
   return (
-    <button className="deal-card" onClick={onOpen}>
+    <button className={"deal-card" + (row ? " row" : "")} onClick={onOpen}>
       <div className="deal-thumb">
         {imgErr ? (
           <span className="thumb-fallback">{p.name.slice(0, 1)}</span>
@@ -89,8 +89,10 @@ function DealCard({ p, dealTag, onOpen }: { p: ProductSummary; dealTag?: string;
       <div className="deal-info">
         <div className="deal-name">{p.name}</div>
         <div className="deal-price">
+          {/* 하루 특가: 가격+정가취소선 [Observed 35] / 시즌 가로행: 할인율+가격 [Observed 50] */}
+          {row && rate > 0 && <span className="price-rate">{rate}%</span>}
           {fmtWon(min)}
-          {rate > 0 && meta?.original_price_won && (
+          {!row && rate > 0 && meta?.original_price_won && (
             <span className="price-orig">{fmtWon(meta.original_price_won)}</span>
           )}
         </div>
@@ -247,7 +249,8 @@ function GroupHome({
   const gItems = items.filter((i) => groupOf(i.category) === cat);
   return (
     <>
-      <Hero products={hero} cover onOpen={onOpen} />
+      {/* 뷰티=정사각 커버 [Observed 26], 식품=카드형 가로 히어로 [Observed 27] */}
+      <Hero products={hero} cover={cat === "beauty"} onOpen={onOpen} />
       {subs.length > 0 && (
         <div className="icon-rail">
           {subs.map((s) => (
@@ -414,7 +417,7 @@ function SeasonView({
         <em className="accent">{userName}</em>님이 좋아할 만한 상품
       </h3>
       {picks.map((p) => (
-        <DealCard key={p.product_id} p={p} onOpen={() => onOpen(p.product_id)} />
+        <DealCard key={p.product_id} p={p} row onOpen={() => onOpen(p.product_id)} />
       ))}
     </>
   );

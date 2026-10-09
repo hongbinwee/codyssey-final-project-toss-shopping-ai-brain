@@ -422,3 +422,44 @@ shots/04c/verify/zoom.mjs (zoom.log) — 별도 재시도, 성공:
 ### QA 상태
 
 PM 독립검수 완료 — 04-C Visual FAIL(MJ01/MJ02 보정 후 재검수) / 사용자 최종 Visual 승인 대기. 04-D 진입은 사용자 승인 후.
+
+## 2026-10-10 · PMQA-04C-FIX-002 — MJ01·MJ02 보정 구현 + 재검증
+
+목적: VERIFY-001 PM 판정의 기존 결함 2건(뷰티 히어로 비율·텍스트 배치, 특가 딜카드 비율·시즌 카드 공유)을 Reference 기준으로 좁게 보정하고 전체 회귀를 재검증한다. Backend/DB/Seed 변경 없음. Push 없음.
+
+### 수정 범위
+
+- **MJ01 — 히어로 변형 분리** [Observed `home/26` vs `home/27`]: `.hero-slide.cover`를 `aspect-ratio:1`로 추가하고 cover의 `.hero-sub`을 `margin-top:8px`로 하단 텍스트 클러스터에 붙였다. cover 조건은 `cat==='beauty'`로 한정 — 뷰티는 Ref26의 정사각 커버, 식품은 Ref27의 가로 카드형(~1.5:1)을 따른다. 카드형 홈 히어로(~232px)는 변경 없음.
+- **MJ02 — 딜카드 변형 분리** [Observed `product-list/35` vs `home/50`]: 특가 DealCard를 `.deal-thumb { aspect-ratio:2.5 }`+하단 정보(상품명→가격·원가 취소선→★)+카드 full-bleed(`margin:0 -10px`)로 Ref35에 맞춤. 시즌 화면은 Ref50의 가로행 카드이므로 `DealCard`에 `row` 변형을 추가 — 정사각 썸네일(~140px)+우측 정보 클러스터(상품명 2줄·`rate% price`·★), 할인율은 레드 과용을 피해 --text-2.
+- 특가 상단 정리: `.sale-promo/.sale-tabs/.sale-timer/.sale-title`의 폭·마진을 10px pad 컨텍스트로 정리.
+- `.signal-demo` 10px/opacity .9로 가독성 소폭 보정.
+- **테스트 허니스 결함 수정**: `tests/helpers/testdb.ts` `ensureTestDb`가 `connectDb` 덮어쓰기 전 `if (sql) await sql.end()`로 이전 pool을 종료 — VERIFY-001에서 기록된 t1-cart teardown hang(runner 미종료)의 원인 해소. 7개 integration 파일 `after(() => sql.end())`→`sql?.end()`(setup 실패 시 TypeError 방어).
+- `display-meta.ts` `lowest30dFor`에 `!Number.isFinite(at) || !Number.isFinite(o.price_won)` 가드 추가. `product-signals.test.ts` +6 — 출처 메타, 빈 variant, 비최저가 variant 숨김, 경계/미래/invalid·NaN(finally 정리), 출처 그룹 분리(최신 source_name 승리), 상품 격리(대상 배열 내 foreign obs로 `o.product_id` 필터 실증, splice 복원).
+
+### 검증 (로그 `shots/04c/fix002/logs/`, native exit 보존)
+
+| 명령 | 결과 |
+| --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit` | PASS — exit 0 (테스트 파일 추가 수정 후 최종 코드 기준 재실행) |
+| `node scripts/build-web.ts` | PASS — exit 0 |
+| `node --test tests/unit/*.test.ts` | PASS — 27/27, exit 0 |
+| `node --test --test-concurrency=1 tests/integration/*.test.ts` | PASS — 64/64, exit 0, **runner 정상 종료**(pool 누수 수정으로 VERIFY-001의 hang 해소 확인) |
+| `npx playwright test --workers=1` | PASS — 14/14, exit 0 |
+| `node scripts/eval.ts --mode=stub` (dev/holdout) | 미실행 — 이번 변경이 Frontend·테스트 허니스에 한정돼 agent 경로 비변경. VERIFY-001의 stub dev 16/16·holdout 18/18 기록을 유지. 한계: eval 미재실행 구간에 display-meta 변경이 포함돼 있으나 eval 입력은 DB/Tool 결과이므로 영향 없음을 근거로 인용 |
+| Live eval | BLOCKED — LLM_API_KEY 미설정(유지) |
+
+### 캡처 (390×844, Reference 대조)
+
+- 구현 `shots/04c/fix002/`: dark/light × home_top·hero2·scrolled·tab_{beauty,food,sale,season}·tab_*_scrolled. 신호 카드 `card_signals_zoom.png`/`card_signals_context.png` — 카드 전체가 하단 네비 위에 완전 노출(CARD_FULLY_VISIBLE=PASS), 합성 신호 '데모' 배지 표기.
+- 비교본 `shots/04c/fix002/qa/` — 콘텐츠 폭으로 재합성(빈 canvas 제거): 01_home_first(Ref01) · 02_home_scrolled(Ref02) · 03_beauty(Ref26) · 04_food(Ref27) · **05_sale_top(Ref34↔sale top 상태)** · **05_sale_scrolled(Ref35↔sale scrolled 상태)** · 06_season(Ref50) · 07_light(구현 단독, Toss Light ref 없음).
+- c24dea0 baseline 비교본·원본은 `shots/04c/baseline-c24/`에 보존(덮어쓰기 없음).
+
+### PM 재검수 결과 (2026-10-10)
+
+- PM이 fix002 신규 캡처를 직접 열람해 MJ01/MJ02의 주요 구조 보정을 확인했다 — 뷰티 정사각 커버+하단 클러스터, 식품 가로/좌텍스트·우이미지, 특가 2.5:1+하단 정보, 시즌 정사각+우측 정보. **전체 승인은 아직 아님** — 최종 코드/로그/커밋 및 사용자 Visual 승인이 남은 게이트다.
+- MINOR → 08 Final Visual Polish 이관(원인·이관 기록): (1) `.deal-card` full-bleed(x=0)가 Ref35/50의 ~10px 가장자리와 다름, (2) 정사각 상품 에셋을 2.5:1 cover로 쓰면서 커피/클렌징폼 상·하단 크롭이 큼(상품명/가격은 읽힘, Major 아님), (3) DealCard 쇼핑백의 반투명 원형 배경 vs Ref outline 차이, (4) 시즌 캠페인 배너 높이/여백.
+- PM 보완 지시 반영: Ref34→sale top / Ref35→sale scrolled 상태 분리 비교본 + 콘텐츠 폭 재합성 완료.
+
+### QA 상태
+
+PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자 최종 Visual 승인 대기**. 04-D 미착수, Push 없음.

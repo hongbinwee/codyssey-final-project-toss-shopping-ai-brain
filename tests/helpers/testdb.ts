@@ -26,6 +26,9 @@ export async function setupTestDb(phase = 1) {
 
 export async function ensureTestDb(phase = 1) {
   await setupTestDb(phase);
+  // 같은 워커에서 suite마다 다시 호출될 때 이전 pool을 닫지 않으면
+  // connectDb가 전역 sql을 덮어쓰면서 첫 pool이 누수되고 워커가 종료되지 못한다.
+  if (sql) await sql.end();
   connectDb(TEST_DB_URL);
 }
 

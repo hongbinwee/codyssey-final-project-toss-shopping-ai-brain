@@ -224,8 +224,9 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
   background: rgba(0, 0, 0, 0.68); color: #fff;
   font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 11px;
 }
-/* cover형 — 이미지 전체 + 하단 그라데이션 텍스트 (뷰티/식품 탭) [Observed 26] */
-.hero-slide.cover { background: var(--field); }
+/* cover형 — 이미지 전체 + 하단 그라데이션 텍스트. 뷰티는 정사각 커버 [Observed 26],
+   식품은 위의 카드형 히어로를 그대로 쓴다(가로형 [Observed 27]). */
+.hero-slide.cover { background: var(--field); height: auto; aspect-ratio: 1; }
 .hero-slide.cover .hero-bg {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
 }
@@ -234,12 +235,13 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
   padding: 0 0 34px 20px; color: #fff;
 }
 .hero-slide.cover .hero-txt::before {
-  content: ""; position: absolute; inset: -20px -200px -34px -20px; z-index: -1;
+  content: ""; position: absolute; inset: -44px -200px -34px -20px; z-index: -1;
   background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.6) 100%);
 }
 .hero-slide.cover .hero-name { color: #fff; }
 .hero-slide.cover .hero-price { color: #fff; }
-.hero-slide.cover .hero-sub { color: rgba(255, 255, 255, 0.75); }
+/* 커버에서 margin-top:auto가 이름/가격과 sub를 양끝으로 분리하던 결함 보정 — 클러스터로 묶는다 */
+.hero-slide.cover .hero-sub { margin-top: 8px; color: rgba(255, 255, 255, 0.75); }
 .hero-slide.cover .hero-rate {
   color: #fff; background: var(--discount);
   padding: 2px 7px; border-radius: 7px; font-size: 12px;
@@ -320,10 +322,10 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 .sub-circle img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .sub-label { font-size: 12.5px; color: var(--text-2); }
 
-/* 특가 탭 — 상단 프로모 카드 + 보조 탭 + 카운트다운 + 딜 카드 [Observed 34] */
+/* 특가 탭 — 상단 프로모 카드 + 보조 탭 + 카운트다운 + 딜 카드 [Observed 34/35] */
 .sale-promo {
-  width: 100%; display: flex; align-items: stretch; border: none; cursor: pointer;
-  margin: 4px 10px 0; padding: 0; border-radius: 16px; overflow: hidden;
+  display: flex; align-items: stretch; border: none; cursor: pointer;
+  margin: 4px 0 0; padding: 0; border-radius: 16px; overflow: hidden;
   background: #e5e4ed; color: #1d1f24; text-align: left;
   min-height: 148px;
 }
@@ -335,7 +337,7 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 .sale-promo .sp-sub { margin-top: auto; font-size: 12px; color: #5d6169; }
 .sale-promo img { width: 42%; object-fit: cover; display: block; }
 .sale-tabs {
-  display: flex; margin: 12px 10px 0; border-bottom: 1px solid var(--line);
+  display: flex; margin: 12px -10px 0; border-bottom: 1px solid var(--line);
 }
 .sale-tab {
   flex: 1; padding: 9px 0 11px; border: none; background: none; cursor: pointer;
@@ -350,18 +352,19 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 .sale-tab:disabled { opacity: 0.45; cursor: default; }
 .sale-timer {
   display: flex; align-items: center; gap: 6px;
-  color: var(--discount); font-size: 13.5px; margin: 16px 10px 0;
+  color: var(--discount); font-size: 13.5px; margin: 16px 0 0;
 }
 .sale-timer b { font-variant-numeric: tabular-nums; font-weight: 700; }
-.sale-title { font-size: 19px; font-weight: 800; margin: 6px 10px 14px; }
+.sale-title { font-size: 19px; font-weight: 800; margin: 6px 0 14px; }
+/* 하루 특가 카드 — 큰 가로 이미지(~2.5:1) + 아래 정보. 썸네일은 본문보다 넓은 ~10px 가장자리 [Observed 35] */
 .deal-card {
-  display: block; width: 100%; border: none; background: none;
-  padding: 0; cursor: pointer; text-align: left; margin-bottom: 26px;
+  display: block; border: none; background: none;
+  padding: 0; cursor: pointer; text-align: left; margin: 0 -10px 26px;
   color: var(--text);
 }
 .deal-thumb {
   position: relative; border-radius: 16px; overflow: hidden;
-  aspect-ratio: 1.55; background: var(--field);
+  aspect-ratio: 2.5; background: var(--field);
 }
 .deal-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .deal-cart {
@@ -376,6 +379,17 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 }
 .deal-price { font-size: 19px; font-weight: 800; margin-top: 4px; }
 .deal-price .price-orig { display: inline; margin-left: 6px; font-size: 14px; }
+
+/* 시즌 추천 리스트 — 정사각 썸네일 + 우측 정보 가로행 [Observed 50] */
+.deal-card.row { display: flex; gap: 14px; }
+.deal-card.row .deal-thumb { flex: 0 0 140px; aspect-ratio: 1; border-radius: 14px; }
+.deal-card.row .deal-info { flex: 1; min-width: 0; padding-top: 2px; }
+.deal-card.row .deal-name {
+  margin-top: 0; white-space: normal;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.deal-card.row .deal-price .price-rate { color: var(--text-2); }
+.deal-card.row .deal-cart { width: 30px; height: 30px; right: 8px; bottom: 8px; }
 
 /* 시즌 추천 탭 — 풀블리드 캠페인 배너 [Observed 50] */
 .season-hero {
@@ -462,8 +476,8 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
   margin: 0 0 2px; letter-spacing: -0.01em;
 }
 .signal-demo {
-  margin-left: 3px; font-size: 9px; font-weight: 500;
-  color: var(--psub); opacity: 0.78; vertical-align: 1px;
+  margin-left: 3px; font-size: 10px; font-weight: 500;
+  color: var(--psub); opacity: 0.9; vertical-align: 1px;
 }
 .product-meta { font-size: 11.5px; color: var(--psub); display: flex; align-items: center; gap: 5px; }
 .product-meta svg { color: var(--star); }

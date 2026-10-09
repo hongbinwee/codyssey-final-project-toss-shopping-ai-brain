@@ -162,4 +162,5 @@ describe("phase3 checkout", () => {
 });
 
 // sql 풀 연결이 남으면 테스트 서브프로세스가 종료하지 않아 --test 러너가 멈춘다.
-after(() => sql.end());
+// setup이 실패해 connectDb가 안 됐을 때는 닫을 pool이 없다 — ?.로 방어한다.
+after(() => sql?.end());

@@ -306,6 +306,7 @@ export const lowest30dFor = (
     const at = Date.parse(o.observed_at);
     if (
       o.product_id !== p.product_id || o.variant_id !== variant.variant_id ||
+      !Number.isFinite(at) || !Number.isFinite(o.price_won) ||
       at < cutoff || at > now
     ) continue;
     const key = o.source + ":" + o.source_name;
