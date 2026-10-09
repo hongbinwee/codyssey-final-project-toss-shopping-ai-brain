@@ -366,3 +366,59 @@ Side Astra 재검수에서 남은 Major 2건(demo seed 원자성 부재, DB 가�
 - 기준 390×844, Dark: Reference/Implementation 비교본 `shots/04c/qa/01_home_first.png`, `02_home_scrolled.png`, `03_hero_slide.png`, `04_beauty.png`, `05_sale.png`; Light 구현본은 `06_light.png`.
 - 확인: 그리드에서 배지·가격·30일 최저가·조회/평점·배송 칩·쇼핑백의 순서와 밀도가 보이고, 합성 신호에는 '데모'가 표시된다. Dark/light 모두 레이아웃이 유지된다.
 - 남은 Gap: 사용자 시각 승인 전 04-C를 종료하지 않는다. 하단 Navigation은 04-D 범위다.
+
+## 2026-10-10 · PMQA-04C-VERIFY-001 — c24dea0 독립 검증 (코드 변경 없음)
+
+목적: PM/독립 QA 지시로 HEAD c24dea0447483a408bf2b319f9d76c0c540ab6d9 (04-C3 Product Card C안)의 회귀 검증과 증거 정리만 수행. 구현 변경·Push·04-D 진입 없음.
+
+### 환경 · 원격 상태
+
+- cwd C:\문서\codyssey_final, branch main, 검증 SHA c24dea0. 추적 파일 변경 없음(미추적 tmp_* 작업 스크립트만 존재).
+- 원격 main = 689c12667371d910493afd420cf05b651ced103b — PM이 연결된 GitHub 커넥터(hongbinwee)로 get_repo/fetch_commit을 직접 호출해 확인. 로컬은 1 ahead(c24dea0 미Push). 로컬 추적 ref origin/main이 같은 값을 보이나 로컬 fetch 성공 증거는 아니다.
+- 로컬 GitHub 인증 불가: 프라이빗 저장소 — GCM에 유효 자격 없음(GIT_TERMINAL_PROMPT=0에서 could not read Username), gh는 project99hong-ai로 로그인돼 저장소 404(권한 없음, 운영 지침상 접근 금지). 정책은 '연결된 hongbinwee GitHub 도구 우선, 불가능한 경우에만 구체적 제약·대안 보고'이며 로컬 원격 작업의 절대 금지가 아니다(PMQA-GIT-POLICY-20261010).
+- 턴 시작 시 Docker Desktop 중단 → 사용자 로컬 설치 경로로 기동 → codyssey_final-db-1 start → SELECT 1 = 1. 이번 샌드박스는 비상승 컨텍스트의 localhost TCP와 docker npipe 접근이 차단돼 DB·서버·브라우저 명령은 모두 승인된 상승 실행으로 수행했다(npipe 'permission denied'는 daemon 다운이 아니라 세션/ACL 차이).
+
+### 명령 · 결과 (대상 SHA c24dea0, 로그 shots/04c/verify/)
+
+| 명령 | 결과 |
+| --- | --- |
+| npm run check (tsc --noEmit) | PASS — exit 0 (tsc.log) |
+| npm run build | PASS — exit 0, web/app.js 1.3mb (build.log) |
+| npm run test:unit | PASS — 21/21, exit 0 (unit.log) |
+| npm run test:integration (node --test --test-concurrency=1) | 개별 테스트 53/53 PASS(8파일: cancel-confirmation 9·cancel-race 3·cancel-recovery 6·checkout 7·demo-seed 5·health 2·session-api 1·t1-cart 20) 후 runner가 최종 요약·종료 코드 없이 **종료되지 않고 지속(hang)** — 프로세스 조회로 npm wrapper(PID 27044)·runner(PID 20228)·t1-cart 워커(PID 25520)가 잔존함을 확인하고, 이번 작업에서 시작한 프로세스만 종료했다. --test-force-exit 미사용 (integration.log) |
+| node --test tests/integration/t1-catalog.test.ts | PASS — 6/6, exit 0 (int-t1-catalog.log) |
+| node --test tests/integration/t2-orders.test.ts | PASS — 5/5, exit 0 (int-t2-orders.log) |
+| Integration 판정 | 개별 assertion 64/64 전부 PASS / 스위트 runner는 정상 종료하지 못하고 잔존해 이번 작업에서 수동 종료(runner 완결 = BLOCKED) — 구분해 기록한다. 원인 후보(PM read-only 분석): t1-cart.test.ts의 두 suite가 각각 ensureTestDb→connectDb 호출, src/db.ts connectDb가 기존 pool을 닫지 않고 전역 sql을 덮어씀 → 첫 pool 누수가 워커 종료를 막는 기존 harness 결함(c24 신규 회귀 아님). 첫 pool도 종료하는 teardown 보정은 후속 작업 |
+| npx playwright test --workers=1 (commerce_test 직렬) | PASS — 14/14, exit 0 (e2e.log) |
+| node scripts/eval.ts --split=dev (stub) | PASS — 16/16 (eval-dev.log) |
+| node scripts/eval.ts --mode=stub --split=holdout --repeat=3 | PASS — 18/18 (eval-holdout.log) |
+| live eval | BLOCKED — LLM_API_KEY 미설정. 미실행, stub으로 대체하지 않음 |
+
+### 카드 Interaction 실검증 (localhost:3200, 390×844 dark, 실제 Playwright)
+
+shots/04c/verify/interact.mjs (interact.log) — 세 진입 검증 PASS, 스크립트 후반 캡처 단계 timeout(exit 1)으로 스크립트 전체는 PASS 아님:
+
+- 장식용 쇼핑백 .card-cart 클릭 → #/p/p-d-cof-2 상세 진입 PASS (아이콘은 aria-hidden 장식이지만 카드 버튼 onOpen이 그대로 동작)
+- 품절 카드(코트라인 캔버스 스니커즈, .thumb-soldout) 쇼핑백 클릭 → #/p/p-d-sn-2 상세 진입 PASS
+- 검색 결과 카드 클릭 → #/p/p-c 상세 진입 PASS
+
+shots/04c/verify/zoom.mjs (zoom.log) — 별도 재시도, 성공:
+
+- .product-card:has(.signal-demo) 카드를 하단 네비(nav.bottom-nav) 위로 스크롤 배정 후 요소 캡처 card_signals_zoom.png — CARD_FULLY_VISIBLE=PASS(네비 위까지 완전 노출). 문맥 전체 화면 card_signals_context.png 함께 보존. 합성 신호(최저가·조회수)의 '데모' 배지 표기를 PM이 이미지에서 직접 확인했다.
+
+### 캡처 재생성 (c24dea0 기준)
+
+- 구현 캡처 shots/04c/{dark,light}_*.png 전면 재촬영(실행 tmp_shots.mjs, 로그 reshots.log) — 2026-10-10, viewport 390×844, deviceScaleFactor 2.
+- 비교본 shots/04c/qa/*.png 6장 재합성(tmp_qacmp.mjs, qa-rebuild.log): Reference reference/toss-shopping/screenshots/home/{01_home_default,02_home_scrolled,03_home_banner_changed,26_beauty_home}.png + product-list/34_daily_deals_default.png 대 구현 390×844 dark. Light(06_light.png)는 토스 Light 레퍼런스가 없어 구현 단독.
+- reference/ 캡처는 Git 미포함 로컬 전용 자료 — 없으면 Visual QA 완료 불가(기존 방침 유지).
+
+### PM 독립 검수 결과 (2026-10-10)
+
+- 종합: 신규(c24) 정상 입력 경로에 BLOCKER/MAJOR 없음. Backend/DB/Seed 변경 없음, 가격·재고·Cart 계약 유지. 그러나 04-C 전체 Visual 판정 = FAIL(보정 후 재검수) — c24와 무관한 기존 결함 2건:
+- PMQA-04C-MJ01 (MAJOR, 기존 결함): styles.css .hero-slide(약 205행) height:232와 cover .hero-sub margin-top:auto. reference/home/26_beauty_home.png는 약 1:1 배너+하단 텍스트 클러스터지만 현재 뷰티는 348×232에 상품명/가격이 상단 고정. 단 27_oasis_home.png 식품 배너는 가로형(약 1.54:1)이므로 모든 cover에 square 비율 일괄 적용은 금지.
+- PMQA-04C-MJ02 (MAJOR, 기존 결함): .deal-thumb(약 364행) aspect-ratio 1.55 vs reference/product-list/34_daily_deals_default.png 약 2.5:1 — 특가 이미지가 지나치게 높아 카드 밀도가 크게 다름. DealCard는 Season 화면과 공유 — 50_seasonal_home.png(가로행 카드) 영향을 먼저 확인해야 함.
+- MINOR/후속: signal-demo 9px/opacity .78 모바일 가독성(표기는 존재); lowest30dFor의 출처그룹·30일 경계·미래값·invalid date NaN 필터 검증 커버리지 부족(현재 합성 샘플은 유효 — 활성 데이터 결함 아님); COMMERCE_DESIGN_SYSTEM.md의 과거 카드 설명(가격색/원형 쇼핑백)과 현재 C 기준 충돌 → 해당 문서에 Superseded 주해로 연결 완료; 소규모 스타일은 08 Final Polish로 이관 가능.
+
+### QA 상태
+
+PM 독립검수 완료 — 04-C Visual FAIL(MJ01/MJ02 보정 후 재검수) / 사용자 최종 Visual 승인 대기. 04-D 진입은 사용자 승인 후.

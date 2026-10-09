@@ -79,6 +79,13 @@
 13 Deployment / Real User Testing / Feedback
 ```
 
+### 운영 · 협업 정책 (2026-10-10 사용자 확정)
+
+- **역할:** Main SWE Thread(구현 담당, id 01a102aa-2504-7601-a65e-9bae83c98b64, host local, cwd C:\문서\codyssey_final)가 코드·테스트·문서·로컬 커밋을 전담한다. PM/QA Thread(오케스트레이션·독립 검수, id 01a11e9e-bb68-7cc3-9ed2-34a4c3fe94de)는 읽기 전용 검수와 지시·회수(wait_threads/read_thread)만 담당한다. 최상위 Goal(로드맵 09까지)은 오케스트레이션 Thread에만 설정돼 있으므로 이 Thread에 중복 Goal을 만들지 않는다.
+- **승인 게이트:** 04-C는 사용자 최종 Visual 승인 후 04-D로 진입한다. 그 외 확정 범위의 구현·수정·검증·로컬 커밋은 PM 검수 후 순차 진행한다. 사용자 승인이 필요한 것은: 핵심 화면의 최종 Visual QA, GitHub Push, 중요한 DB schema/파괴적 데이터 변경, 유료 API 사용, 큰 scope 변경, 09 Commerce Environment Freeze 최종 승인.
+- **live eval 위치:** LLM_API_KEY 미설정으로 live eval이 BLOCKED 상태인 것은 로드맵 10~13 Brain 범위의 기존 제한이다. 04-C나 09 승인이 LLM 키를 요구하는 게이트가 아니다.
+- **GitHub 접근:** 저장소 hongbinwee/codyssey_final-mission의 원격 조회·Push는 **연결된 hongbinwee 계정의 GitHub 플러그인/커넥터를 우선**한다. project99hong-ai 계정으로 저장소에 접근하지 않는다. 커넥터가 불가능하면 구체적 제약과 안전한 대안을 보고한다(로컬 git 원격 작업의 절대 금지가 아니다). Push 시 branch ref 이동만으로 성공이라 하지 않고, 실제 commit/tree/blob 객체의 원격 도달과 로컬/원격 HEAD 일치를 검증한다(PMQA-GIT-POLICY-20261010).
+
 ### 문서 역할과 읽기 순서
 
 새로 합류한 사람/AI는 이 순서로 읽는다.
