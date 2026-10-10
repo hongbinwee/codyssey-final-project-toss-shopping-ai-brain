@@ -739,6 +739,17 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .bottom-bar b { font-size: 18px; }
 .bottom-bar .muted { font-size: 13px; }
 
+/* 미확정 쓰기 안내 스트립 — Product 화면의 pending 접근점 (첫 화면 고정 노출) */
+.bottom-bar.has-note { flex-direction: column; align-items: stretch; }
+.bottom-bar .bar-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex: 1; }
+.bottom-bar .bar-note {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--muted); padding-bottom: 10px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+/* bar-note로 고정바가 높아진 만큼 문서 끝 스크롤 여유를 보장한다 */
+.screen.detail.has-pending { padding-bottom: 56px; }
+
 /* W03 카트 */
 .cart-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 .cart-item {

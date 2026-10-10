@@ -292,6 +292,90 @@ test("response drop POST → pending → 결과 확인 SUCCEEDED → 최신 카�
   await emptyCart(page);
 });
 
+test("pending 복구 접근점은 첫 화면 고정바에 노출된다 (PMQA-05-MJ-PENDING-VISIBILITY-02)", async ({ page }) => {
+  await loginClean(page);
+  await page.setViewportSize({ width: 390, height: 844 }); // QA 기준 실기기 뷰포트
+  await page.goto("/#/p/p-a");
+
+  const drop = await dropWrite(page, "**/api/cart/items", "POST");
+  await page.getByRole("button", { name: "180,000원 담기" }).click();
+  await drop.done; // 서버 commit + 클라이언트 응답 유실 확정
+
+  // 복구 스트립이 스크롤 없이 첫 viewport 내부에 있어야 한다 — toBeVisible은
+  // viewport 밖도 통과하므로 bbox로 기하를 직접 증명한다.
+  const note = page.locator(".bar-note");
+  await expect(note).toBeVisible();
+  const nb = await note.boundingBox();
+  expect(nb).not.toBeNull();
+  expect(nb!.y).toBeGreaterThanOrEqual(0);
+  expect(nb!.y + nb!.height).toBeLessThanOrEqual(844);
+  const recover = page.getByRole("button", { name: "장바구니에서 복구" });
+  const rb = await recover.boundingBox();
+  expect(rb).not.toBeNull();
+  expect(rb!.y).toBeGreaterThanOrEqual(0);
+  expect(rb!.y + rb!.height).toBeLessThanOrEqual(844);
+
+  // 담기 CTA·옵션 잠금은 유지된다
+  await expect(page.getByRole("button", { name: "180,000원 담기" })).toBeDisabled();
+  await expect(page.locator(".option-open")).toBeDisabled();
+  await page.unroute("**/api/cart/items");
+
+  // 높아진 고정바 아래에서도 문서 끝 복구 상세는 스크롤로 노출된다
+  await page.getByText("담기 결과를 확인하지 못했어요").scrollIntoViewIfNeeded();
+  const deep = page.getByRole("button", { name: "장바구니에서 확인하기" });
+  await expect(deep).toBeVisible();
+  const db = await deep.boundingBox();
+  expect(db).not.toBeNull();
+  expect(db!.y).toBeGreaterThanOrEqual(0);
+  expect(db!.y + db!.height).toBeLessThanOrEqual(844);
+
+  // 스크롤 없이 고정바 버튼으로 바로 복구 진입 → 결과 확인 → 최신 카트
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await recover.click();
+  await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toBeVisible();
+  await expect(page.getByRole("button", { name: "주문하기" })).toBeDisabled();
+  await page.getByRole("button", { name: "결과 확인" }).click();
+  await expect(page.getByText(/완료된 요청/)).toBeVisible();
+  // SUCCEEDED → snapshot이 아니라 최신 카트 qty·총액으로 재동기화
+  await expect(page.locator(".cart-name")).toContainText("코드뷰 모니터 A");
+  await expect(page.getByText("× 1")).toBeVisible();
+  await expect(page.getByText("상품 180,000원 + 배송비 3,000원")).toBeVisible();
+  await expect(page.locator(".bottom-bar b")).toHaveText("183,000원");
+  // pending 해제 — 배너 소멸·주문 가능
+  await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "주문하기" })).toBeEnabled();
+  await emptyCart(page);
+});
+
+test("다른 상품에서 시작된 pending도 상세 진입 즉시 고정바 복구로 연결된다", async ({ page }) => {
+  await loginClean(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#/p/p-a");
+  const drop = await dropWrite(page, "**/api/cart/items", "POST");
+  await page.getByRole("button", { name: "180,000원 담기" }).click();
+  await drop.done;
+  await page.unroute("**/api/cart/items");
+
+  // 다른 상품으로 이동 — 이 상품의 pendingAdd는 아니지만 anyPending 잠금은 유지
+  await page.goto("/#/p/p-b");
+  const note = page.locator(".bar-note");
+  await expect(note).toBeVisible();
+  const nb = await note.boundingBox();
+  expect(nb).not.toBeNull();
+  expect(nb!.y).toBeGreaterThanOrEqual(0);
+  expect(nb!.y + nb!.height).toBeLessThanOrEqual(844);
+  await expect(page.getByRole("button", { name: "149,000원 담기" })).toBeDisabled();
+  await expect(page.locator(".option-open")).toBeDisabled();
+
+  // 같은 접근점으로 복구 — p-b에서 시작하지 않은 요청도 카트에서 확인 가능
+  await page.getByRole("button", { name: "장바구니에서 복구" }).click();
+  await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toBeVisible();
+  await page.getByRole("button", { name: "결과 확인" }).click();
+  await expect(page.getByText(/완료된 요청/)).toBeVisible();
+  await expect(page.locator(".cart-name")).toContainText("코드뷰 모니터 A");
+  await emptyCart(page);
+});
+
 test("서버 500 INTERNAL → ambiguous → intent 유지 → 조회 SUCCEEDED(중복 없음)", async ({ page }) => {
   await loginClean(page);
   await page.goto("/#/p/p-a");

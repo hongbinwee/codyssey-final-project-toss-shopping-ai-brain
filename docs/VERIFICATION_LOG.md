@@ -663,3 +663,14 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 - 캡처 보정분: shots/05/{dark,light}_cart_reject_refresh.png [MOCKED route 표기] — 시작 시 빈 카트 단언 + 실행 중 담은 항목만 UI 삭제로 정리.
 - 상태: 보정+검증 완료, PM 재검수 대기. 사용자 Visual 최종 승인 전 05 완료·06 착수 금지 유지.
 
+## 2026-10-10 · PMQA-05-MJ-PENDING-VISIBILITY-02 + PENDING-CLOSE-027 — pending 복구 접근점 첫 화면 노출 보정
+
+- PM 발견 MAJOR: 응답 유실(AMBIGUOUS) pending 시 복구 진입점이 문서 끝 state-box뿐이라 390×844 첫 viewport에서 발견되지 않음 — 담기 CTA만 disabled이고 복구 경로가 스크롤 아래. toBeVisible은 viewport 밖도 통과하므로 기존 테스트로는 미검증이었다.
+- 보정: src/web/screens/Product.tsx — .bottom-bar 최상단에 .bar-note 스트립(결과를 확인하지 못한 요청이 있어요 + 장바구니에서 복구 버튼→onOpenCart)을 anyPending 시 렌더, 기존 내용은 .bar-row로 래핑. styles.css — .has-note column 전환·.bar-note 스타일 + .screen.detail.has-pending{padding-bottom:56px}로 높아진 고정바 아래 문서 끝 복구 상세의 스크롤 노출 보장. 문서 끝 상세 state-box(결과 확인/다시 담기/장바구니에서 확인하기)는 유지 — 버튼명이 달라 충돌 없음.
+- e2e 추가 2건 (tests/e2e/t4-product-cart.spec.ts, 총 24): (1) commit+abort → windowY=0에서 .bar-note와 장바구니에서 복구 버튼 bbox가 390×844 viewport 내부(y≥0·bottom≤844 기하 증명)+담기 CTA disabled → 스트립 클릭 → Cart 배너 → 결과 확인 → 완료된 요청 + 최신 qty/total(×1·183,000원)·pending 해제·주문 가능; 높아진 바 아래 복구 상세도 scrollIntoView로 노출 단언. (2) 다른 상품(p-b) 진입 시에도 동일 접근점(anyPending)·복구 성공.
+- 검증 (actual exit): npm run check 0 / npm run build 0 / npx playwright test tests/e2e/t4-product-cart.spec.ts --workers=1 → 24/24(49.1s) / npx playwright test --workers=1 전체 45/45 exit 0(1.0m) — PM이 exec-95c5f502 단독원명령과 로그를 직접 회수 확인. unit/integration/eval NOT_RUN — UI 스트립+spec 한정 변경, 직전 이력(unit33·int64·stub dev16/holdout18) 유지. live eval BLOCKED.
+- e2e 재실행 실패 이력(보존): 보정 검증 중 t4 재실행 2회가 각각 7/1/16·line575 timeout으로 실패 — error-context에는 서버 VERSION_CONFLICT(카트가 변경되었습니다…) 화면이 실제 관찰됐다. 당시 실패 POST의 expected_cart_version·서버 cart version·action 응답과 실행 타임라인은 미회수 → 원인은 미확정. commerce_test를 공유하는 Playwright 중첩 실행 가능성, 또는 reuseExistingServer 재사용 서버 종료에 따른 NETWORK 가능성이라는 가설로 기록한다(확정 원인 단정 아님). 확인 사실: 현재 3100/3101 LISTENING 부재·관련 실행 종료, 단일 실행 전체 45/45 exit 0. 재발 방지 운영 규칙: Playwright는 한 번에 하나만 실행하고 세션 회수 전 재실행하지 않는다.
+- 캡처 재생성: shots/05/{dark,light}_pending_lock.png — demo-a cart_start/end empty 유지, POST 200+abort 주입, facts pending_lock_v2에 windowY=0·bar-note bbox(x16 y739 w358 h29 bottom768 inVp=true)·복구버튼(x262 y739 w112 h18 bottom757 inVp=true)·cta_disabled=true·recovered v-a-24x1@180000 total183000 기록. shots/05/qa/11_pending_lock 합성본 재생성(impl-only, Toss 대응 ref 없음 표기 유지).
+- PM 독립 판정 (2026-10-10): Product/styles/spec diff·check/build exit0·전체 e2e 45/45 원본 로그·새 캡처·facts·native exec-14a4b289 exit0 직접 검수 — PMQA-05-MJ-PENDING-VISIBILITY-02 해소, MJ-CART-REFRESH-01 해소 확인. BLOCKER 0 / 열린 MAJOR 0, 기술 QA PASS, Visual CONDITIONAL PASS(사용자 최종 승인 대기).
+- 잔여 표기 유지: 다중 이미지 갤러리(n|m) 실데이터 부재 미검증 / light·pending 상태 Toss 대응 Reference 없음. MINOR 이관 총 7건(04 승인 5 + 05 2건) → 08 Final Visual Polish.
+- 상태: 05 구현·로컬 검증·Visual 증거 완료. 최종 완료는 사용자 Visual 승인 게이트 — 승인 전 05 완료 처리·06 착수 금지.

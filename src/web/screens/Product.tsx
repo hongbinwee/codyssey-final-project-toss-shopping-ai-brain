@@ -321,7 +321,7 @@ export function Product({
   const soldOutAll = !anyAvailable;
 
   return (
-    <div className="screen detail">
+    <div className={"screen detail" + (anyPending ? " has-pending" : "")}>
       <div className="detail-hero">
         {images.length > 1 ? (
           <div
@@ -475,28 +475,40 @@ export function Product({
         </>
       )}
 
-      <div className="bottom-bar">
-        <div>
-          {selected ? (
-            <>
-              <div className="muted">
-                {Object.values(selected.option_values).join(" · ")} × {qty}
-              </div>
-              <b>{fmtWon(totalWon)}</b>
-            </>
-          ) : (
-            <span className="muted">
-              {soldOutAll ? "품절" : "옵션을 선택하세요"}
-            </span>
-          )}
+      <div className={"bottom-bar" + (anyPending ? " has-note" : "")}>
+        {anyPending && (
+          // 미확정 write가 있으면 고정 바 최상단에서 바로 복구로 진입 — 상세
+          // state-box는 문서 하단이라 첫 화면에서 발견되지 않는다.
+          <div className="bar-note" role="status">
+            <span>결과를 확인하지 못한 요청이 있어요</span>
+            <button className="link" onClick={onOpenCart}>
+              장바구니에서 복구
+            </button>
+          </div>
+        )}
+        <div className="bar-row">
+          <div>
+            {selected ? (
+              <>
+                <div className="muted">
+                  {Object.values(selected.option_values).join(" · ")} × {qty}
+                </div>
+                <b>{fmtWon(totalWon)}</b>
+              </>
+            ) : (
+              <span className="muted">
+                {soldOutAll ? "품절" : "옵션을 선택하세요"}
+              </span>
+            )}
+          </div>
+          <button
+            className="btn primary"
+            disabled={!selected || adding || anyPending || soldOutAll}
+            onClick={add}
+          >
+            {soldOutAll ? "품절" : adding ? "담는 중…" : fmtWon(totalWon) + " 담기"}
+          </button>
         </div>
-        <button
-          className="btn primary"
-          disabled={!selected || adding || anyPending || soldOutAll}
-          onClick={add}
-        >
-          {soldOutAll ? "품절" : adding ? "담는 중…" : fmtWon(totalWon) + " 담기"}
-        </button>
       </div>
 
       {sheetOpen && detail.ok && (
