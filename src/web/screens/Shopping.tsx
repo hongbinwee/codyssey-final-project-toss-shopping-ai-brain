@@ -17,6 +17,7 @@ import {
   SEASONAL, SUBCATS, TOP_TABS, groupOf, groupLabel, minPriceOf,
   productImg, rateOf, subcatOf,
 } from "../display-meta.ts";
+import type { CategoryGroup } from "../display-meta.ts";
 
 /* ── 히어로 캐러셀 — 카드형(좌 텍스트+우 이미지) / cover형(풀블리드 이미지+하단 텍스트) ── */
 function Hero({
@@ -284,7 +285,12 @@ function CategoryBrowser({
   items: ProductSummary[];
   onNav: (cat: string, sub?: string) => void;
 }) {
-  const [g, setG] = useState(CATEGORY_GROUPS[0].id);
+  // [Observed 28~31] Reference 고정 순서 식품→리빙(생활용품)→패션→뷰티(+디지털).
+  // 이 브라우저 안에서만 사용하는 표시 순서 — 전역 CATEGORY_GROUPS/홈/검색은 바꾸지 않는다.
+  const GROUPS = ["food", "living", "fashion", "beauty", "digital"]
+    .map((id) => CATEGORY_GROUPS.find((x) => x.id === id))
+    .filter(Boolean) as CategoryGroup[];
+  const [g, setG] = useState(GROUPS[0].id);
   // [Observed 28~31] 좌측 레일은 우측 '연속 그룹 섹션'의 스크롤 위치만 맞춘다.
   // 우 pane이 독립 스크롤해 windowY=0을 유지 — header/topTabs/globalnav가 사라지지 않는다.
   const secRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -307,15 +313,15 @@ function CategoryBrowser({
     const spy = () => {
       if (Date.now() < spyLock.current) return;
       const pt = pane.getBoundingClientRect().top;
-      let cur = CATEGORY_GROUPS[0].id;
-      for (const grp of CATEGORY_GROUPS) {
+      let cur = GROUPS[0].id;
+      for (const grp of GROUPS) {
         const el = secRefs.current[grp.id];
         if (el && el.getBoundingClientRect().top - pt <= 12) cur = grp.id;
       }
       // 마지막 그룹은 아래 여백이 부족해 head가 목표 위치에 못 올 수 있다 —
       // scroll clamp 상태에서도 레일이 직전 그룹으로 되돌아가지 않게 한다.
       if (pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 2)
-        cur = CATEGORY_GROUPS[CATEGORY_GROUPS.length - 1].id;
+        cur = GROUPS[GROUPS.length - 1].id;
       setG((prev) => (prev === cur ? prev : cur));
     };
     pane.addEventListener("scroll", spy, { passive: true });
@@ -324,7 +330,7 @@ function CategoryBrowser({
   return (
     <div className="cat-browser">
       <div className="cat-rail">
-        {CATEGORY_GROUPS.map((x) => (
+        {GROUPS.map((x) => (
           <button
             key={x.id}
             className={"cat-rail-i" + (x.id === g ? " on" : "")}
@@ -335,7 +341,7 @@ function CategoryBrowser({
         ))}
       </div>
       <div className="cat-pane" ref={paneRef}>
-        {CATEGORY_GROUPS.map((grp) => (
+        {GROUPS.map((grp) => (
           <section
             key={grp.id}
             className="cat-sec"

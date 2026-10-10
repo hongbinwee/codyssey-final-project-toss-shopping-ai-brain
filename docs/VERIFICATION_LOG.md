@@ -554,6 +554,8 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 
 ## 2026-10-10 · PMQA-04E-FIX01 — Category 연속 섹션 보정 + 검색 스크롤 증거 보완
 
+> **Superseded (부분) — PMQA-04E-FIX02**: 본 항목의 MJ-CATEGORY-01 해소 판정은 조기 판정이었다. pane 독립 스크롤·연속 섹션·spy 동기화 구조는 유효하나, 그룹 순서가 CATEGORY_GROUPS 순(digital→…→food)이라 Ref 28~31의 식품→생활용품→패션→뷰티 흐름과 어긋나고 식품이 마지막이라 head+73 clamp·대형 빈 공간이 발생했다. 그룹 순서 보정은 아래 FIX02 항목이 정본이다.
+
 대상: PM 독립 검수 MAJOR 2건 — EVIDENCE-01(검색 스크롤 비교 증거 부족: dark_search_results/_scrolled 동일 SHA로 실제 스크롤 아님), MJ-CATEGORY-01(CategoryBrowser가 선택 그룹 1개만 렌더해 Ref etc/28~31의 연속 섹션·다음 그룹 peek·콘텐츠 밀도와 큰 차이).
 
 ### 변경 파일
@@ -589,4 +591,43 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 
 - 04-E 최종 완료 = 사용자 Visual 승인 게이트. 본 기록으로 자가 승인하지 않는다.
 - MINOR→08: '식품' head+73 clamp 및 pane 하단 여백(05 또는 08에서 레이아웃 정책 검토).
+
+
+
+## 2026-10-10 · PMQA-04E-FIX02 — Category 그룹 순서 Ref 순서 보정 + 시즌 top 상태 재캡처
+
+대상: (1) FIX01의 MJ-CATEGORY-01 해소 판정은 조기 — pane 연속 섹션 구조는 맞았으나 그룹 순서가 digital→…→food로 Ref etc/28~31의 식품→생활용품(리빙)→패션→뷰티 흐름과 어긋나고, 식품이 마지막이라 head+73 clamp·대형 빈 공간이 발생. (2) qa/05_tab_season은 Ref50(banner top)과 impl(스크롤된 목록)의 상태 불일치.
+
+### 변경 파일
+
+- src/web/screens/Shopping.tsx — CategoryBrowser 내부 표시 순서만 food→living→fashion→beauty→digital로 고정(로컬 GROUPS 상수). 초기 선택·rail·섹션·scroll spy·clamp fallback 전부 같은 순서 사용. 전역 CATEGORY_GROUPS·홈/검색 매핑 불변, 데이터/라우트/13sub 동일, 클릭 시 재정렬 없음.
+- 캡처 tmp_shots04e3.mjs(신규) — 카테고리 5상태(digital 포함 전 선택 head 정렬 확인) + season windowY=0.
+- baseline: shots/04e/baseline-fix01/에 FIX01판 12개 보존.
+
+### 증거 (shots/04e/facts_fix02.txt — 390×844, dsf=2, 코드=본 항목 커밋)
+
+- 카테고리(dark/light 공통): 섹션 순서 식품→리빙→패션→뷰티→디지털 고정. 초기=식품 선택(Ref28과 같은 상태). 전 5개 레일 선택에서 head top=0 도달 — 마지막 디지털도 scrollTop620/최대652로 clamp 없이 top=0(식품 clamp+73 결함 해소). 전 상태 windowY=0·searchFieldVisible=visible·tabsTop=66·navHidden=false.
+- spy 동기화: pane 수동 top→'식품' active, bottom→'디지털' active.
+- 시즌: windowY=0·bannerTop=112 초기 상태 캡처로 Ref50과 같은 상태 비교 가능.
+- 인터랙션 probe(3200 read-only, FIX01과 동일 결과): 디지털 전체보기→10카드 / 모니터 sub→3카드(코드뷰 모니터 C·A·B, assert3) / 식품→커피 sub→2카드.
+- 합성 비교본: shots/04e/qa/ 17쌍 재생성 — 05(season top 정정)·06~10(카테고리 재정렬) 교체, MISS 0.
+- 데이터 규모 차이(5그룹/13sub vs Ref 14 rail·다수 subcat)는 [Project] 한계로 유지, Toss 동일 밀도 표기 금지. iOS statusbar/네이티브 키보드 재현 불가·Light Ref 부재 한계 동일.
+
+### 검증
+
+| 명령 | 결과 |
+| --- | --- |
+| npm run check (tsc --noEmit) | PASS — exit 0 |
+| npm run build | PASS — exit 0 |
+| npx playwright test nav.spec.ts --workers=1 --reporter=line | PASS — 7/7 raw exit 0 |
+| node tmp_catinteract.mjs (read-only probe) | PASS — digital10/monitor3(assert3)/coffee2 |
+| unit·core-journeys·smoke 재실행 | NOT_RUN — 본 수정은 CategoryBrowser 표시 순서 상수만의 프런트 한정. 직전 FIX01 코드에서 unit27·nav+core+smoke13 PASS 이력 유지, 확대 반복하지 않음 |
+| integration·eval | NOT_RUN — Frontend 전용 변경, 04-D 이력(int64·stub dev16/holdout18)과 구분 |
+| live eval | BLOCKED — LLM_API_KEY 미설정 |
+
+### 잔여
+
+- PM 독립 QA (2026-10-10): 물리 diff·보정 05~10 비교본·facts_fix02·실제 명령 출력(check/build/nav7/read-only probe) 검수 — Category-only 순서 일관·전역 metadata 보존·양 테마 5 선택 모두 head top=0/windowY=0/header·nav 유지·spy top=식품/bottom=디지털 확인, season actualY=0 상태 정합. **MJ-CATEGORY-01 및 시즌 증거 문제 해결, BLOCKER 0 / 열린 MAJOR 0 — CONDITIONAL PASS**(사용자 최종 Visual 승인 대기).
+- 04-E 최종 완료 = 사용자 Visual 승인 게이트(본 기록으로 자가 승인하지 않음). 05 착수 대기.
+- MINOR→08 유지(기존 승인분만): 04-C 4건(딜카드 full-bleed/정사각 크롭/쇼핑백 반투명 원/시즌 배너 높이) + 04-D IcBagFill crown silhouette. FIX01의 식품 head+73 clamp MINOR는 FIX02에서 해결됐으므로 잔여에서 제외.
 
