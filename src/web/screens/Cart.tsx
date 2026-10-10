@@ -9,7 +9,8 @@ import {
 } from "../api.ts";
 import type { CartItemView, CartView } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
-import { productImg } from "../display-meta.ts";
+import { PRODUCT_META, productImg } from "../display-meta.ts";
+import { IcClose } from "../icons.tsx";
 import {
   listPending, putPending, removePending, lookupAction,
   type PendingWrite,
@@ -21,12 +22,14 @@ export function Cart({
   onOpenShop,
   onCheckout,
   onOpenProduct,
+  onOpenOrders,
 }: {
   cart: CartView | null;
   onCartLoaded: (v: CartView) => void;
   onOpenShop: () => void;
   onCheckout: () => void;
   onOpenProduct: (id: string) => void;
+  onOpenOrders: () => void;
 }) {
   const [res, setRes] = useState<ApiResult<CartView> | null>(
     cart ? { ok: true, data: cart } : null,
@@ -35,7 +38,11 @@ export function Cart({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendings, setPendings] = useState<PendingWrite[]>(() => listPending());
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(cart?.items.map((i) => i.cart_item_id) ?? []),
+  );
   const busyRef = useRef(false); // 동기 중복 쓰기 차단 (state 반영 전 이중 클릭)
+  const knownIds = useRef(cart?.items.map((i) => i.cart_item_id) ?? []);
   // 마운트 GET이 늦게 도착해 그 사이 확정된 쓰기(v2)를 과거(v1)로 덮는 레이스 방지.
   // 쓰기가 새 상태를 적용할 때 seq를 올려 진행 중인 read를 무효화한다.
   const readSeq = useRef(0);
@@ -59,6 +66,20 @@ export function Cart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 선택은 카트 항목 id에 고정한다. 새 항목은 선택 상태로 들어오고,
+  // 삭제된 항목은 선택 집합에서도 제거한다.
+  useEffect(() => {
+    if (!res?.ok) return;
+    const ids = res.data.items.map((i) => i.cart_item_id);
+    setSelected((prev) => {
+      const next = new Set(ids.filter((id) => prev.has(id)));
+      for (const id of ids)
+        if (!knownIds.current.includes(id)) next.add(id);
+      knownIds.current = ids;
+      return next;
+    });
+  }, [res]);
+
   const locked = busy || pendings.length > 0;
 
   // 쓰기 공통: intent를 전송 전 보존 → 전송 → 확정 결과에서만 해제.
@@ -67,7 +88,12 @@ export function Cart({
     kind: "UPDATE_CART" | "REMOVE_CART",
     payload: Record<string, unknown>,
     label: string,
-  ) {
+  ): Promise<
+    | { status: "ok"; cart: CartView }
+    | { status: "stale" }
+    | { status: "ambiguous" }
+    | { status: "rejected" }
+  > {
     const pw: PendingWrite = {
       uiKey: payload.idempotency_key as string,
       kind,
@@ -86,32 +112,37 @@ export function Cart({
       removePending(pw.uiKey);
       // replay(저장 snapshot)면 최신 카트를 회수 — 그 사이 다른 변경이 섞일 수 있다.
       if (r.replayed) {
-        await reload();
-        setNotice("이미 처리된 요청이에요 (재전송 복원)");
-        return;
+        const latest = await reload();
+        if (!latest?.ok) {
+          setNotice("이미 처리된 요청이지만 최신 장바구니를 불러오지 못했어요.");
+          return { status: "stale" };
+        }
+        setNotice("이미 처리된 요청을 최신 장바구니에 반영했어요.");
+        return { status: "ok", cart: latest.data };
       }
       readSeq.current++; // 진행 중이던 read보다 이 쓰기 결과가 최신이다
       const v = { ok: true as const, data: r.data.cart };
       setRes(v);
       onCartLoaded(r.data.cart);
       setNotice(null);
-      return;
+      return { status: "ok", cart: r.data.cart };
     }
     if (AMBIGUOUS_CODES.has(r.error.code)) {
       setNotice("결과를 확인하지 못했어요. '결과 확인'으로 이어서 확인할 수 있어요.");
-      return; // pending 유지 → 복구 UI
+      return { status: "ambiguous" }; // pending 유지 → 복구 UI
     }
     removePending(pw.uiKey);
     if (r.error.code === "VERSION_CONFLICT") {
       setNotice("카트가 변경되었어요. 최신 상태로 다시 불러왔습니다.");
       await reload();
-      return;
+      return { status: "rejected" };
     }
     // VERSION_CONFLICT 외 확정 거절(OUT_OF_STOCK·UNAVAILABLE·NOT_FOUND)도
     // 최신 CartView를 회수한다 — 재고/판매 상태가 바뀐 거절에서 stale
     // can_checkout·수량 버튼이 남지 않도록(retryPending과 동일 기준).
     setNotice("변경 실패: " + r.error.message);
     await reload();
+    return { status: "rejected" };
   }
 
   async function changeQty(item: CartItemView, quantity: number) {
@@ -152,6 +183,51 @@ export function Cart({
     );
     setBusy(false);
     busyRef.current = false;
+  }
+
+  async function removeSelected() {
+    if (locked || busyRef.current || !res?.ok) return;
+    const ids = res.data.items
+      .filter((item) => selected.has(item.cart_item_id))
+      .map((item) => item.cart_item_id);
+    if (!ids.length) return;
+    busyRef.current = true;
+    setBusy(true);
+    setNotice(null);
+    let latest = res.data;
+    let removed = 0;
+    let stopped: "stale" | "ambiguous" | "rejected" | null = null;
+    for (const id of ids) {
+      const item = latest.items.find((x) => x.cart_item_id === id);
+      if (!item) continue;
+      const result = await runWrite(
+        item,
+        "REMOVE_CART",
+        {
+          expected_cart_version: latest.version,
+          idempotency_key: newActionKey(),
+        },
+        item.product_name + " 삭제",
+      );
+      if (result.status !== "ok") {
+        stopped = result.status;
+        break;
+      }
+      latest = result.cart;
+      removed += 1;
+    }
+    if (removed === ids.length) {
+      setNotice("선택한 상품 " + removed + "개를 삭제했어요.");
+    } else if (removed > 0 && stopped) {
+      const reason = stopped === "ambiguous"
+        ? "다음 상품의 결과 확인이 필요해요."
+        : stopped === "stale"
+          ? "최신 장바구니 확인에 실패해 멈췄어요. 다시 불러와 주세요."
+          : "다음 상품 삭제가 거절돼 멈췄어요. 최신 상태를 확인해 주세요.";
+      setNotice("앞의 " + removed + "개 삭제 완료. " + reason);
+    }
+    busyRef.current = false;
+    setBusy(false);
   }
 
   // 미확정 intent의 서버 기록을 조회한다. SUCCEEDED라도 카트 본문은
@@ -234,18 +310,28 @@ export function Cart({
   if (!res) return null;
   if (!res.ok)
     return (
-      <ErrorState
-        text="카트를 불러오지 못했어요"
-        onRetry={() => {
-          setLoading(true);
-          reload().then(() => setLoading(false));
-        }}
-      />
+      <>
+        {notice && <div className="state-box" role="status">{notice}</div>}
+        <ErrorState
+          text="카트를 불러오지 못했어요"
+          onRetry={() => {
+            setLoading(true);
+            reload().then(() => setLoading(false));
+          }}
+        />
+      </>
     );
   const c = res.data;
+  const allSelected = c.items.length > 0 && c.items.every((i) => selected.has(i.cart_item_id));
+  const someSelected = c.items.some((i) => selected.has(i.cart_item_id));
+  const selectedCount = c.items.filter((i) => selected.has(i.cart_item_id)).length;
+  const selectedItemsTotal = c.items
+    .filter((i) => selected.has(i.cart_item_id))
+    .reduce((sum, item) => sum + item.unit_price_won * item.quantity, 0);
+  const canSubmit = c.can_checkout && allSelected && !locked;
 
   return (
-    <div className="screen">
+    <div className="screen cart-screen">
       {notice && <div className="state-box">{notice}</div>}
       {pendings.length > 0 && (
         <div className="state-box">
@@ -274,6 +360,11 @@ export function Cart({
           </div>
         </div>
       )}
+      <div className="cart-tabs" aria-label="장바구니 메뉴">
+        <button className="on" aria-current="page">장바구니 {c.items.length}</button>
+        <button onClick={onOpenShop}>계속 쇼핑</button>
+        <button onClick={onOpenOrders}>내 주문</button>
+      </div>
       {c.items.length === 0 ? (
         <Empty
           text="장바구니가 비어 있어요"
@@ -285,32 +376,100 @@ export function Cart({
         />
       ) : (
         <>
+          <div className="cart-selection">
+            <label className="select-all">
+              <input
+                ref={(el) => {
+                  if (el) el.indeterminate = someSelected && !allSelected;
+                }}
+                type="checkbox"
+                checked={allSelected}
+                aria-label="전체 선택"
+                disabled={locked}
+                onChange={(e) => {
+                  setSelected(e.target.checked
+                    ? new Set(c.items.map((i) => i.cart_item_id))
+                    : new Set());
+                }}
+              />
+              <span>전체선택 ({c.items.length}건)</span>
+            </label>
+            <button
+              className="link select-delete"
+              aria-label="선택 항목 제거"
+              disabled={!someSelected || locked}
+              onClick={removeSelected}
+            >
+              선택삭제
+            </button>
+          </div>
           <ul className="cart-list">
             {c.items.map((i) => (
               <li key={i.cart_item_id} className="cart-item">
-                <button
-                  className="cart-thumb"
-                  aria-label={i.product_name + " 상품 상세"}
-                  onClick={() => onOpenProduct(i.product_id)}
-                >
-                  <img
-                    src={productImg({ product_id: i.product_id, image: i.image })}
-                    alt=""
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
-                  />
-                </button>
-                <div className="cart-info">
+                <div className="cart-item-head">
+                  <label className="cart-select">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(i.cart_item_id)}
+                      aria-label={i.product_name + " 선택"}
+                      disabled={locked}
+                      onChange={(e) => setSelected((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(i.cart_item_id);
+                        else next.delete(i.cart_item_id);
+                        return next;
+                      })}
+                    />
+                  </label>
                   <button
                     className="cart-name"
                     onClick={() => onOpenProduct(i.product_id)}
                   >
                     {i.product_name}
                   </button>
-                  <div className="muted">
-                    {Object.values(i.option_values).join(" · ")}
-                  </div>
+                  <button
+                    className="cart-remove"
+                    aria-label="삭제"
+                    title="상품 삭제"
+                    disabled={locked}
+                    onClick={() => removeItem(i)}
+                  >
+                    <IcClose size={16} />
+                  </button>
+                </div>
+                <div className="cart-item-body">
+                  <button
+                    className="cart-thumb"
+                    aria-label={i.product_name + " 상품 상세"}
+                    onClick={() => onOpenProduct(i.product_id)}
+                  >
+                    <img
+                      src={productImg({ product_id: i.product_id, image: i.image })}
+                      alt=""
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  </button>
+                  <div className="cart-info">
+                    <div className="cart-price-line">
+                      {(() => {
+                        const original = PRODUCT_META[i.product_id]?.original_price_won;
+                        const rate = original && original > i.unit_price_won
+                          ? Math.round((original - i.unit_price_won) / original * 100)
+                          : 0;
+                        return rate > 0 && <span className="cart-price-rate">{rate}%</span>;
+                      })()}
+                      <b>{fmtWon(i.unit_price_won)}</b>
+                    </div>
+                    <div className="muted cart-option">
+                      {Object.values(i.option_values).join(" · ")}
+                    </div>
+                    {PRODUCT_META[i.product_id]?.delivery && (
+                      <div className="cart-delivery muted">
+                        배송 안내 · {PRODUCT_META[i.product_id].delivery} <small>데모</small>
+                      </div>
+                    )}
                   {!i.purchasable && (
                     <div className="badge-soldout">
                       {i.block_reason} — 주문할 수 없어요
@@ -332,31 +491,29 @@ export function Cart({
                     >
                       +
                     </button>
-                    <button
-                      className="link"
-                      disabled={locked}
-                      onClick={() => removeItem(i)}
-                    >
-                      삭제
-                    </button>
                   </div>
                 </div>
-                <div className="cart-right">
-                  <b>{fmtWon(i.unit_price_won)}</b>
-                  <span className="muted">× {i.quantity}</span>
                 </div>
               </li>
             ))}
           </ul>
           <div className="bottom-bar">
-            <div>
-              <div className="muted">
-                상품 {fmtWon(c.items_total_won)} + 배송비{" "}
-                {fmtWon(c.shipping_fee_won)}
+            <div className="cart-summary">
+              <div className="cart-summary-count">
+                선택 {selectedCount}건 · 선택 상품 합계 {fmtWon(selectedItemsTotal)}
               </div>
-              <b>{fmtWon(c.total_won)}</b>
+              <div className="muted cart-summary-whole">
+                전체 {c.items.length}건 기준 · 상품 {fmtWon(c.items_total_won)} + 배송비 {fmtWon(c.shipping_fee_won)}
+              </div>
+              <div className="cart-summary-total">
+                <span className="muted">전체 장바구니 결제 예상</span>
+                <b>{fmtWon(c.total_won)}</b>
+              </div>
             </div>
-            <div>
+            <div className="cart-checkout-action">
+              {selectedCount < c.items.length && pendings.length === 0 && (
+                <div className="muted sm">전체 상품을 선택해야 주문할 수 있어요</div>
+              )}
               {!c.can_checkout && pendings.length === 0 && (
                 <div className="muted sm">주문 불가 항목을 삭제해 주세요</div>
               )}
@@ -365,10 +522,11 @@ export function Cart({
               )}
               <button
                 className="btn primary"
-                disabled={!c.can_checkout || locked}
+                aria-label={c.items.length + "건 · " + fmtWon(c.total_won) + " 주문하기"}
+                disabled={!canSubmit}
                 onClick={onCheckout}
               >
-                주문하기
+                {c.items.length}건 · {fmtWon(c.total_won)} 주문하기
               </button>
             </div>
           </div>

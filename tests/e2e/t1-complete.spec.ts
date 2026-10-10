@@ -23,13 +23,13 @@ test("t1 complete: cart quantity update -> remove -> empty state", async ({
 
   // 수량 +1 -> 2개, 합계 360,000 + 3,000 = 363,000
   await page.getByRole("button", { name: /수량 증가/ }).click();
-  await expect(page.getByText("× 2")).toBeVisible();
-  await expect(page.getByText("363,000원")).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("2");
+  await expect(page.locator(".cart-summary-total b")).toHaveText("363,000원");
 
   // 수량 -1 -> 1개
   await page.getByRole("button", { name: /수량 감소/ }).click();
-  await expect(page.getByText("× 1")).toBeVisible();
-  await expect(page.getByText("183,000원")).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("1");
+  await expect(page.locator(".cart-summary-total b")).toHaveText("183,000원");
 
   // 삭제 -> Empty
   await page.getByRole("button", { name: "삭제" }).click();

@@ -112,7 +112,7 @@ function Login({ onLogin }: { onLogin: (id: string, name: string) => void }) {
 // 자체 고정 CTA(.bottom-bar)가 있어 겹치지 않게 한다.
 const NAV_ROUTES = new Set(["shop"]);
 // 뒤로가기 바를 붙이는 푸시 화면
-const BACK_ROUTES = new Set(["product", "cart", "checkout", "orders", "order"]);
+const BACK_ROUTES = new Set(["cart", "checkout", "orders", "order"]);
 
 // 내부 이동 이력이 없을 때 뒤로가기 fallback 목적지 [Project]
 const BACK_PARENT: Record<string, Route> = {
@@ -231,6 +231,11 @@ function App() {
   const showNav = NAV_ROUTES.has(route.name);
   // 쇼핑/검색 화면은 Toss 기준 좁은 좌우 여백을 쓴다 [Observed ~10px]
   const shopPad = route.name === "shop" || route.name === "search";
+  const goBack = () => {
+    const st = history.state as { internal?: number } | null;
+    if (st?.internal) history.back();
+    else gotoReplace(BACK_PARENT[route.name]);
+  };
 
   return (
     <div className={"shell" + (showNav ? " has-nav" : "") + (shopPad ? " shop-pad" : "")}>
@@ -291,13 +296,7 @@ function App() {
           <button
             className="back-btn"
             aria-label="뒤로가기"
-            onClick={() => {
-              // 내부 이력이 있으면 브라우저 뒤로가기, 없으면 커머스 parent로 fallback
-              // (엔트리 마커 기준 — replace fallback으로 상위 체인을 오름)
-              const st = history.state as { internal?: number } | null;
-              if (st?.internal) history.back();
-              else gotoReplace(BACK_PARENT[route.name]);
-            }}
+            onClick={goBack}
           >
             <IcBack size={24} />
           </button>
@@ -329,8 +328,11 @@ function App() {
           <Product
             key={route.id}
             productId={route.id}
+            onBack={goBack}
+            onOpenSearch={() => goto({ name: "search", query: "" })}
             onOpenCart={() => goto({ name: "cart" })}
             onCartChanged={applyCart}
+            cartCount={cartCount}
           />
         )}
         {route.name === "cart" && (
@@ -340,6 +342,7 @@ function App() {
             onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
             onCheckout={() => goto({ name: "checkout" })}
             onOpenProduct={(id) => goto({ name: "product", id })}
+            onOpenOrders={() => goto({ name: "orders" })}
           />
         )}
         {route.name === "checkout" && (

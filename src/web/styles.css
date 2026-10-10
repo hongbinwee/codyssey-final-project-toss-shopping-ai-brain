@@ -633,12 +633,28 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
 .sort-check { margin-left: auto; color: var(--accent); display: flex; }
 
 /* W02 상세 — 정사각 상품 이미지, full-bleed + n|N 배지 [Observed product-detail] */
+.screen.detail { padding-top: 0; }
+.detail-nav {
+  position: sticky; top: 0; z-index: 22;
+  height: 48px; margin: 0 calc(-1 * var(--pad)) -48px;
+  padding: 0 10px; display: flex; align-items: center; justify-content: space-between;
+  color: #fff; background: transparent; transition: background 0.18s ease, color 0.18s ease;
+}
+.detail-nav.solid { color: var(--text); background: var(--bg-elev); border-bottom: 1px solid var(--line); }
+.dn-side { display: flex; align-items: center; gap: 4px; }
+.dn-btn {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border: 0; border-radius: 50%;
+  background: color-mix(in srgb, #000 24%, transparent); color: inherit; cursor: pointer;
+}
+.detail-nav.solid .dn-btn { background: transparent; }
+.dn-btn:active { background: var(--field); }
 .detail-hero {
   position: relative; aspect-ratio: 1;
   display: flex; align-items: center; justify-content: center;
   font-size: 64px; font-weight: 800; color: var(--thumb-fg);
   background: linear-gradient(160deg, var(--thumb-a), var(--thumb-b));
-  margin: -6px calc(-1 * var(--pad)) 16px; overflow: hidden;
+  margin: 0 calc(-1 * var(--pad)) 16px; overflow: hidden;
 }
 .detail-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .detail-hero[data-fallback]::after { content: attr(data-fallback); }
@@ -671,6 +687,20 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
 .meta-rows { margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
 .meta-row { display: flex; gap: 12px; font-size: 13.5px; color: var(--text-2); }
 .meta-row .meta-k { color: var(--muted); flex-shrink: 0; }
+.info-rows { margin-top: 12px; display: flex; flex-direction: column; }
+.info-row {
+  width: 100%; min-height: 38px; display: flex; align-items: center; gap: 10px;
+  padding: 5px 0; border: 0; border-bottom: 1px solid var(--line);
+  text-align: left; color: var(--text-2); background: transparent; font: inherit; cursor: pointer;
+}
+.info-row.static { cursor: default; }
+.info-k { flex: 0 0 70px; color: var(--muted); font-size: 13px; }
+.info-v { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-size: 13px; }
+.info-rating-main { min-height: 18px; display: inline-flex; align-items: center; gap: 5px; }
+.review-provenance-note { color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+.info-star { color: var(--text-2); }
+.info-next { flex: 0 0 auto; color: var(--muted); }
+.rating-retry { margin: 4px 0 0 70px; padding: 2px 0; font-size: 12px; text-align: left; }
 /* 옵션 변경 진입 버튼 — 실제 선택은 BottomSheet [Observed product-detail] */
 .option-open {
   width: 100%; display: flex; justify-content: space-between; align-items: center;
@@ -679,8 +709,8 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
   color: var(--text); font-size: 15px; cursor: pointer; text-align: left;
 }
 .option-open:disabled { opacity: 0.45; cursor: not-allowed; }
-.review-head { display: flex; align-items: center; gap: 8px; }
-.review-head b { color: var(--text); font-size: 13px; letter-spacing: 1px; }
+.review-head { display: flex; align-items: center; gap: 7px; min-height: 20px; }
+.review-head b { color: var(--text-2); font-size: 13px; letter-spacing: 1px; }
 /* 리뷰 출처 칩 — SYNTHETIC을 실사용 리뷰로 위장하지 않게 구분 */
 .src-chip {
   font-size: 11px; font-weight: 600; border-radius: 6px; padding: 2px 7px;
@@ -722,10 +752,34 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
   width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--card); color: var(--text); font-size: 16px; cursor: pointer;
 }
-.review-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-.review-item { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; }
-.review-item p { margin: 8px 0; line-height: 1.5; }
-.review-summary { margin-bottom: 10px; }
+.detail-tabs {
+  position: sticky; top: 48px; z-index: 18; display: flex; gap: 0;
+  margin: 24px calc(-1 * var(--pad)) 0; padding: 0 var(--pad);
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.detail-tabs button {
+  flex: 1; height: 48px; border: 0; border-bottom: 2px solid transparent;
+  background: transparent; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer;
+}
+.detail-tabs button.on { color: var(--text); font-weight: 700; border-bottom-color: var(--text); }
+.detail-panel { min-height: 160px; padding: 14px 0 20px; }
+.review-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }
+.review-summary-head > .muted { font-size: 13px; }
+.review-rating { display: flex; align-items: center; gap: 5px; font-size: 18px; }
+.review-rating .muted { font-size: 13px; }
+.review-star { color: var(--text-2); }
+.review-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.review-item { background: transparent; border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 14px 0 16px; }
+.review-item p { margin: 9px 0 0; line-height: 1.5; font-size: 14px; }
+.review-date { margin-left: auto; color: var(--muted); font-size: 12px; }
+.review-option { margin-top: 7px; font-size: 12px; }
+.review-summary { margin: 0 0 8px; font-size: 13px; }
+.review-provenance { margin: -2px 0 10px; font-size: 11px; line-height: 1.45; }
+.detail-info-panel > p { margin: 0 0 14px; line-height: 1.55; color: var(--text-2); }
+.detail-info-panel dl { margin: 0; }
+.spec-row { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.spec-row dt { color: var(--muted); }
+.spec-row dd { margin: 0; color: var(--text); }
 
 /* 하단 고정 바 — CTA 있는 푸시 화면용 */
 .bottom-bar {
@@ -734,7 +788,7 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background: var(--bg-elev); border-top: 1px solid var(--line);
-  z-index: 15;
+  z-index: 24; /* 상세 sticky 탭(18) 위, 하단 네비(25)·시트(50) 아래 */
 }
 .bottom-bar b { font-size: 18px; }
 .bottom-bar .muted { font-size: 13px; }
@@ -742,6 +796,15 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 /* 미확정 쓰기 안내 스트립 — Product 화면의 pending 접근점 (첫 화면 고정 노출) */
 .bottom-bar.has-note { flex-direction: column; align-items: stretch; }
 .bottom-bar .bar-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex: 1; }
+.bottom-bar .bar-row.detail-actions { justify-content: stretch; gap: 8px; }
+.detail-cart-btn, .detail-option-cta {
+  position: relative; flex: 0 0 auto; height: 48px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--bg-elev); color: var(--text); cursor: pointer;
+}
+.detail-cart-btn { width: 44px; display: grid; place-items: center; }
+.detail-option-cta { min-width: 92px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; }
+.detail-cart-btn:disabled, .detail-option-cta:disabled { opacity: 0.45; cursor: not-allowed; }
+.detail-actions .btn.primary { flex: 1; min-width: 0; min-height: 48px; padding: 0 10px; font-size: 15px; white-space: nowrap; }
 .bottom-bar .bar-note {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
   font-size: 13px; color: var(--muted); padding-bottom: 10px; margin-bottom: 10px;
@@ -770,6 +833,68 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .cart-right b { display: block; }
 .qty-ctrl.sm { margin-top: 8px; gap: 8px; padding: 4px 8px; display: inline-flex; }
 .qty-ctrl.sm .link { margin-left: 4px; }
+
+/* 05 Cart — Reference의 탭·전체 선택 행·rounded item 패널 [Observed cart/10·121·126]. */
+.cart-screen { padding-top: 0; padding-bottom: 230px; }
+.cart-tabs {
+  height: 48px; display: grid; grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid var(--line); margin: 0 0 10px;
+}
+.cart-tabs button {
+  position: relative; border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.cart-tabs button.on { color: var(--text); font-weight: 700; }
+.cart-tabs button.on::after {
+  content: ""; position: absolute; left: 15%; right: 15%; bottom: -1px;
+  height: 2px; background: var(--text); border-radius: 2px;
+}
+.cart-selection { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.select-all, .cart-select { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.select-all { font-size: 13px; color: var(--text-2); }
+.select-all input, .cart-select input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.select-delete { padding: 7px 10px; border-radius: 9px; background: var(--field); color: var(--text-2); font-size: 12px; }
+.select-delete:disabled { opacity: 0.45; cursor: not-allowed; }
+.cart-list { gap: 10px; }
+.cart-item {
+  display: block; padding: 12px; background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--radius);
+}
+.cart-item-head { min-height: 28px; display: flex; align-items: center; gap: 9px; }
+.cart-name {
+  flex: 1; min-width: 0; display: -webkit-box; overflow: hidden;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  font-size: 14px; line-height: 1.4; text-decoration: none;
+}
+.cart-name:hover { text-decoration: none; }
+.cart-remove {
+  width: 30px; height: 30px; flex: 0 0 auto; border: 0; border-radius: 50%;
+  display: grid; place-items: center; color: var(--muted); background: transparent; cursor: pointer;
+}
+.cart-remove:disabled { opacity: 0.4; cursor: not-allowed; }
+.cart-item-body { display: flex; align-items: flex-start; gap: 12px; margin-top: 8px; }
+.cart-thumb { width: 68px; height: 68px; border-radius: 10px; }
+.cart-info { flex: 1; min-width: 0; }
+.cart-price-line { display: flex; align-items: baseline; gap: 5px; line-height: 1.25; }
+.cart-price-line b { font-size: 18px; font-weight: 750; }
+.cart-price-rate { color: var(--text-2); font-size: 16px; font-weight: 600; }
+.cart-option { margin-top: 3px; font-size: 12px; }
+.cart-delivery { margin-top: 5px; font-size: 11.5px; }
+.cart-delivery small { margin-left: 3px; color: var(--muted); font-size: 10px; }
+.cart-info .badge-soldout { margin-top: 5px; }
+.qty-ctrl.sm { margin-top: 8px; gap: 8px; padding: 3px 6px; border-radius: 8px; }
+.qty-ctrl.sm button { width: 26px; height: 26px; border: 0; background: transparent; font-size: 15px; }
+.qty-ctrl.sm b { min-width: 16px; text-align: center; font-size: 13px; }
+.bottom-bar:has(.cart-summary) { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+.cart-summary { display: flex; flex-direction: column; gap: 2px; }
+.cart-summary-count { color: var(--text-2); font-size: 12px; }
+.cart-summary-whole { line-height: 1.35; }
+.cart-summary .muted { font-size: 12px; }
+.cart-summary-total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.cart-summary-total b { font-size: 17px; text-align: right; }
+.cart-checkout-action { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.cart-checkout-action > .muted { text-align: center; }
+.cart-checkout-action .btn { width: 100%; min-height: 50px; }
 
 /* A01 비교 카드 */
 .compare-card {

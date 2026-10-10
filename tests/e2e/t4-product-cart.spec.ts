@@ -116,6 +116,27 @@ async function cartVersion(page: Page) {
   return j.data.version as number;
 }
 
+async function addFixtureVariant(page: Page, productId: string, variantId: string) {
+  const pr = await page.context().request.get("/api/products/" + productId);
+  const pj = await pr.json();
+  const variant = pj.data.variants.find(
+    (v: { variant_id: string }) => v.variant_id === variantId,
+  );
+  if (!variant) throw new Error("missing fixture variant: " + variantId);
+  const r = await page.context().request.post("/api/cart/items", {
+    data: {
+      product_id: productId,
+      variant_id: variantId,
+      quantity: 1,
+      expected_cart_version: await cartVersion(page),
+      expected_variant_version: variant.version,
+      idempotency_key: crypto.randomUUID(),
+    },
+  });
+  const j = await r.json();
+  if (!j.ok) throw new Error("fixture cart add failed: " + JSON.stringify(j));
+}
+
 test("detail: default option → sheet → qty → add → cart ops → empty", async ({ page }) => {
   await loginClean(page);
   await page.goto("/#/p/p-a");
@@ -140,11 +161,11 @@ test("detail: default option → sheet → qty → add → cart ops → empty", 
   await page.getByRole("button", { name: "장바구니 보기" }).click();
   await expect(page.locator(".cart-thumb img").first()).toBeVisible();
   await expect(page.locator(".cart-name")).toContainText("코드뷰 모니터 A");
-  await expect(page.getByText("× 2")).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("2");
 
   // 수량 감소 → 1 → 삭제 → 빈 상태
   await page.getByRole("button", { name: /수량 감소/ }).click();
-  await expect(page.getByText("× 1")).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("1");
   await page.getByRole("button", { name: "삭제" }).click();
   await expect(page.getByText("장바구니가 비어 있어요")).toBeVisible();
 });
@@ -338,9 +359,9 @@ test("pending 복구 접근점은 첫 화면 고정바에 노출된다 (PMQA-05-
   await expect(page.getByText(/완료된 요청/)).toBeVisible();
   // SUCCEEDED → snapshot이 아니라 최신 카트 qty·총액으로 재동기화
   await expect(page.locator(".cart-name")).toContainText("코드뷰 모니터 A");
-  await expect(page.getByText("× 1")).toBeVisible();
-  await expect(page.getByText("상품 180,000원 + 배송비 3,000원")).toBeVisible();
-  await expect(page.locator(".bottom-bar b")).toHaveText("183,000원");
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("1");
+  await expect(page.locator(".cart-summary-whole")).toContainText("상품 180,000원 + 배송비 3,000원");
+  await expect(page.locator(".cart-summary-total b")).toHaveText("183,000원");
   // pending 해제 — 배너 소멸·주문 가능
   await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "주문하기" })).toBeEnabled();
@@ -398,7 +419,7 @@ test("서버 500 INTERNAL → ambiguous → intent 유지 → 조회 SUCCEEDED(�
   await expect(page.getByText(/완료된 요청/)).toBeVisible();
   // 서버는 한 번만 commit — 동일 상품 행이 중복 생기면 안 된다
   await expect(page.locator(".cart-name")).toHaveCount(1); // 같은 variant는 한 행에 합산 — 수량으로 1회 commit을 검증
-  await expect(page.getByText("× 1")).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("1");
   const cr = await page.context().request.get("/api/cart");
   expect((await cr.json()).data.items[0].quantity).toBe(1);
   await emptyCart(page);
@@ -424,7 +445,7 @@ test("cart PATCH drop → 결과 확인 → commit 1회 반영(중복 실행 없
   await page.getByRole("button", { name: "결과 확인" }).click();
   await expect(page.getByText(/완료된 요청/)).toBeVisible();
   // commit은 정확히 1회 — ×3(재전송)이 아니라 ×2
-  await expect(page.getByText("× 2")).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("2");
 
   // 서버 기록도 같은 키로 SUCCEEDED 조회된다(ui- 접두)
   const r = await page.context().request.get(
@@ -494,7 +515,7 @@ test("OUT_OF_STOCK 확정 거절 → pending 해제·자동 재실행 없음", a
   await expect(page.getByText(/변경 실패/)).toBeVisible();
   // 확정 거절 → intent 해제됐으므로 pending 박스가 없고 수량도 2 유지
   await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toHaveCount(0);
-  await expect(page.getByText("× 2")).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("2");
   await emptyCart(page);
 });
 
@@ -664,16 +685,16 @@ test("cart stale-read race: held mount GET v1 must not overwrite committed v2", 
 
   // GET이 hold된 동안 PATCH v2를 완료한다 — 서버 commit + UI 적용
   await page.getByRole("button", { name: /수량 증가/ }).click();
-  await expect(page.getByText("× 2")).toBeVisible();
-  await expect(page.getByText("상품 360,000원 + 배송비 3,000원")).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("2");
+  await expect(page.locator(".cart-summary-whole")).toContainText("상품 360,000원 + 배송비 3,000원");
 
   // 늦은 v1 응답을 푼다 — UI가 ×1로 되돌아가면 race 재현
   release();
   await expect.poll(() => delivered, { timeout: 5000 }).toBe(true); // 응답이 실제 전달됐다
-  await expect(page.getByText("× 2")).toBeVisible();
-  await expect(page.getByText("상품 360,000원 + 배송비 3,000원")).toBeVisible();
-  await expect(page.getByText("상품 180,000원 + 배송비 3,000원")).toHaveCount(0);
-  await expect(page.getByText("363,000원").first()).toBeVisible();
+  await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("2");
+  await expect(page.locator(".cart-summary-whole")).toContainText("상품 360,000원 + 배송비 3,000원");
+  await expect(page.locator(".cart-summary-whole")).not.toContainText("상품 180,000원 + 배송비 3,000원");
+  await expect(page.locator(".cart-summary-total b")).toHaveText("363,000원");
 
   // backend와 UI가 같은 v2를 본다 — version은 PATCH 1회 bump
   const cr = await page.context().request.get("/api/cart");
@@ -830,4 +851,450 @@ test("확정 거절 → 최신 CartView 회수: 명시 재시도 경로 동일 �
   // 서버 실제 상태(qty 2 commit분)도 정리한다
   await expect(page.getByRole("button", { name: "삭제" })).toBeEnabled();
   await emptyCart(page);
+});
+
+test("상세: overlay navigation, 평점 진입, 리뷰/상품정보 탭과 옵션 라벨", async ({ page }) => {
+  await login(page);
+  const diagnostics: string[] = [];
+  const responseBodies: Promise<void>[] = [];
+  page.on("response", (response) => {
+    const url = new URL(response.url());
+    if (!url.pathname.startsWith("/api/products")) return;
+    const status = response.status();
+    responseBodies.push(response.text().then((text) => {
+      let envelope: unknown;
+      try {
+        const body = JSON.parse(text);
+        envelope = body.ok === true
+          ? { ok: true, product: body.data?.product?.id ?? body.data?.items?.[0]?.product_id }
+          : { ok: body.ok, error: body.error?.code };
+      } catch {
+        envelope = "invalid-json";
+      }
+      diagnostics.push("response " + url.pathname + url.search + " " + status + " " + JSON.stringify(envelope));
+    }).catch((error) => {
+      diagnostics.push("response-body " + String(error));
+    }));
+  });
+  page.on("requestfailed", (request) => {
+    if (request.url().includes("/api/products"))
+      diagnostics.push("requestfailed " + request.url() + " " + request.failure()?.errorText);
+  });
+  page.on("pageerror", (error) => diagnostics.push("pageerror " + error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") diagnostics.push("console " + message.text());
+  });
+  await page.goto("/#/p/p-a");
+
+  await expect(page.locator(".detail-nav")).toBeVisible();
+  await expect(page.locator(".backbar")).toHaveCount(0);
+  try {
+    await expect(page.locator(".detail-name")).toHaveText("코드뷰 모니터 A");
+  } catch (error) {
+    await Promise.all(responseBodies);
+    throw new Error(String(error) + "\nDiagnostics:\n" + (diagnostics.join("\n") || "<none>"));
+  }
+  await expect(page.locator(".info-row").first()).toContainText("평점 · 리뷰");
+  await expect(page.locator(".info-row").first()).toContainText("4개");
+
+  await page.locator(".option-open").click();
+  const optionSheet = page.getByRole("dialog", { name: "옵션 선택" });
+  await expect(optionSheet.getByRole("button", { name: /27인치/ })).toBeDisabled();
+  // 27인치 fixture 옵션은 품절이므로 선택되지 않고 구매 가능한 기본값 유지.
+  await expect(page.locator(".option-open")).toContainText("24인치");
+  await optionSheet.getByRole("button", { name: "닫기" }).click();
+
+  await page.locator(".info-row").first().click();
+  await expect(page.locator(".detail-tabs")).toBeVisible();
+  await expect(page.locator(".review-provenance-note")).toContainText("실사용·시연 리뷰");
+  await expect(page.getByRole("tab", { name: /리뷰 \(4개\)/ })).toBeVisible();
+  await expect(page.locator(".review-item").first()).toBeVisible();
+  const expectedReviewScroll = await page.evaluate(() => {
+    const tabs = document.querySelector(".detail-tabs");
+    if (!tabs) throw new Error("detail tabs missing after review jump");
+    const requested = tabs.getBoundingClientRect().top + scrollY - 56;
+    return Math.min(requested, document.documentElement.scrollHeight - innerHeight);
+  });
+  await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(Math.round(expectedReviewScroll));
+  const reviewViewport = await page.evaluate(() => {
+    const summary = document.querySelector(".review-summary-head");
+    const firstReview = document.querySelector(".review-item");
+    const footer = document.querySelector(".bottom-bar");
+    if (!summary || !firstReview || !footer) return { found: false };
+    const summaryRect = summary.getBoundingClientRect();
+    const reviewRect = firstReview.getBoundingClientRect();
+    const footerTop = footer.getBoundingClientRect().top;
+    return {
+      found: true,
+      summary: { top: summaryRect.top, bottom: summaryRect.bottom },
+      firstReview: { top: reviewRect.top, bottom: reviewRect.bottom },
+      footerTop,
+      bothAboveFooter:
+        summaryRect.top >= 0 && summaryRect.bottom <= footerTop &&
+        reviewRect.top >= 0 && reviewRect.bottom <= footerTop,
+    };
+  });
+  expect(reviewViewport, JSON.stringify(reviewViewport)).toMatchObject({ found: true, bothAboveFooter: true });
+  await expect(page.locator(".review-option").filter({ hasText: /v-a-\d+/ })).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "상품 정보", exact: true }).click();
+  await expect(page.locator(".detail-info-panel")).toBeVisible();
+  await expect(page.locator(".detail-info-panel")).toContainText("패널");
+  await page.getByRole("tab", { name: /리뷰 \(4개\)/ }).click();
+  await expect(page.locator(".review-list")).toBeVisible();
+  await expect(page.locator(".review-provenance")).toContainText("모든 출처");
+  await Promise.all(responseBodies);
+});
+
+test("cart: 부분 선택은 whole-cart checkout을 막고 선택삭제는 실제 선택만 지운다", async ({ page }) => {
+  await loginClean(page);
+  await addFixtureVariant(page, "p-a", "v-a-24");
+  await addFixtureVariant(page, "p-b", "v-b-24");
+  await page.goto("/#/cart");
+
+  await expect(page.locator(".cart-tabs")).toBeVisible();
+  await expect(page.getByRole("button", { name: /장바구니 2/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "내 주문", exact: true })).toBeVisible();
+  const order = page.getByRole("button", { name: /2건 · .* 주문하기/ });
+  await expect(order).toBeEnabled();
+
+  const selectA = page.getByRole("checkbox", { name: "코드뷰 모니터 A 선택" });
+  await selectA.uncheck();
+  await expect(order).toBeDisabled();
+  await expect(page.getByText("전체 상품을 선택해야 주문할 수 있어요")).toBeVisible();
+  await expect(page.locator(".cart-summary")).toContainText("전체 2건 기준");
+
+  await page.getByRole("button", { name: "선택 항목 제거" }).click();
+  await expect(page.locator(".cart-name")).toHaveCount(1);
+  await expect(page.locator(".cart-name")).toContainText("코드뷰 모니터 A");
+  await expect(page.getByRole("checkbox", { name: "코드뷰 모니터 A 선택" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "전체 선택" })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: /1건 · .* 주문하기/ })).toBeDisabled();
+  await page.getByRole("checkbox", { name: "코드뷰 모니터 A 선택" }).check();
+  await expect(page.getByRole("checkbox", { name: "전체 선택" })).toBeChecked();
+  await expect(page.getByRole("button", { name: /1건 · .* 주문하기/ })).toBeEnabled();
+  await expect(page.locator(".cart-summary-count")).toContainText("선택 1건 · 선택 상품 합계");
+  await expect(page.locator(".cart-summary-total")).toContainText("전체 장바구니 결제 예상");
+  await emptyCart(page);
+});
+
+test("상세 평점: 목록 API 실패와 미매칭은 0개 리뷰로 표시하지 않는다", async ({ page }) => {
+  await loginClean(page);
+  await page.route("**/api/products*", async (route) => {
+    const u = new URL(route.request().url());
+    if (route.request().method() !== "GET" || u.pathname !== "/api/products" || !u.searchParams.has("limit"))
+      return route.continue();
+    if (u.searchParams.get("limit") === "50")
+      return route.fulfill({ json: { ok: false, error: { code: "TEMPORARY", message: "잠시 후 다시 시도해 주세요" } } });
+    return route.continue();
+  });
+  await page.goto("/#/p/p-a");
+  const ratingRow = page.locator(".info-row").first();
+  await expect(ratingRow).toContainText("평점 정보를 불러오지 못했어요");
+  await expect(ratingRow).not.toContainText("아직 리뷰가 없어요");
+  await page.unroute("**/api/products*");
+
+  await page.route("**/api/products*", async (route) => {
+    const u = new URL(route.request().url());
+    if (route.request().method() === "GET" && u.pathname === "/api/products" && u.searchParams.get("limit") === "50")
+      return route.fulfill({ json: { ok: true, data: { items: [], shipping_fee_won: 3000, next_cursor: null, has_more: false } } });
+    return route.continue();
+  });
+  await page.reload();
+  await expect(ratingRow).toContainText("상품 평점을 확인할 수 없어요");
+  await expect(ratingRow).not.toContainText("아직 리뷰가 없어요");
+});
+
+test("상세 평점: 전체 리뷰 수와 서버 요약이 다르면 평균을 숨긴다", async ({ page }) => {
+  await loginClean(page);
+  await page.route("**/api/products*", async (route) => {
+    const u = new URL(route.request().url());
+    if (route.request().method() === "GET" && u.pathname === "/api/products" && u.searchParams.get("limit") === "50") {
+      return route.fulfill({ json: { ok: true, data: { items: [{ product_id: "p-a", name: "코드뷰 모니터 A", brand: "코드뷰", category: "monitor", image: null, matched_variants: [], rating_summary: { avg: 4.5, count: 3 }, availability: "AVAILABLE" }], shipping_fee_won: 3000, next_cursor: null, has_more: false } } });
+    }
+    return route.continue();
+  });
+  await page.goto("/#/p/p-a");
+  const ratingRow = page.locator(".info-row").first();
+  await expect(ratingRow).toContainText("리뷰 4개 · 평점 집계 확인 중");
+  await expect(ratingRow).not.toContainText("4.5");
+});
+
+test("cart: 선택 삭제는 서버의 최신 cart version을 순서대로 사용한다", async ({ page }) => {
+  await loginClean(page);
+  await addFixtureVariant(page, "p-a", "v-a-24");
+  await addFixtureVariant(page, "p-b", "v-b-24");
+  const beforeResponse = await page.context().request.get("/api/cart");
+  const before = await beforeResponse.json();
+  await page.goto("/#/cart");
+
+  const versions: number[] = [];
+  await page.route("**/api/cart/items/*", async (route) => {
+    if (route.request().method() !== "DELETE") return route.continue();
+    versions.push(route.request().postDataJSON().expected_cart_version);
+    return route.continue();
+  });
+  await page.getByRole("button", { name: "선택 항목 제거" }).click();
+  await expect(page.getByText("장바구니가 비어 있어요")).toBeVisible();
+  expect(versions).toEqual([before.data.version, before.data.version + 1]);
+});
+
+test("cart: 첫 선택 삭제 응답 유실은 다음 DELETE를 막고 복구 후 선택을 보존한다", async ({ page }) => {
+  await loginClean(page, "e2e-b");
+  await addFixtureVariant(page, "p-a", "v-a-24");
+  await addFixtureVariant(page, "p-b", "v-b-24");
+  await addFixtureVariant(page, "p-c", "v-c-27");
+  await page.goto("/#/cart");
+
+  await expect(page.locator(".cart-name")).toHaveCount(3);
+  const names = await page.locator(".cart-name").allTextContents();
+  expect(names).toHaveLength(3);
+  const uncheckedName = names[2];
+  await page.getByRole("checkbox", { name: uncheckedName + " 선택" }).uncheck();
+  const beforeResponse = await page.context().request.get("/api/cart");
+  const before = await beforeResponse.json();
+  const selectedItems = before.data.items.filter(
+    (item: { product_name: string }) => item.product_name !== uncheckedName,
+  );
+  expect(selectedItems).toHaveLength(2);
+  const firstId = selectedItems[0].cart_item_id as string;
+  const secondId = selectedItems[1].cart_item_id as string;
+  const uncheckedItem = before.data.items.find(
+    (item: { product_name: string }) => item.product_name === uncheckedName,
+  );
+
+  const deletes: string[] = [];
+  const drop = await dropWrite(page, "**/api/cart/items/*", "DELETE", (req) => {
+    deletes.push(new URL(req.url()).pathname.split("/").at(-1)!);
+  });
+  await page.getByRole("button", { name: "선택 항목 제거" }).click();
+  await drop.done;
+  await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toBeVisible();
+  expect(deletes).toEqual([firstId]);
+
+  await expect(page.getByRole("checkbox", { name: "전체 선택" })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: names[0] + " 선택" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "선택 항목 제거" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "삭제" }).first()).toBeDisabled();
+  await expect(page.getByRole("button", { name: /수량 증가/ }).first()).toBeDisabled();
+  await expect(page.getByRole("button", { name: /3건 · .* 주문하기/ })).toBeDisabled();
+
+  const serverCartResponse = await page.context().request.get("/api/cart");
+  const serverCart = await serverCartResponse.json();
+  expect(serverCart.data.items.map((item: { cart_item_id: string }) => item.cart_item_id))
+    .toEqual(expect.arrayContaining([secondId, uncheckedItem.cart_item_id]));
+  expect(serverCart.data.items.map((item: { cart_item_id: string }) => item.cart_item_id))
+    .not.toContain(firstId);
+
+  await page.getByRole("button", { name: "결과 확인" }).click();
+  await expect(page.locator(".cart-name")).toHaveCount(2);
+  expect(deletes).toEqual([firstId]);
+  await expect(page.getByRole("checkbox", { name: selectedItems[1].product_name + " 선택" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: uncheckedName + " 선택" })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: /2건 · .* 주문하기/ })).toBeDisabled();
+  await page.unroute("**/api/cart/items/*");
+  await emptyCart(page);
+});
+
+test("cart: 첫 선택 삭제의 확정 거절은 다음 DELETE를 보내지 않고 선택을 보존한다", async ({ page }) => {
+  await loginClean(page, "e2e-c");
+  await addFixtureVariant(page, "p-a", "v-a-24");
+  await addFixtureVariant(page, "p-b", "v-b-24");
+  await addFixtureVariant(page, "p-c", "v-c-27");
+  await page.goto("/#/cart");
+
+  await expect(page.locator(".cart-name")).toHaveCount(3);
+  const names = await page.locator(".cart-name").allTextContents();
+  await page.getByRole("checkbox", { name: names[2] + " 선택" }).uncheck();
+  let deletes = 0;
+  await page.route("**/api/cart/items/*", async (route) => {
+    if (route.request().method() !== "DELETE") return route.continue();
+    deletes += 1;
+    return route.fulfill({
+      status: 409,
+      json: { ok: false, error: { code: "VERSION_CONFLICT", message: "카트가 변경됐어요" } },
+    });
+  });
+
+  await page.getByRole("button", { name: "선택 항목 제거" }).click();
+  await expect(page.getByText("카트가 변경되었어요. 최신 상태로 다시 불러왔습니다.")).toBeVisible();
+  expect(deletes).toBe(1);
+  await expect(page.locator(".cart-name")).toHaveCount(3);
+  await expect(page.getByRole("checkbox", { name: names[0] + " 선택" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: names[1] + " 선택" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: names[2] + " 선택" })).not.toBeChecked();
+  await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toHaveCount(0);
+  await page.unroute("**/api/cart/items/*");
+  await emptyCart(page);
+});
+
+test("cart: replay 후 최신 GET 실패 시 과거 cart snapshot으로 다음 삭제를 진행하지 않는다", async ({ page }) => {
+  await loginClean(page, "e2e-d");
+  await addFixtureVariant(page, "p-a", "v-a-24");
+  await addFixtureVariant(page, "p-b", "v-b-24");
+  const snapshotResponse = await page.context().request.get("/api/cart");
+  const snapshot = await snapshotResponse.json();
+
+  let cartGets = 0;
+  let deletes = 0;
+  await page.route("**/api/cart", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    cartGets += 1;
+    return cartGets === 1 ? route.continue() : route.abort();
+  });
+  await page.route("**/api/cart/items/*", async (route) => {
+    if (route.request().method() !== "DELETE") return route.continue();
+    deletes += 1;
+    return route.fulfill({
+      status: 200,
+      json: { ok: true, data: { cart: snapshot.data }, replayed: true },
+    });
+  });
+
+  await page.goto("/#/cart");
+  await expect(page.locator(".cart-name")).toHaveCount(2);
+  await page.getByRole("button", { name: "선택 항목 제거" }).click();
+  await expect(page.getByText("이미 처리된 요청이지만 최신 장바구니를 불러오지 못했어요.")).toBeVisible();
+  expect(deletes).toBe(1);
+  expect(cartGets).toBe(2);
+  await expect(page.getByText("카트를 불러오지 못했어요")).toBeVisible();
+
+  await page.unroute("**/api/cart");
+  await page.unroute("**/api/cart/items/*");
+  await page.getByRole("button", { name: "다시 시도" }).click();
+  await expect(page.locator(".cart-name")).toHaveCount(2);
+  await expect(page.getByRole("checkbox", { name: "전체 선택" })).toBeChecked();
+  await emptyCart(page);
+});
+
+test("상품 상세: dark/light 초기·탭 겹침·sticky 상태에서 CTA가 위에 남고 실제 장바구니에 반영된다", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, "e2e-d");
+  const readCart = async () => {
+    const response = await page.context().request.get("/api/cart");
+    const json = await response.json();
+    if (!json.ok) throw new Error("cart read failed: " + JSON.stringify(json));
+    return json.data;
+  };
+  const initialCart = await readCart();
+  expect(initialCart.items).toHaveLength(0);
+  const initialIds = new Set<string>(initialCart.items.map((i: { cart_item_id: string }) => i.cart_item_id));
+
+  const removeOnlyNewRows = async () => {
+    for (;;) {
+      const latest = await readCart();
+      const created = latest.items.find((i: { cart_item_id: string }) => !initialIds.has(i.cart_item_id));
+      if (!created) return latest;
+      const removed = await page.context().request.delete("/api/cart/items/" + created.cart_item_id, {
+        data: { expected_cart_version: latest.version, idempotency_key: crypto.randomUUID() },
+      });
+      const json = await removed.json();
+      if (!json.ok) throw new Error("created cart row cleanup failed: " + JSON.stringify(json));
+    }
+  };
+  const assertFooterHit = async () => {
+    const geometry = await page.evaluate(() => {
+      const footer = document.querySelector(".bottom-bar");
+      if (!footer) return { found: false };
+      const buttons = Array.from(footer.querySelectorAll<HTMLButtonElement>(".detail-actions > button"));
+      const points = buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const hitAt = (y: number) => {
+          const hit = document.elementFromPoint(x, y);
+          return { inside: !!hit && button.contains(hit), tag: hit?.tagName ?? null };
+        };
+        return {
+          label: button.getAttribute("aria-label") || button.textContent?.trim() || "unlabeled",
+          inViewport: rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth,
+          center: hitAt(rect.top + rect.height / 2),
+          lower: hitAt(rect.bottom - 8),
+        };
+      });
+      return {
+        found: true,
+        buttonCount: buttons.length,
+        allInViewport: buttons.length === 3 && points.every((p) => p.inViewport),
+        allHitTargets: buttons.length === 3 && points.every((p) => p.center.inside && p.lower.inside),
+        points,
+      };
+    });
+    expect(geometry, JSON.stringify(geometry)).toMatchObject({
+      found: true, buttonCount: 3, allInViewport: true, allHitTargets: true,
+    });
+    return geometry;
+  };
+
+  try {
+    for (const theme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await page.goto("/#/p/p-a");
+      await expect(page.locator(".detail-name")).toHaveText("코드뷰 모니터 A");
+      expect(await page.evaluate(() => scrollY)).toBe(0);
+      await assertFooterHit();
+
+      const overlap = await page.evaluate(async () => {
+        const tabs = document.querySelector(".detail-tabs");
+        const footer = document.querySelector(".bottom-bar");
+        const cta = footer?.querySelector(".detail-actions .btn.primary");
+        if (!tabs || !footer || !cta) return { found: false };
+        const tabDocumentTop = tabs.getBoundingClientRect().top + scrollY;
+        const footerTop = footer.getBoundingClientRect().top;
+        scrollTo(0, Math.max(0, tabDocumentTop - footerTop - 4));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const tabRect = tabs.getBoundingClientRect();
+        const ctaRect = cta.getBoundingClientRect();
+        return {
+          found: true,
+          tabTop: tabRect.top,
+          footerTop: footer.getBoundingClientRect().top,
+          overlap: tabRect.top < ctaRect.bottom && tabRect.bottom > ctaRect.top,
+        };
+      });
+      expect(overlap, JSON.stringify(overlap)).toMatchObject({ found: true, overlap: true });
+      await assertFooterHit();
+
+      // 844px 실제 초깃값과 탭 겹침은 위에서 검증했다. 이 fixture의 실제 길이로는
+      // 844px에서 sticky top에 도달할 수 없어, 콘텐츠를 바꾸지 않고 높이 600px에서
+      // 실제 sticky 구간을 별도로 검증한다.
+      await page.setViewportSize({ width: 390, height: 600 });
+      await page.evaluate(() => {
+        const tabs = document.querySelector(".detail-tabs");
+        if (tabs) scrollTo(0, tabs.getBoundingClientRect().top + scrollY - 48);
+      });
+      await expect.poll(() => page.locator(".detail-tabs").evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBe(48);
+      await assertFooterHit();
+
+      await page.getByRole("button", { name: "옵션 선택" }).click();
+      const sheet = page.locator(".sheet-overlay");
+      await expect(sheet).toBeVisible();
+      const sheetAboveFooter = await page.evaluate(() => {
+        const overlay = document.querySelector(".sheet-overlay");
+        const cta = document.querySelector(".bottom-bar .detail-actions .btn.primary");
+        if (!overlay || !cta) return false;
+        const rect = cta.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return !!hit && overlay.contains(hit);
+      });
+      expect(sheetAboveFooter).toBe(true);
+      await sheet.getByRole("button", { name: "닫기" }).click();
+      await expect(sheet).toHaveCount(0);
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(() => scrollTo(0, 0));
+      expect(await page.evaluate(() => scrollY)).toBe(0);
+      await assertFooterHit();
+
+      await page.getByRole("button", { name: "180,000원 담기" }).click();
+      await expect(page.getByRole("button", { name: "장바구니 보기" })).toBeVisible();
+      const cart = await readCart();
+      expect(cart.items).toHaveLength(1);
+      expect(cart.items[0]).toMatchObject({ product_id: "p-a", variant_id: "v-a-24", quantity: 1, unit_price_won: 180000 });
+      expect(cart.total_won).toBe(183000);
+      const cleaned = await removeOnlyNewRows();
+      expect(cleaned.items.map((i: { cart_item_id: string }) => i.cart_item_id)).toEqual([...initialIds]);
+    }
+  } finally {
+    await removeOnlyNewRows();
+  }
 });

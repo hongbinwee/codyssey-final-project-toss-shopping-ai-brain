@@ -682,3 +682,17 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 - PM 직접 Push (2026-10-10 20:16 KST): 기존 hongbinwee GCM helper manager, command-scoped credential.username=hongbinwee + credential.gitHubAccountFiltering=true, GIT_TERMINAL_PROMPT=0/GCM_INTERACTIVE=never. fetch exit 0; 원격 main 8c657798b714575f6b16188d7f27994d6d38b23f → 26fd0d8fbf847d0c7aad2055650f79c4e013ae93, 원본 2commit 정상 FF push exit 0. force/reset/rebase/amend/auth reset/커밋 재생성 없음.
 - 원격 검증: hongbinwee GitHub 플러그인 fresh main full SHA = local HEAD = origin/main = 26fd0d8fbf847d0c7aad2055650f79c4e013ae93, ahead/behind 0/0·tracked clean — PM이 직접 확인.
 - 상태: 05 구현·로컬 검증·Visual 증거·Push 완료 — **최종 완료는 사용자 Visual 승인 게이트에서 결정. 승인 전 05 완료 처리·06 착수 금지.**
+## 2026-10-10 · PMQA-05-FIDELITY-FIX-029 — 05 Detail / Cart / Review 보완 및 검증
+
+- 범위: 기존 05 MAJOR 지적에 대한 좁은 correction pass. 상품 상세·옵션·리뷰·카트 Backend 계약과 DB/schema/seed는 변경하지 않았다.
+- CTA 가림: .detail-tabs z-index 18보다 .bottom-bar z-index 24를 높여 sticky 탭이 고정 하단 CTA를 가리지 않도록 했다. bottom navigation(25)과 Bottom Sheet(50)의 stacking order는 유지했다. 모바일 CTA E2E는 모든 footer 버튼의 center/lower hit target을 검사한다.
+- 실제 scroll 측정: 390×844에서 tabs document top=810.17, sticky 요청 scroll=762.17이나 maxScroll=686이므로 실제 tabs top=124.17이다. 인위적인 페이지 여백은 추가하지 않았다. 390×600에서 실제 scrollY=762, tabs top=48.17로 sticky 동작 및 CTA 접근을 확인했다.
+- 리뷰 가시성: 평점 행을 눌러 리뷰로 이동한 뒤 smooth-scroll 목표 도달을 기다린다. .review-summary-head와 첫 .review-item bbox가 viewport 안에 있고 fixed footer top보다 위인지 E2E로 확인한다. Product의 코멘트에서 summary 오류/매칭 실패를 “리뷰 없음”으로 설명하던 부분을 실제 상태 구분에 맞게 고쳤다.
+- 비교 캡처는 shots/05/pmqa029/에 Dark/Light 14상태씩 총 28장과 Reference 대조본 10장을 저장했다. 캔버스에 원본을 잘라 넣지 않고 비율 유지 contain으로 표시하며, reference native 크기·상품/리뷰 수 차이·OS status bar/알림 차이를 캡션으로 구분했다. 현재 캡처는 gitignored 로컬 QA 자산이며 Git에 추가하지 않았다.
+- 대표 실제 DB 값: p-a×1: 상품 180,000원+배송 3,000원=183,000원; p-a×2=363,000원; p-a+p-b×1: 상품 329,000원+배송 3,000원=332,000원. 부분 선택에서는 p-a 선택 합계 180,000원, p-b 미선택이며 UI 주문 버튼 disabled; 전체 장바구니 예상액은 332,000원이다. 전체 미선택은 선택 합계 0원이며 주문 disabled, empty cart는 0원/can_checkout=false. 서버 CartView의 can_checkout=true는 전체 주문 가능 항목 기준이며 부분 선택 UX의 버튼 disabled와 의미가 다르다.
+- 새 캡처 facts: shots/05/pmqa029/facts.json, generatedAt 2026-10-10T14:36:03.740Z, source HEAD 574f011475db73d5da77942f902561632379553e, working tree dirty=true. 리뷰 state는 scrollY=686, summary y=189.17, 첫 리뷰 y=285.05, footer top=771이다. browser viewport는 390×844이며 sticky만 fixture의 실제 scroll 길이 제한을 확인한 뒤 390×600에서도 별도 캡처했다.
+- 검증 원본: npm run check exit 0 (exec-e54ba815), npm run build exit 0 (exec-d3651819), npm run test:unit 33/33 (exec-495a092b), npm run test:integration 64/64 (exec-32511f7f), npx playwright test --config=tmp_playwright.t4.config.ts --workers=1 54/54 (exec-58445237), stub dev 16/16, fresh --split=holdout 6/6 (exec-38da0d8c). Review scroll + CTA 보조 no-globalSetup 표적 E2E 2/2도 통과했다. Live LLM Eval은 이번 범위에서 호출하지 않았다. 예전 --repeat=3 holdout 18/18 기록은 이번 fresh 6/6과 별개로 보존한다.
+- Demo seed integration scratch test 5/5 PASS로 safety baseline을 다시 확인했다. PMQA full integration 64/64에 이미 포함돼 있어 결과를 중복 카운트하지 않는다.
+- Scratch clone commerce_qa029: commerce_test에 연결된 세션이 0임을 확인한 뒤 clone을 생성했으나, 최종 회귀는 승인된 기본 deterministic harness/commerce_test/worker=1로 수행했으므로 clone은 사용하지 않았다. 세션 0 확인 후 commerce_qa029만 삭제했고, commerce와 기존 테스트 결과는 clone 작업으로 변경하지 않았다.
+- 과거 실패/미실행 이력은 앞선 날짜별 기록을 유지한다. 이번 correction pass에서는 전체 test 명령이 정상 exit했고 새로운 실패/미실행 항목은 없다. Holdout fresh 명령은 기본 repeat=1이므로 6/6으로만 기록한다(18/18로 부풀리지 않음).
+- PM 독립 재검수: 화면/코드/실제 캡처와 facts에서 이번 MAJOR 증거를 해소했고, 현재 기술 QA 판정은 PASS(열린 BLOCKER 0/MAJOR 0), Visual은 CONDITIONAL PASS다. 05 사용자 최종 Visual 승인 대기이며 06은 시작하지 않았다.

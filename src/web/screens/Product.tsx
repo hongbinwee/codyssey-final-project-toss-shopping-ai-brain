@@ -7,10 +7,22 @@
 //   결과 조회/명시 재시도로 복구한다 — 같은 actor의 미확정 cart write가
 //   하나라도 있으면 새 담기·옵션·수량 변경을 잠그고 카트 복구로 안내한다.
 // - 리뷰는 실제 cursor 페이지네이션(total_matching은 실제 행 수).
+//
+// 05 FIDELITY 보정 — Reference product-detail/04·05·20 기준 구조 [Observed]:
+// - 상단 내비는 별도 backbar가 아니라 hero 위 플로팅 아이콘(← · 검색 · 카트+배지).
+//   hero를 거의 지나 스크롤되면 읽기용 solid 바로 전환한다.
+// - 정보 계층: 이름 → 브랜드·설명 → 할인율+정가 → 판매가 → 평점·리뷰 진입 행 → 배송 행.
+//   평점은 /api/products 목록에서 product_id 정확 매칭으로만 결정 — 요청 실패/미매칭은
+//   별도 안내와 재시도를 제공하며 '아직 리뷰 없어요'로 오인시키지 않는다. 리뷰 수와
+//   정확히 일치하는 요약만 사용하고 부분 로드 평균은 만들지 않는다.
+// - 본문 하단은 [리뷰 (n개) | 상품 정보] sticky 탭. 정렬 UI는 없다 —
+//   서버 getReviews는 최신순만 지원하므로 추천순을 흉내내지 않는다.
+// - 리뷰 행은 카드 대신 flat row + divider — variant id가 아니라 옵션 라벨로 표시.
+// - 하단 바는 [카트 진입][옵션 선택][N원 담기]. 찜·뽑기 등 미지원 기능은 없다 [Project].
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiSafe, fmtWon, newActionKey, AMBIGUOUS_CODES, type ApiResult } from "../api.ts";
 import type {
-  CartView, MatchedVariant, ProductDetail, ReviewsResult,
+  CartView, MatchedVariant, ProductDetail, ProductSummary, ReviewsResult, SearchResult,
 } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
@@ -19,22 +31,38 @@ import {
   listPending, putPending, removePending, lookupAction,
   type PendingWrite,
 } from "../pending.ts";
-import { IcChevronRight } from "../icons.tsx";
+import { IcBack, IcCart, IcChevronRight, IcSearch, IcStar } from "../icons.tsx";
+
+type RatingLoad =
+  | { state: "loading" }
+  | { state: "error" }
+  | { state: "unmatched" }
+  | { state: "loaded"; summary: ProductSummary };
 
 export function Product({
   productId,
+  onBack,
+  onOpenSearch,
   onOpenCart,
   onCartChanged,
+  cartCount,
 }: {
   productId: string;
+  onBack: () => void;
+  onOpenSearch: () => void;
   onOpenCart: () => void;
   onCartChanged: (v: CartView) => void;
+  cartCount: number;
 }) {
   const [detail, setDetail] = useState<ApiResult<ProductDetail> | null>(null);
   const [reviews, setReviews] = useState<ApiResult<ReviewsResult> | null>(null);
+  // 목록 API의 rating_summary — product_id 정확 매칭만 사용한다.
+  const [summary, setSummary] = useState<RatingLoad>({ state: "loading" });
   const [variantId, setVariantId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [tab, setTab] = useState<"reviews" | "info">("reviews");
+  const [navSolid, setNavSolid] = useState(false);
   const [adding, setAdding] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [addedOk, setAddedOk] = useState(false);
@@ -42,6 +70,8 @@ export function Product({
   const [pendings, setPendings] = useState<PendingWrite[]>(() => listPending());
   const [imgIdx, setImgIdx] = useState(0);
   const seq = useRef(0);
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  const tabsRef = useRef<HTMLDivElement | null>(null);
   // double-click 같은 동기 중복 호출 차단 — state 반영 전 두 번째 호출을 막는다.
   const busyRef = useRef(false);
 
@@ -72,6 +102,32 @@ export function Product({
     if (seq.current === my) setReviews(r);
   }, []);
 
+  // 평점·리뷰 진입 행용 — 목록 응답에서 같은 product_id만 매칭한다.
+  // 실패와 미포함은 별도 상태로 보존해 빈 리뷰와 혼동하지 않는다.
+  const loadSummary = useCallback(async (pid: string, my: number) => {
+    setSummary({ state: "loading" });
+    const r = await apiSafe<SearchResult>("/api/products?limit=50");
+    if (seq.current !== my) return;
+    if (!r.ok) {
+      setSummary({ state: "error" });
+      return;
+    }
+    const match = r.data.items.find((x) => x.product_id === pid);
+    setSummary(match ? { state: "loaded", summary: match } : { state: "unmatched" });
+  }, []);
+
+  // 플로팅 내비 → hero를 거의 지나면 읽기용 solid 바로 전환 [Observed 05 + Project].
+  // hero가 없는 로딩/에러 상태는 detail-null 시 nav 쪽에서 solid를 강제한다.
+  useEffect(() => {
+    const on = () => {
+      const h = heroRef.current?.offsetHeight ?? 0;
+      setNavSolid(window.scrollY > Math.max(h - 56, 8));
+    };
+    on();
+    addEventListener("scroll", on, { passive: true });
+    return () => removeEventListener("scroll", on);
+  }, [detail?.ok]);
+
   // 확정 거절 뒤 최신화: 현재 선택이 아직 구매 가능하면 유지하고,
   // 품절됐으면 첫 AVAILABLE로 다시 고른다(초기화와 규칙 통일).
   const refreshDetail = useCallback(async (pid: string) => {
@@ -94,13 +150,16 @@ export function Product({
     const my = ++seq.current;
     setDetail(null);
     setReviews(null);
+    setSummary({ state: "loading" });
     setVariantId(null);
     setQty(1);
     setImgIdx(0);
+    setTab("reviews");
     setFeedback(null);
     setAddedOk(false);
     loadInitial(productId, my);
     loadReviews(productId, my);
+    loadSummary(productId, my);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
@@ -285,18 +344,74 @@ export function Product({
     else setFeedback("리뷰를 더 불러오지 못했어요");
   }
 
-  if (!detail) return <Loading />;
+  // 리뷰 작성일 표기 — "26.6.22" 형태 [Observed reviews/19]
+  const fmtDate = (iso: string) => {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return "";
+    const d = new Date(t);
+    return String(d.getFullYear()).slice(2) + "." + (d.getMonth() + 1) + "." + d.getDate();
+  };
+
+  // 리뷰의 variant_id를 옵션 라벨로 resolve — 서버는 active variant만 돌려주므로
+  // 목록에 없으면 내부 id 대신 '옵션 정보 없음'으로 둔다.
+  const variantLabel = (vid: string | null): string | null => {
+    if (!vid) return null;
+    const v = detail?.ok
+      ? detail.data.variants.find((x) => x.variant_id === vid)
+      : undefined;
+    return v ? Object.values(v.option_values).join(" · ") : "옵션 정보 없음";
+  };
+
+  const goReviews = () => {
+    setTab("reviews");
+    const el = tabsRef.current;
+    if (el)
+      window.scrollTo({
+        top: el.getBoundingClientRect().top + window.scrollY - 56,
+        behavior: "smooth",
+      });
+  };
+
+  // hero 위 플로팅 내비 — 로딩/에러(hero 없음)와 스크롤 후엔 solid로 읽기 배경 확보.
+  const navEl = (
+    <nav className={"detail-nav" + (navSolid || !detail?.ok ? " solid" : "")}>
+      <button className="dn-btn" aria-label="뒤로가기" onClick={onBack}>
+        <IcBack size={24} />
+      </button>
+      <div className="dn-side">
+        <button className="dn-btn" aria-label="검색" onClick={onOpenSearch}>
+          <IcSearch size={20} />
+        </button>
+        <button className="dn-btn" aria-label="장바구니" onClick={onOpenCart}>
+          <IcCart size={21} />
+          {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+        </button>
+      </div>
+    </nav>
+  );
+
+  if (!detail)
+    return (
+      <div className="screen detail bare">
+        {navEl}
+        <Loading />
+      </div>
+    );
   if (!detail.ok)
     return (
-      <ErrorState
-        text={"상품을 불러오지 못했어요 (" + detail.error.code + ")"}
-        onRetry={() => {
-          const my = ++seq.current;
-          setDetail(null);
-          loadInitial(productId, my);
-          loadReviews(productId, my);
-        }}
-      />
+      <div className="screen detail bare">
+        {navEl}
+        <ErrorState
+          text={"상품을 불러오지 못했어요 (" + detail.error.code + ")"}
+          onRetry={() => {
+            const my = ++seq.current;
+            setDetail(null);
+            loadInitial(productId, my);
+            loadReviews(productId, my);
+            loadSummary(productId, my);
+          }}
+        />
+      </div>
     );
   const p = detail.data.product;
   const images = p.images?.length
@@ -319,10 +434,43 @@ export function Product({
       : 0;
   const delivery = PRODUCT_META[p.id]?.delivery;
   const soldOutAll = !anyAvailable;
+  const reviewTotal = reviews?.ok ? reviews.data.total_matching : null;
+  const exactRating =
+    summary.state === "loaded" &&
+    reviewTotal !== null &&
+    summary.summary.rating_summary.count === reviewTotal &&
+    summary.summary.rating_summary.avg !== null
+      ? summary.summary.rating_summary.avg
+      : null;
+  const ratingText =
+    !reviews
+      ? "리뷰 정보를 확인 중이에요"
+      : !reviews.ok
+        ? "리뷰 정보를 확인할 수 없어요"
+        : summary.state === "loading" && reviewTotal === 0
+          ? "리뷰 정보를 확인 중이에요"
+          : summary.state === "loaded" && summary.summary.rating_summary.count !== reviewTotal
+            ? reviewTotal === 0
+              ? "리뷰 정보가 일치하지 않아요"
+              : "리뷰 " + reviewTotal + "개 · 평점 집계 확인 중"
+            : reviewTotal === 0
+              ? summary.state === "loaded"
+                ? "아직 리뷰가 없어요"
+                : "리뷰 0개 · 평점 요약을 확인할 수 없어요"
+              : summary.state === "loading"
+            ? "리뷰 " + reviewTotal + "개 · 평점 불러오는 중"
+            : summary.state === "error"
+              ? "리뷰 " + reviewTotal + "개 · 평점 정보를 불러오지 못했어요"
+              : summary.state === "unmatched"
+                ? "리뷰 " + reviewTotal + "개 · 상품 평점을 확인할 수 없어요"
+                : exactRating === null
+                  ? "리뷰 " + reviewTotal + "개 · 평점 집계 확인 중"
+                  : null;
 
   return (
     <div className={"screen detail" + (anyPending ? " has-pending" : "")}>
-      <div className="detail-hero">
+      {navEl}
+      <div className="detail-hero" ref={heroRef}>
         {images.length > 1 ? (
           <div
             className="hero-strip"
@@ -365,28 +513,45 @@ export function Product({
       ) : null}
       {shownWon != null && <div className="price-main">{fmtWon(shownWon)}</div>}
 
-      <div className="meta-rows">
+      <div className="info-rows">
+        <button className="info-row" onClick={goReviews}>
+          <span className="info-k">평점 · 리뷰</span>
+          <span className="info-v">
+            <span className="info-rating-main">
+              {exactRating != null && reviewTotal != null ? (
+                <>
+                  <IcStar size={13} className="info-star" /> {exactRating}
+                  <span className="muted">({reviewTotal}개)</span>
+                </>
+              ) : (
+                <span className="muted">{ratingText}</span>
+              )}
+            </span>
+            <small className="review-provenance-note">
+              저장된 실사용·시연 리뷰 전체 기준
+            </small>
+          </span>
+          <IcChevronRight size={15} className="info-next" />
+        </button>
         {delivery && (
-          <div className="meta-row">
-            <span className="meta-k">배송</span>
-            <span>
-              {delivery} · 배송비 {fmtWon(detail.data.shipping_fee_won)}
+          <div className="info-row static">
+            <span className="info-k">배송</span>
+            <span className="info-v">
+              {delivery}
+              <small className="signal-demo">데모</small>
+              {" · 배송비 "}
+              {detail.data.shipping_fee_won > 0
+                ? fmtWon(detail.data.shipping_fee_won)
+                : "무료"}
             </span>
           </div>
         )}
-        <div className="meta-row">
-          <span className="meta-k">재고</span>
-          <span>{selected ? selected.stock_qty + "개" : "옵션별 상이"}</span>
-        </div>
       </div>
-
-      <div className="spec-chips">
-        {Object.entries(p.specs).map(([k, v]) => (
-          <span key={k} className="chip">
-            {SPEC_LABEL[k] ?? k}: {v}
-          </span>
-        ))}
-      </div>
+      {(summary.state === "error" || summary.state === "unmatched") && (
+        <button className="link rating-retry" onClick={() => loadSummary(productId, seq.current)}>
+          평점 다시 확인
+        </button>
+      )}
 
       <h3 className="section-title">옵션</h3>
       <button
@@ -426,53 +591,101 @@ export function Product({
         </div>
       )}
 
-      <h3 className="section-title">리뷰</h3>
-      {!reviews ? (
-        <Loading text="리뷰 불러오는 중…" />
-      ) : !reviews.ok ? (
-        <ErrorState
-          text="리뷰를 불러오지 못했어요"
-          onRetry={() => {
-            const my = seq.current;
-            setReviews(null);
-            loadReviews(productId, my);
-          }}
-        />
-      ) : reviews.data.reviews.length === 0 ? (
-        <Empty text="아직 리뷰가 없어요. 근거로 쓸 실사용 평가가 부족합니다." />
-      ) : (
-        <>
-          <div className="review-summary muted">
-            리뷰 {reviews.data.total_matching}개
-            {reviews.data.reviews.length < reviews.data.total_matching &&
-              " · " + reviews.data.reviews.length + "개 표시"}
-          </div>
-          <ul className="review-list">
-            {reviews.data.reviews.map((rv) => (
-              <li key={rv.id} className="review-item">
-                <div className="review-head">
-                  <b>{"★".repeat(rv.rating)}</b>
-                  <span
-                    className={
-                      "src-chip" + (rv.source_kind === "SYNTHETIC" ? " syn" : "")
-                    }
-                  >
-                    {rv.source_kind === "SYNTHETIC" ? "시연 리뷰" : "실사용 리뷰"}
-                  </span>
-                </div>
-                <p>{rv.body}</p>
-                {rv.variant_id && (
-                  <span className="muted">옵션 {rv.variant_id}</span>
+      <div className="detail-tabs" ref={tabsRef} role="tablist" aria-label="상품 상세 정보">
+        <button
+          role="tab"
+          aria-selected={tab === "reviews"}
+          className={tab === "reviews" ? "on" : ""}
+          onClick={() => setTab("reviews")}
+        >
+          리뷰 ({reviewTotal ?? "…"}개)
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "info"}
+          className={tab === "info" ? "on" : ""}
+          onClick={() => setTab("info")}
+        >
+          상품 정보
+        </button>
+      </div>
+
+      {tab === "reviews" ? (
+        <section className="detail-panel review-panel" role="tabpanel">
+          {!reviews ? (
+            <Loading text="리뷰 불러오는 중…" />
+          ) : !reviews.ok ? (
+            <ErrorState
+              text="리뷰를 불러오지 못했어요"
+              onRetry={() => {
+                const my = seq.current;
+                setReviews(null);
+                loadReviews(productId, my);
+              }}
+            />
+          ) : reviews.data.total_matching === 0 ? (
+            <Empty text="아직 리뷰가 없어요. 근거로 쓸 실사용 평가가 부족합니다." />
+          ) : (
+            <>
+              <div className="review-summary-head">
+                <span className="muted">이 상품의 리뷰 전체</span>
+                {exactRating != null && reviewTotal != null && (
+                  <div className="review-rating">
+                    <IcStar size={20} className="review-star" />
+                    <b>{exactRating}</b>
+                    <span className="muted">({reviewTotal}개)</span>
+                  </div>
                 )}
-              </li>
-            ))}
-          </ul>
-          {reviews.data.has_more && (
-            <button className="link" onClick={loadMoreReviews} disabled={moreLoading}>
-              {moreLoading ? "불러오는 중…" : "리뷰 더 보기"}
-            </button>
+              </div>
+              <div className="review-summary muted">
+                리뷰 {reviews.data.total_matching}개
+                {reviews.data.reviews.length < reviews.data.total_matching &&
+                  " · " + reviews.data.reviews.length + "개 표시"}
+              </div>
+              <p className="review-provenance muted">
+                평점과 리뷰 수는 저장된 모든 출처(실사용·시연)를 포함해요. 리뷰별 출처는 각 항목에 표시합니다.
+              </p>
+              <ul className="review-list">
+                {reviews.data.reviews.map((rv) => (
+                  <li key={rv.id} className="review-item">
+                    <div className="review-head">
+                      <b aria-label={"별점 " + rv.rating + "점"}>{"★".repeat(rv.rating)}</b>
+                      <span
+                        className={
+                          "src-chip" + (rv.source_kind === "SYNTHETIC" ? " syn" : "")
+                        }
+                      >
+                        {rv.source_kind === "SYNTHETIC" ? "시연 리뷰" : "실사용 리뷰"}
+                      </span>
+                      <time className="review-date" dateTime={rv.written_at}>{fmtDate(rv.written_at)}</time>
+                    </div>
+                    {rv.variant_id && (
+                      <div className="review-option muted">옵션 {variantLabel(rv.variant_id)}</div>
+                    )}
+                    <p>{rv.body}</p>
+                  </li>
+                ))}
+              </ul>
+              {reviews.data.has_more && (
+                <button className="link" onClick={loadMoreReviews} disabled={moreLoading}>
+                  {moreLoading ? "불러오는 중…" : "리뷰 더 보기"}
+                </button>
+              )}
+            </>
           )}
-        </>
+        </section>
+      ) : (
+        <section className="detail-panel detail-info-panel" role="tabpanel">
+          <p>{p.description}</p>
+          <dl>
+            {Object.entries(p.specs).map(([k, v]) => (
+              <div key={k} className="spec-row">
+                <dt>{SPEC_LABEL[k] ?? k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       )}
 
       <div className={"bottom-bar" + (anyPending ? " has-note" : "")}>
@@ -486,23 +699,21 @@ export function Product({
             </button>
           </div>
         )}
-        <div className="bar-row">
-          <div>
-            {selected ? (
-              <>
-                <div className="muted">
-                  {Object.values(selected.option_values).join(" · ")} × {qty}
-                </div>
-                <b>{fmtWon(totalWon)}</b>
-              </>
-            ) : (
-              <span className="muted">
-                {soldOutAll ? "품절" : "옵션을 선택하세요"}
-              </span>
-            )}
-          </div>
+        <div className="bar-row detail-actions">
+          <button className="detail-cart-btn" aria-label="장바구니" onClick={onOpenCart}>
+            <IcCart size={21} />
+            {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+          </button>
+          <button
+            className="detail-option-cta"
+            disabled={soldOutAll || anyPending}
+            onClick={() => setSheetOpen(true)}
+          >
+            옵션 선택
+          </button>
           <button
             className="btn primary"
+            aria-label={soldOutAll ? "품절" : adding ? "담는 중" : fmtWon(totalWon) + " 담기"}
             disabled={!selected || adding || anyPending || soldOutAll}
             onClick={add}
           >

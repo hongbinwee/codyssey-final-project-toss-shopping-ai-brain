@@ -28,8 +28,8 @@ test("t1 slice: login -> search -> product -> add option -> cart totals", async 
 
   // W03: 카트에서 금액 확인
   await page.getByRole("button", { name: "장바구니 보기" }).click();
-  await expect(page.getByText("상품 180,000원")).toBeVisible();
-  await expect(page.getByText("183,000원")).toBeVisible();
+  await expect(page.locator(".cart-summary-whole")).toContainText("상품 180,000원 + 배송비 3,000원");
+  await expect(page.locator(".cart-summary-total b")).toHaveText("183,000원");
 });
 
 test("A01 panel: stub provider answers with real data", async ({ page }) => {
