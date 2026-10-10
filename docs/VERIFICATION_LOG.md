@@ -635,9 +635,9 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 
 ## 2026-10-10 · PMQA-04E-REVIEW-PUSH-003 — 04-E 독립 QA·Push·기록 (문서 기록 전용)
 
-- PM 최종 독립 검수 대상: 구현 커밋 a216cf143e40be73bd645f368a6ecdaa3b81dba + 4a729561602fa6942d88c5a2facac2d8468cb444. 파일 해시 검증버전 일치 — Shopping.tsx SHA256=07154FA79C9D52096505F6D8F520A34A38B9DAD2A8E2E6705FCDD035686C5D19, styles.css=08581A2F…6CF7C2A8, web/app.js 번들=F68CB124…5D625FF.
+- PM 최종 독립 검수 대상: 구현 커밋 aa216cf143e40be73bd645f368a6ecdaa3b81dba + 4a729561602fa6942d88c5a2facac2d8468cb444. 파일 해시 검증버전 일치 — Shopping.tsx SHA256=07154FA79C9D52096505F6D8F520A34A38B9DAD2A8E2E6705FCDD035686C5D19, styles.css=08581A2F…6CF7C2A8, web/app.js 번들=F68CB124…5D625FF.
 - PM 판정: 기능/코드 QA PASS, 최종 Visual CONDITIONAL PASS(사용자 승인 대기), BLOCKER 0 / 열린 MAJOR 0. 승인된 04-C 4 MINOR + 04-D IcBagFill MINOR는 08 이관 유지.
-- PM 직접 Push (2026-10-10 15:49 KST): 기존 hongbinwee GCM 명시 filter 경로로 원본 Git 커밋 2개 전송 — 원격 main 568ff7cfd38d65e8cc6e08ef88b6a9acf8a320f → 4a729561602fa6942d88c5a2facac2d8468cb444 fast-forward, exit 0. force/history rewrite/auth reset 없음.
+- PM 직접 Push (2026-10-10 15:49 KST): 기존 hongbinwee GCM 명시 filter 경로로 원본 Git 커밋 2개 전송 — 원격 main f568ff7cfd38d65e8cc6e08ef88b6a9acf8a320f → 4a729561602fa6942d88c5a2facac2d8468cb444 fast-forward, exit 0. force/history rewrite/auth reset 없음.
 - 원격 검증: hongbinwee GitHub 플러그인 fresh main full SHA = 4a729561602fa6942d88c5a2facac2d8468cb444 = local HEAD, 동일 계정 fetch exit 0, origin/main 일치, ahead/behind 0/0.
 - 상태: 04-E 구현·증거 수집 완료 + PM 독립 QA CONDITIONAL PASS — **최종 완료는 사용자 Visual 승인 게이트에서 결정. 승인 전 05 착수 금지.**
 
