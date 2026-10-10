@@ -306,7 +306,8 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 .icon-rail .sub-item { flex: 0 0 auto; width: 66px; }
 
 /* 카테고리 브라우저 — 좌측 세로 레일 + 우측 원형 서브카테고리 그리드 [Observed 28] */
-.cat-browser { display: flex; margin: 4px calc(-1 * var(--pad)) 0; }
+/* pane이 독립 스크롤하는 높이: 100dvh - top(60) - shop-tabs(50) - screen pt(6) - main pb(110) */
+.cat-browser { display: flex; margin: 4px calc(-1 * var(--pad)) 0; height: calc(100dvh - 226px); }
 .cat-rail {
   flex: 0 0 96px; padding-left: var(--pad);
   display: flex; flex-direction: column; gap: 2px; align-self: flex-start;
@@ -317,7 +318,15 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
   font-size: 14.5px; color: var(--text-2);
 }
 .cat-rail-i.on { background: var(--chip-on); color: var(--text); font-weight: 700; }
-.cat-pane { flex: 1; min-width: 0; padding-right: var(--pad); }
+.cat-pane {
+  flex: 1; min-width: 0; padding-right: var(--pad);
+  overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain;
+  /* 마지막 그룹도 pane 상단까지 올 수 있게 한 여백 [Project 정책] */
+  padding-bottom: 420px;
+}
+.cat-pane::-webkit-scrollbar { display: none; }
+/* 전체 그룹이 연속 섹션으로 이어지고 다음 그룹이 아래에 peek 된다 [Observed 28~31] */
+.cat-sec + .cat-sec { margin-top: 30px; }
 .cat-pane-head { display: flex; justify-content: space-between; align-items: baseline; }
 .cat-pane-head b { font-size: 16.5px; }
 .cat-all {

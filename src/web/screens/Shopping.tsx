@@ -285,7 +285,42 @@ function CategoryBrowser({
   onNav: (cat: string, sub?: string) => void;
 }) {
   const [g, setG] = useState(CATEGORY_GROUPS[0].id);
-  const subs = SUBCATS[g] ?? [];
+  // [Observed 28~31] 좌측 레일은 우측 '연속 그룹 섹션'의 스크롤 위치만 맞춘다.
+  // 우 pane이 독립 스크롤해 windowY=0을 유지 — header/topTabs/globalnav가 사라지지 않는다.
+  const secRefs = useRef<Record<string, HTMLElement | null>>({});
+  const paneRef = useRef<HTMLDivElement>(null);
+  const spyLock = useRef(0);
+  const go = (id: string) => {
+    setG(id);
+    spyLock.current = Date.now() + 600;
+    const pane = paneRef.current;
+    const el = secRefs.current[id];
+    if (pane && el)
+      pane.scrollTo({
+        top: el.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop,
+        behavior: "smooth",
+      });
+  };
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    const spy = () => {
+      if (Date.now() < spyLock.current) return;
+      const pt = pane.getBoundingClientRect().top;
+      let cur = CATEGORY_GROUPS[0].id;
+      for (const grp of CATEGORY_GROUPS) {
+        const el = secRefs.current[grp.id];
+        if (el && el.getBoundingClientRect().top - pt <= 12) cur = grp.id;
+      }
+      // 마지막 그룹은 아래 여백이 부족해 head가 목표 위치에 못 올 수 있다 —
+      // scroll clamp 상태에서도 레일이 직전 그룹으로 되돌아가지 않게 한다.
+      if (pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 2)
+        cur = CATEGORY_GROUPS[CATEGORY_GROUPS.length - 1].id;
+      setG((prev) => (prev === cur ? prev : cur));
+    };
+    pane.addEventListener("scroll", spy, { passive: true });
+    return () => pane.removeEventListener("scroll", spy);
+  }, []);
   return (
     <div className="cat-browser">
       <div className="cat-rail">
@@ -293,24 +328,40 @@ function CategoryBrowser({
           <button
             key={x.id}
             className={"cat-rail-i" + (x.id === g ? " on" : "")}
-            onClick={() => setG(x.id)}
+            onClick={() => go(x.id)}
           >
             {x.label}
           </button>
         ))}
       </div>
-      <div className="cat-pane">
-        <div className="cat-pane-head">
-          <b>{groupLabel(g)}</b>
-          <button className="cat-all" onClick={() => onNav(g)}>
-            전체보기 <IcChevronRight size={14} />
-          </button>
-        </div>
-        <div className="sub-grid">
-          {subs.map((s) => (
-            <SubcatItem key={s.id} groupId={g} subId={s.id} items={items} onNav={onNav} />
-          ))}
-        </div>
+      <div className="cat-pane" ref={paneRef}>
+        {CATEGORY_GROUPS.map((grp) => (
+          <section
+            key={grp.id}
+            className="cat-sec"
+            ref={(el) => {
+              secRefs.current[grp.id] = el;
+            }}
+          >
+            <div className="cat-pane-head">
+              <b>{groupLabel(grp.id)}</b>
+              <button className="cat-all" onClick={() => onNav(grp.id)}>
+                전체보기 <IcChevronRight size={14} />
+              </button>
+            </div>
+            <div className="sub-grid">
+              {(SUBCATS[grp.id] ?? []).map((s) => (
+                <SubcatItem
+                  key={s.id}
+                  groupId={grp.id}
+                  subId={s.id}
+                  items={items}
+                  onNav={onNav}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );

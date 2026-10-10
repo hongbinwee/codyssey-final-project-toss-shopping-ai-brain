@@ -52,8 +52,8 @@
    04-A 기본 Home/Search/List UI     ✅ 1차 기능 구현 완료 (Visual 목표 미달 — 아래 참조)
    04-B Demo Catalog Expansion       ✅ 완료 (seed safety correction 포함)
    04-C Toss Shopping Home 재구성    ✅ 완료 — 사용자 최종 Visual 승인 (2026-10-10)
-   04-D Navigation 재구성            ▶ 다음 (레퍼런스 구조 최대 충실)
-   04-E Screenshot / Visual QA       ▶ 다음
+   04-D Navigation 재구성            ✅ 완료 — PM 독립 QA PASS·Push·원격 일치 확인 (2026-10-10)
+   04-E Screenshot / Visual QA       🟡 진행 중 — 사용자 최종 승인 게이트
 
    완료 조건 (04-E Visual QA — 주관적 '유사한 느낌'이 아닌 아래 절차로 판정):
    - 기준 viewport 390x844에서 실제 Toss Shopping Reference와 구현

@@ -523,12 +523,12 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 | `node --test tests/unit/` → `node --test tests/unit/*.test.ts` | FAIL→PASS — 잘못된 디렉터리 명령 exit 1 후 정상 명령으로 27/27 (NAV-001, PM 검수 exec-ad3dbfa5) |
 | `node --test --test-concurrency=1 tests/integration/*.test.ts` | PASS — 64/64 요약 + runner 정상 종료 (NAV-001, PM 검수 exec-b15dc217) |
 | `npx playwright test --workers=1 --reporter=line` | PASS — 21/21 raw exit 0 (NAV-001, PM 검수 exec-70245004) |
-| nav.spec.ts 단독 | PASS — 7/7 exit 0 (NAV-001, PM 검수 exec-30f0fbdb) |
+| `npx playwright test nav.spec.ts --workers=1 --reporter=line` | PASS — 7/7 exit 0 (NAV-001, PM 검수 exec-30f0fbdb) |
 | `node scripts/eval.ts --mode=stub` (dev) | PASS — 16/16 (NAV-001) |
 | `node scripts/eval.ts --mode=stub --split=holdout --repeat=3` | PASS — 18/18 raw exit 0 (CLOSE-002 재실행, exec-e8e81528). 최초 비상승 sandbox 시도는 EACCES 127.0.0.1:5432로 exit 1 — 승인 경로 재실행으로 PASS, 두 결과를 구분 기록 |
 | live eval | BLOCKED — LLM_API_KEY 미설정(로드맵 12 게이트, stub PASS로 대체하지 않음) |
 
-실패→복구 이력(원인 분리): (a) nav.spec 초안의 2건 실패 = 빈 checkout readiness를 heading이 아닌 실제 VALIDATION 텍스트('카트가 비어 있습니다')로 교정해 해소 — 제품 코드 변경 없는 spec readiness 수정. (b) 그 과정에서 발견된 실제 결함 = 세션 reload 시 `r.data.user` TypeError로 화면 blank(기존 MAJOR) — app.tsx를 최상위 `{ok,user}` 계약대로 수정하고 reload e2e(pageerror 0, GET /api/session `{ok:true,user}` 증거)로 회귀 검증. (c) 별도 이력 = 정규식 이스케이프 TS1109는 테스트 실행 이전의 사전 문법 오류로 러너 실행 수 0 — nav 5PASS/2FAIL이나 reload 결함과 섞지 않는다.
+실패→복구 이력(원인 분리): nav.spec 초안 raw 5PASS/2FAIL의 2건은 서로 다른 원인 — (a) empty checkout readiness 1건: heading 대기 대신 실제 VALIDATION 텍스트('카트가 비어 있습니다')로 교정, 제품 코드 변경 없는 spec readiness 수정. (b) 실제 reload 세션 blank 결함 1건: `r.data.user` TypeError(기존 MAJOR) — app.tsx를 최상위 `{ok,user}` 계약대로 수정, reload e2e(pageerror 0, GET /api/session `{ok:true,user}` 증거)로 회귀 검증. (c) 별도 이력 = 정규식 이스케이프 TS1109는 테스트 실행 이전의 사전 파서 문법 오류로 러너 실행 수 0(PM 파서 확인) — 위 2건과 섞지 않는다. 각각 수정 후 nav 단독 7/7, 전체 21/21.
 
 ### 캡처 (390×844, dsf=2, shots/04d/ — git 미포함 로컬 자산)
 
@@ -542,4 +542,51 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 - MINOR→08: 채움 쇼핑백(IcBagFill) 실루엣의 손잡이가 Reference tote보다 짧아 crown처럼 보이는 미세 차이(PM 지적, 코드 수정 요구 없음).
 - 04-E: 전체 셸 Screenshot/Visual QA + 최종 사용자 승인 게이트(본 04-D 기록으로 자가 최종 승인하지 않음).
 - PM 독립 QA 통과 후 PM이 일반 마일스톤 사전 허용 정책에 따라 Push + 원격 full SHA 일치 검증.
+
+## 2026-10-10 · PMQA-04D-REVIEW-PUSH-003 — 04-D 독립 QA·Push·종료 기록
+
+- PM 독립 QA: 구현 `60463c72f4b458e6e8d5e1cdd59df8e532775d1b` + 문서 `f568ff7cfd38d65e8cc6e08ef88b6a9acf8a320f` 검수 — 제품 code/test hash가 검증 버전과 일치, 13파일 diff·nav.spec 7·기존 assert 유지·Backend/DB/fixture/deps 불변 확인. 기능·코드·04-D 구조 QA PASS, BLOCKER 0/열린 MAJOR 0. IcBagFill silhouette MINOR→08 유지. 핵심 화면 최종 Visual 승인은 04-E 사용자 게이트.
+- Push (PM 실행, 2026-10-10 14:36 KST): 원격 `a51a032cbe30dce95e11e39db58df1453637613f` → `f568ff7cfd38d65e8cc6e08ef88b6a9acf8a320f` 정상 fast-forward, 실제 로컬 3커밋(116dd87/60463c7/f568ff7) 전송, 기존 hongbinwee GCM 명시 계정 filter·exit 0. 연결된 hongbinwee GitHub 플러그인 fresh main = f568ff7 full SHA = local HEAD 확인, fetch 동일 계정·origin/main 일치. Force/Reset/Rebase/Amend/커밋 재생성/인증 재설정 없음.
+- **04-D Navigation Reconstruction = 완료.** 04-E 전체 셸 Visual QA 진행 — 사용자 최종 승인 게이트 유지.
+
+
+
+
+## 2026-10-10 · PMQA-04E-FIX01 — Category 연속 섹션 보정 + 검색 스크롤 증거 보완
+
+대상: PM 독립 검수 MAJOR 2건 — EVIDENCE-01(검색 스크롤 비교 증거 부족: dark_search_results/_scrolled 동일 SHA로 실제 스크롤 아님), MJ-CATEGORY-01(CategoryBrowser가 선택 그룹 1개만 렌더해 Ref etc/28~31의 연속 섹션·다음 그룹 peek·콘텐츠 밀도와 큰 차이).
+
+### 변경 파일
+
+- src/web/screens/Shopping.tsx — CategoryBrowser를 전체 5그룹 연속 섹션 렌더로 변경. 우 pane을 독립 스크롤 컨테이너(overflow-y:auto + overscroll-behavior:contain)로 만들어 windowY=0 유지 — miniTop/navHidden 회귀와 header/shop-tabs/bottom-nav 소실 방지(PM 지적: window scrollIntoView 방식은 헤더 축소·nav 숨김을 유발). 좌 rail 클릭 = pane.scrollTo(해당 섹션, smooth), pane 자체 scroll spy(threshold 12px)로 활성 그룹 동기화 + 최하단 clamp fallback(마지막 그룹에서 레일이 직전 그룹으로 되돌아가지 않게).
+- src/web/styles.css — .cat-browser 높이 calc(100dvh - 226px)(top60+tabs50+pt6+main pb110), .cat-pane 독립 스크롤 + padding-bottom:420px(마지막 '식품' 섹션이 pane 상단까지 도달하기 위한 여백, [Project] 정책 — 가짜 콘텐츠로 채우지 않음), .cat-sec 섹션 간격.
+- 캡처/검증 스크립트 tmp_shots04e2.mjs·tmp_catinteract.mjs·tmp_qacmp04e.mjs — 로컬 도구, git 미포함.
+- 기존 캡처 baseline은 shots/04e/baseline/에 21개 보존.
+
+### 증거 (shots/04e/, facts_fix01.txt — 390×844, dsf=2, 코드=본 항목 커밋 기준)
+
+- 카테고리(dark/light 공통): sections=5·subs=13, 레일 선택 전 상태에서 windowY=0·searchFieldVisible=visible·tabsTop=66·navHidden=false 유지. rail 클릭 → 해당 그룹 head가 pane top에 도달(뷰티0/패션0/리빙0), 다음 그룹은 155px 아래에 peek. spy 동기화: pane 수동 top→'디지털', bottom→'식품' active.
+- [Project 제한 → MINOR·08 이관] 마지막 '식품' 섹션은 아래 콘텐츠 부재로 head가 pane top+73에서 clamp — spy fallback으로 '식품' active 유지. Ref의 14 rail·다수 subcat 밀도 대비 5그룹/13sub은 데이터 규모 차이이며, Toss 동일 밀도로 표기하지 않는다.
+- 인터랙션 probe(localhost:3200 read-only): 디지털 '전체보기'→?cat=digital 10카드 / '모니터' sub→?cat=digital&sub=monitor 3카드=코드뷰 모니터 C·A·B(assert3) / 식품 레일→'커피' sub→?cat=food&sub=coffee 2카드. demo 미포함 commerce_test와 구분되는 Primary dev 증거.
+- 검색 스크롤(EVIDENCE-01 해소): q='에' apiOk=true serverCount=9=rendered, docH1879/vp844, requestedY400→actualY400 — 실제 스크롤 증거로 Ref104 비교. q='버즈' 3건 actualY=33(소량이지만 >0, PASS 아닌 부분 스크롤로 표기). q='이어폰' 1건 docH=vp → SCROLL-NOT-POSSIBLE을 성공 스크롤로 기록하지 않음. serverCount와 rendered 일치(renderedEq=true) 확인, 자동완성(limit=5)과 결과(limit=50) 응답을 query+limit 파라미터로 정확히 구분 매칭.
+- 검색 typing(Ref102 대응): '모니터' 입력만(Enter 미제출) → limit=5 응답 후 sug-row 3·mark 3, mark 색 dark=rgb(41,117,244)/light=rgb(49,130,246) 파란 강조. 제안 클릭은 상세 직행이 아니라 submit(p.name): hash ?q=코드뷰 모니터 C·input 동일명·결과 카드 1.
+- 최근 검색어: 실제 7회 검색 누적(localStorage) → recent rows=7 다중 행 밀도 증거.
+- 합성 비교본: shots/04e/qa/ 17쌍(01_home_first~17_search_sort) — fullPage 전체 높이 캔버스로 생성, 하단 잘림·MISS 0. Ref102 typing 쌍 추가.
+- 캡처 제약: iOS status bar/safe area·네이티브 키보드는 desktop Playwright 재현 불가 — 가짜 키보드 대신 한계로 명시. Light Reference 부재로 Light는 [Project/TDS] 기준. 카트 담기 등 DB 쓰기 캡처는 자동 검토 정책 거부로 read-only 한정.
+
+### 검증
+
+| 명령 | 결과 |
+| --- | --- |
+| npm run check (tsc --noEmit) | PASS — exit 0 |
+| npm run build (esbuild web/app.js) | PASS — exit 0. 서버는 요청마다 디스크 번들을 서빙해 재기동 불필요(Static readFile 경로 확인) |
+| npm run test:unit | PASS — 27/27 |
+| npx playwright test nav.spec.ts core-journeys.spec.ts smoke.spec.ts --workers=1 --reporter=line | PASS — 13/13 raw exit 0 |
+| integration 전체·e2e 전체 21·eval stub | NOT_RUN — 본 수정은 CategoryBrowser+CSS 프런트 한정. 04-D의 전체 통과 이력(int64/e2e21/stub dev16·holdout18)은 별도 이력이며, 13을 full 21로 표기하지 않는다 |
+| live eval | BLOCKED — LLM_API_KEY 미설정 |
+
+### 잔여
+
+- 04-E 최종 완료 = 사용자 Visual 승인 게이트. 본 기록으로 자가 승인하지 않는다.
+- MINOR→08: '식품' head+73 clamp 및 pane 하단 여백(05 또는 08에서 레이아웃 정책 검토).
 
