@@ -136,3 +136,20 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 | Integration 판정 구분 | 개별 assertion PASS 수와 runner 전체 정상 종료 PASS를 구분해 기록한다 | VERIFY-001(2026-10-10)에서 suite runner가 개별 64/64 PASS 후 최종 요약 없이 종료되지 않고 잔존(hang)해 수동 종료했던 증상. 원인 확정: t1-cart.test.ts의 두 suite가 각각 ensureTestDb→connectDb를 호출하고 tests/helpers/testdb.ts가 이전 pool을 종료하지 않아 첫 pool이 누수 — FIX-002(2026-10-10)에서 ensureTestDb가 connectDb 덮어쓰기 전 `sql?.end()`로 이전 pool을 종료하도록 수정, 이후 Integration 64/64 PASS+runner 정상 종료 확인. '개별 PASS 수'와 'runner 정상 종료'를 구분해 기록하는 원칙은 유지한다 |
 | 카드 합성 신호 표기 | SYNTHETIC 조회수·최저가는 화면에 '데모' 배지로 출처를 표시한다 | 사용자 C안 승인(2026-10-09) — 근거 없는 통계를 실측처럼 보이게 하지 않는다 |
 
+2026-10-10 · GitHub Push 승인 정책 갱신 (사용자 표준 GitHub 운영정책 — PMQA-04D-NAV-001 지침으로 전달)
+
+| 항목 | 결정 | 근거 |
+| --- | --- | --- |
+| Push 승인 게이트 [Superseded: '모든 GitHub Push는 매회 별도 사용자 승인'] | 승인된 프로젝트 범위의 일반 개발 마일스톤 Push는 PM 독립 QA 통과 후 오케스트레이션이 기존 성공한 hongbinwee GCM 인증으로 정상 fast-forward Push한다(사전 허용). 매회 별도 승인 요구 정책은 이번 사전 허용으로 대체한다 | 2026-10-10 사용자 표준 GitHub 운영정책 확정. 단 force-push·이력 재작성·파괴적 변경·중요 scope 변경은 계속 별도 승인. Push 후 커넥터로 원격/로컬 full SHA 일치를 매회 검증하고 VERIFICATION_LOG에 기록. 도구 직접 승인요구로 승인 절차를 우회하지 않는다. 핵심 화면 Visual 승인·09 Freeze·DB·유료 API·scope 게이트는 그대로 유지 |
+
+2026-10-10 · 04-D Navigation Reconstruction 결정 (PMQA-04D-NAV-001)
+
+| 항목 | 결정 | 근거 |
+| --- | --- | --- |
+| 하단 네비 슬롯 매핑 | 토스 5슬롯 구조 유지: 홈→shop 루트 / 혜택→특가 탭 / 쇼핑→shop(active) / 증권→AI(AgentPanel) / 전체→메뉴 시트 | `home/01`의 5슬롯 구조 [Observed] + 우리 서비스에 없는 목적지(증권)는 프로젝트 핵심 진입(AI)으로, 메뉴는 구매 목적지 시트로 대체 [Project] |
+| active 컨텍스트 | 쇼핑 내부 탭(특가 등) 진입 중에도 전역 active는 '쇼핑' 슬롯에 유지. 목적지 current는 `aria-current="page"`, 시트 토글은 `aria-expanded`로 구분하고 `.on`을 붙이지 않는다 | PM QA 피드백 — active 슬롯이 실제 컨텍스트를 반영해야 하며 시각 on과 aria 상태를 혼합하지 않는다 |
+| 스크롤 숨김/복귀 | 딥스크롤 숨김 [Observed home/02] + 방향 인식 복귀(y>120 && 내리는 중→숨김, 올리는 중→복귀). 숨김은 `visibility:hidden`으로 포커스·a11y 트리에서도 제외 | 복귀 트리거 미관측 [Inferred→Project] |
+| 뒤로가기 이력 판별 | history.state 마커(`{app,internal}`) — URL 문자열 비교나 history.length 추정 대신 엔트리 마커로 내부 이력을 확정. fallback은 `gotoReplace(BACK_PARENT)`로 단조 상승(parent→back 루프 방지). mount·hashchange 시 미마킹 엔트리를 `{app:1}`로 보정해 reload 후에도 복원 | PM 지침 — '실제 entry 근거' 필요, boolean·URL스택 초안 폐기 |
+| 세션 복원 버그 수정 | GET /api/session은 `{ok,user}` 최상위 반환인데 기존 코드가 `r.data.user`를 참조해 reload 시 TypeError→blank. raw fetch+`j.user.display_name`으로 수정, catch 시 setChecked(true)로 복구 | PM 검수에서 확인된 기존 MAJOR — 04-D 범위 내에서 수정·e2e reload 회귀로 검증 |
+| 신규 캡처 정책 | QA 비교본은 390×844 원본 두 화면이 잘리지 않는 높이의 캔버스/HTML 뷰 사용. 현재 1280×720 합성은 세로 이미지 하단(하단 네비)이 잘려 nav 나란히 비교 증거로 쓰지 않는다 — 04-E에서 보완 | PMQA-04D-CLOSE-002 검수 — iOS status/safe-area와 웹 viewport 차이도 명시 |
+

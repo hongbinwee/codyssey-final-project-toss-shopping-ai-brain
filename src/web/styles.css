@@ -168,6 +168,14 @@ button svg { display: block; }
   width: 100%; max-width: 480px; height: var(--nav-h);
   display: flex; z-index: 25;
   background: var(--bg-elev); border-top: 1px solid var(--line);
+  /* visibility는 transform만으로는 Tab 포커스/접근성 트리에 남는 문제를 막는다.
+     보일 때는 즉시 visible, 숨길 때는 슬라이드 후 hidden [PM 지침] */
+  transition: transform 0.22s ease, visibility 0s 0s;
+}
+.bottom-nav.hidden {
+  transform: translate(-50%, 100%);
+  visibility: hidden;
+  transition: transform 0.22s ease, visibility 0s 0.22s;
 }
 .nav-item {
   position: relative; flex: 1;
@@ -177,6 +185,18 @@ button svg { display: block; }
 }
 .nav-item.on { color: var(--text); font-weight: 600; }
 .nav-badge { top: 6px; right: auto; margin-left: 24px; }
+
+/* '전체' 탭 메뉴 시트 — Toss 전체 서비스 목록에 대응하는 앱 내부 목적지 목록 [Project] */
+.menu-sheet { padding: 10px 12px 26px; }
+.menu-item {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; padding: 15px 14px;
+  border: none; background: none; cursor: pointer;
+  color: var(--text); font-size: 15.5px; text-align: left;
+  border-radius: 12px;
+}
+.menu-item:active { background: var(--field); }
+.menu-item svg { color: var(--muted); flex-shrink: 0; }
 
 main { flex: 1; padding: 0 var(--pad) 110px; }
 .screen { padding-top: 6px; }

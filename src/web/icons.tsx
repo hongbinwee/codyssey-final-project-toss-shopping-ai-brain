@@ -78,3 +78,33 @@ export const IcShirt = (p: P) => (
   <Svg {...p}><path d="M8.5 3.5 4 7l1.8 3.2 1.7-.9V20h9V9.3l1.7.9L20 7l-4.5-3.5-1.7 1.8h-3.6L8.5 3.5Z" /></Svg>
 );
 
+// 04-D 하단 네비 '전체' 탭 — 범용 메뉴 라인 아이콘 [Project]
+export const IcMenu = (p: P) => (
+  <Svg {...p}><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></Svg>
+);
+
+// 04-D 선택된 '쇼핑' 탭 채움 아이콘 — Reference의 filled bag 상태 대응 [Observed→Project].
+// 몸통은 currentColor 채움, 손잡이는 네비 배경색(--bg-elev)으로 파낸 형태.
+export const IcBagFill = ({ size = 22, className }: P) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden
+    className={className}
+  >
+    <path
+      d="M5.5 8h13l-1.1 12.2a1 1 0 0 1-1 .8H7.6a1 1 0 0 1-1-.8L5.5 8Z"
+      fill="currentColor"
+    />
+    <path
+      d="M9 10.5V7a3 3 0 0 1 6 0v3.5"
+      fill="none"
+      stroke="var(--bg-elev)"
+      strokeWidth={2}
+      strokeLinecap="round"
+    />
+  </svg>
+);
+

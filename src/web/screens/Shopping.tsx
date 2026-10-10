@@ -498,6 +498,23 @@ export function Shopping({
     : grp === "food" ? "food"
     : "category";
 
+  // 선택된 상단 탭이 가로 스크롤 밖에 있으면 scrollLeft만 조정해 가시화한다.
+  // scrollIntoView는 탭 스트립이 세로 fold 밖이면 페이지 세로 위치까지 움직일 수 있고,
+  // offsetLeft는 offsetParent 기준이라 컨테이너와 어긋날 수 있어
+  // getBoundingClientRect 차이로 계산한다 [Project]
+  const tabsRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const navEl = tabsRef.current;
+    if (!navEl) return;
+    const tabEl = navEl.querySelector<HTMLElement>(".shop-tab.on");
+    if (!tabEl) return;
+    const left =
+      navEl.scrollLeft +
+      (tabEl.getBoundingClientRect().left - navEl.getBoundingClientRect().left) -
+      (navEl.clientWidth - tabEl.clientWidth) / 2;
+    navEl.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }, [activeTab]);
+
   const view =
     !category ? "home"
     : category === "sale" ? "sale"
@@ -509,7 +526,7 @@ export function Shopping({
 
   return (
     <div className="screen">
-      <nav className="shop-tabs">
+      <nav className="shop-tabs" ref={tabsRef}>
         {TOP_TABS.map((t) => (
           <button
             key={t.id}

@@ -21,13 +21,17 @@
 - 구현 State: 기본(홈) = 검색 input + 프로필 아이콘 + 카트 아이콘(배지); 검색 화면 = `‹` 뒤로가기 + input + X 지우기; 서브 화면(상세·카트·주문)은 다음 단계에서 뒤로가기 헤더 추가. [04-C] 프로필 아이콘 추가 — 토스의 '마이' 목적지는 우리 서비스에 없어 **내 주문으로 대체 [Project]**.
 - Backend: 카트 배지 = `GET /api/cart`의 `items.length`(기존 `refreshCart` 재사용).
 
-## 3. 하단 Bottom Navigation [1차]
+## 3. 하단 Bottom Navigation [04-D]
 
 - 참고 캡처: `home/01` 하단 5탭(홈/혜택/쇼핑/증권/전체).
 - 관찰: 높이 ~56pt, 상단 구분선, 선택 탭 밝은 아이콘+라벨, 미선택은 muted.
 - **[Superseded 2026-10-07]** 이전에는 '토스 앱 전체 네비이므로 우리 플로우용으로 단순화'로 판단했으나 폐기 — 새 방향은 브랜드 자산을 제외하고 탭 수·배치·선택 상태·높이·아이콘/라벨 관계·가로 스크롤·화면 내 위치까지 레퍼런스를 최대한 따른다(IMPLEMENTATION_DECISIONS 2026-10-07). **04-D에서 재구성한다.**
-- 현재 구현(1차, 조정 대상): 홈/검색/장바구니/내 주문/AI 5탭, `icons.tsx` SVG 통일 — 탭 라벨은 우리 플로우 매핑이 필요한 부분만 조정하고 나머지 형식은 레퍼런스 추종.
-- e2e 계약: AI 탭의 accessible name은 정확히 `AI`(SVG는 aria-hidden), `내 주문`·`장바구니`는 라벨 부분 일치 유지.
+- 구현(04-D): 슬롯 5개 = **홈**→shop 루트 리셋 / **혜택**→shop?cat=sale / **쇼핑**→shop + active 슬롯(route=shop이면 항상 on, `aria-current="page"`, 선택 시 채움 쇼핑백 `IcBagFill`; 특가 등 내부 탭 진입도 전역 active는 쇼핑 슬롯에 유지) / **AI**→AgentPanel(기존 shopping brain 진입 보존) / **전체**→메뉴 시트(`aria-haspopup="menu"`+`aria-expanded`, `.on` 미사용). 원본의 '증권' 목적지는 우리 서비스에 없어 AI 진입으로 대체 [Observed 구조 / Project 매핑].
+- 렌더 범위: `NAV_ROUTES={shop}` — 상세·카트·주문서·주문목록·주문상세는 자체 `.bottom-bar` CTA가 있어 글로벌 네비를 렌더하지 않고 `.backbar`만 둔다(겹침 없음).
+- 스크롤 숨김: `y>120 && y>lastY`에서 `.hidden`(translate+`visibility:hidden` — 포커스·a11y 트리에서도 제외), 올리면 복귀, transition 적용 [Project].
+- 전체 시트: `.menu-sheet`(sheet-overlay 재사용) = 내 쇼핑(orders)·장바구니(cart)·검색(search)·AI 쇼핑 도우미. 열 때 첫 항목 포커스, ESC·오버레이 클릭 닫기, 닫을 때 전체 버튼으로 포커스 복귀.
+- 뒤로가기(push 화면): `history.state` 마커 기반 — `goto` pushState 엔트리는 `{app:1,internal:1}`, 최초/직접 진입 엔트리는 mount·hashchange 시 `{app:1}`만 마킹. backbar 클릭 시 `internal` 있으면 `history.back()`, 없으면 `gotoReplace(BACK_PARENT)`(push가 아닌 **replace**로 상승해 parent→back 루프 방지). `BACK_PARENT`: product/cart/orders→shop, checkout→cart, order→orders [Project]. `goto`·`gotoReplace`는 `scrollTo(0,0)`으로 새 화면 스크롤을 초기화(pop은 브라우저 스크롤 복원에 위임).
+- e2e 계약(04-D): nav 라벨 = 홈/혜택/쇼핑/AI/전체 exact, `.nav-item.on`='쇼핑'+`aria-current="page"`, 전체=`aria-expanded`. '내 주문'은 네비 슬롯이 아니라 헤더 '내 쇼핑' 아이콘/메뉴 시트 경로로 진입 — 기존 e2e의 네비 직접 클릭 단정은 헤더 버튼 경로로 교체(사용자 실제 경로 유지, 단정 완화 아님).
 - Backend: 없음.
 
 ## 4. 쇼핑 홈 [1차]

@@ -45,7 +45,7 @@ test("cs panel: created order -> shipping status explanation (stub)", async ({
   page,
 }) => {
   await login(page);
-  await page.locator(".bottom-nav").getByRole("button", { name: "내 주문" }).click();
+  await page.getByRole("button", { name: "내 쇼핑" }).click();
   // 이전 테스트가 만든 주문을 연다
   await page.getByText("코드뷰 모니터 B").first().click();
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();

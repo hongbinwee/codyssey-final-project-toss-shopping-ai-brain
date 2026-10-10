@@ -500,3 +500,41 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 - 원격 검증: hongbinwee GitHub 커넥터로 실제 원격 main = `a51a032cbe30dce95e11e39db58df1453637613f` = local HEAD 완전 일치 확인.
 - 정정: 직전 'Push 미실행' 기록은 '승인 전달 범위의 도구 검토 제약'까지의 이력으로 보존하고, 본 항목이 최신 상태다 — 기존 로컬 인증 경로(hongbinwee GCM)가 실제 지원됨이 확인됐다.
 - 운영 정책 확정: Push·원격 검증 = PM(오케스트레이션) 담당, 구현·테스트·문서·로컬 커밋 = Main SWE. PM은 코드·DB를 수정하지 않는다.
+
+## 2026-10-10 · PMQA-04D-NAV-001 → CLOSE-002 — 04-D Navigation Reconstruction 구현·검증·문서
+
+대상: 토스 하단 네비 5슬롯 구조 재현 + 스크롤 숨김 + history.state 마커 기반 뒤로가기 + 전체 메뉴 시트. 코드 기준 = 본 항목 기록 후 생성되는 로컬 커밋(변경 파일 목록 아래) — 커밋 SHA는 본문에 자기참조로 쓸 수 없어 final 보고와 PM 후속 QA 체크포인트에서 연결한다.
+
+### 변경 파일
+
+- `src/web/app.tsx` — 하단 네비 5슬롯(홈/혜택/쇼핑/AI/전체) 재구성, 쇼핑 슬롯 `aria-current="page"`+채움 아이콘(IcBagFill), 스크롤 방향 인식 숨김/복귀(`y>120 && y>lastY`, `.hidden`=visibility:hidden), `.menu-sheet`(aria-haspopup/expanded, 첫 항목 포커스·ESC·오버레이 닫기·포커스 복귀), `history.state` 마커(`{app,internal}`) 기반 backbar 뒤로가기 + `gotoReplace(BACK_PARENT)` fallback, `goto`/`gotoReplace` 시 `scrollTo(0,0)`, 세션 복원 `fetch('/api/session')` 최상위 `{ok,user}` 읽기로 수정.
+- `src/web/icons.tsx` — `IcMenu`, `IcBagFill` 추가.
+- `src/web/styles.css` — `.bottom-nav` transition+`.hidden`, `.menu-sheet`/`.menu-item`.
+- `src/web/screens/Shopping.tsx` — 선택 상단 탭 가시화를 `scrollIntoView` 대신 getBoundingClientRect 차이 기반 `scrollLeft` 계산으로 변경(부모 offsetLeft 문제·세로 이동 방지).
+- `tests/e2e/nav.spec.ts` 신규 7 테스트.
+- `tests/e2e/{checkout-t2,core-journeys,t3-cancel}.spec.ts` — '내 주문' 네비 직접 클릭 5곳을 헤더 '내 쇼핑' 버튼 경로로 교체(실제 사용자 경로, 단정 유지).
+
+### 검증 결과
+
+| 명령 | 결과 |
+| --- | --- |
+| `npm run check`(tsc --noEmit) | PASS — exit 0 (CLOSE-002 최종 코드 재실행) |
+| `node scripts/eval.ts --mode=stub --split=holdout --repeat=3` | PASS — 18/18 (CLOSE-002 재실행) |
+| unit 27/27 · integration 64/64(runner 정상 종료) · 전체 e2e 21/21(nav.spec 7 포함, --workers=1, exit 0) · eval stub dev 16/16 | PASS — NAV-001 세션에서 실행, PM이 native 출력을 직접 검수 |
+| live eval | BLOCKED — LLM_API_KEY 미설정(로드맵 12 게이트, stub PASS로 대체하지 않음) |
+
+실패→복구 이력: nav.spec 초안 5PASS/2FAIL(empty checkout readiness를 heading이 아닌 실제 VALIDATION 텍스트로 교정·문법 수정) → 7PASS → 전체 21/21. 세션 reload 시 `r.data.user` TypeError로 blank 되던 기존 MAJOR 발견·수정, reload e2e로 회귀 검증(pageerror 0, GET /api/session `{ok:true,user}` 증거).
+
+### 캡처 (390×844, dsf=2, shots/04d/ — git 미포함 로컬 자산)
+
+- 서버: 기존 localhost:3200 프로세스(PID 9280) 재사용 — `web/app.js` 번들이 소스 변경 이후에 빌드돼 `menu-sheet` 포함 확인. 신규 spawn(PID 18204)은 EADDRINUSE로 즉시 종료됐으며 별도 정리 불필요. 비상승 sandbox의 포트 조회는 빈 출력을 반환해 기존 서버 부재로 오인 가능 — 승인된 escalated 조회 기준으로 기록.
+- facts.txt 증거: dark/light 공통 — 초기 nav visible+`.nav-item.on`='쇼핑', 딥스크롤 `.hidden`+visibility:hidden, 상승 시 복귀, '시즌 추천' 선택 탭 inView=true(390px에서 전체 탭이 표시돼 scrollLeft=0 — 스크롤 불필요 상태의 정상 결과), 전체 시트 aria-expanded=true·항목 4개, detail/cart/checkout/order 각 push 화면에서 `.bottom-nav` 렌더 0(자체 CTA와 겹침 없음).
+- 캡처 제약(자동 검토 정책): 카트 담기·주문서 진입 등 DB 쓰기가 포함된 캡처 경로가 거부돼 read-only 경로로 조정 — Primary demo 사용자(u-a)의 cart_items=0이므로 `dark_cart_state`/`dark_checkout_state`는 빈 상태/VALIDATION 화면이다. populated checkout CTA 캡처는 없으며 그렇게 완료된 것처럼 기록하지 않는다. 상세·주문 상세(ord-a-ship)는 실데이터로 자체 CTA/backbar+nav 부재를 확인.
+- `shots/04d/qa/` 합성 비교본 제약: 1280×720 캔버스에 390×844 세로 이미지를 배치해 하단(하단 네비 영역)이 잘린다. 두 합성본을 '하단 nav 나란히 비교 완료' 증거로 쓰지 않는다 — 04-E에서 전체 높이 캔버스 또는 HTML 비교 뷰로 보완하고, Reference의 iOS status bar/safe area와 웹 viewport 차이를 명시한다(PM CLOSE-002 피드백).
+
+### 잔여·이관
+
+- MINOR→08: 채움 쇼핑백(IcBagFill) 실루엣의 손잡이가 Reference tote보다 짧아 crown처럼 보이는 미세 차이(PM 지적, 코드 수정 요구 없음).
+- 04-E: 전체 셸 Screenshot/Visual QA + 최종 사용자 승인 게이트(본 04-D 기록으로 자가 최종 승인하지 않음).
+- PM 독립 QA 통과 후 PM이 일반 마일스톤 사전 허용 정책에 따라 Push + 원격 full SHA 일치 검증.
+
