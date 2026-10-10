@@ -519,11 +519,16 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 | 명령 | 결과 |
 | --- | --- |
 | `npm run check`(tsc --noEmit) | PASS — exit 0 (CLOSE-002 최종 코드 재실행) |
-| `node scripts/eval.ts --mode=stub --split=holdout --repeat=3` | PASS — 18/18 (CLOSE-002 재실행) |
-| unit 27/27 · integration 64/64(runner 정상 종료) · 전체 e2e 21/21(nav.spec 7 포함, --workers=1, exit 0) · eval stub dev 16/16 | PASS — NAV-001 세션에서 실행, PM이 native 출력을 직접 검수 |
+| `node scripts/build-web.ts` | PASS — exit 0 (NAV-001; 뒤이은 unit 명령이 && 체인으로 실행된 사실로 build 성공 확인) |
+| `node --test tests/unit/` → `node --test tests/unit/*.test.ts` | FAIL→PASS — 잘못된 디렉터리 명령 exit 1 후 정상 명령으로 27/27 (NAV-001, PM 검수 exec-ad3dbfa5) |
+| `node --test --test-concurrency=1 tests/integration/*.test.ts` | PASS — 64/64 요약 + runner 정상 종료 (NAV-001, PM 검수 exec-b15dc217) |
+| `npx playwright test --workers=1 --reporter=line` | PASS — 21/21 raw exit 0 (NAV-001, PM 검수 exec-70245004) |
+| nav.spec.ts 단독 | PASS — 7/7 exit 0 (NAV-001, PM 검수 exec-30f0fbdb) |
+| `node scripts/eval.ts --mode=stub` (dev) | PASS — 16/16 (NAV-001) |
+| `node scripts/eval.ts --mode=stub --split=holdout --repeat=3` | PASS — 18/18 raw exit 0 (CLOSE-002 재실행, exec-e8e81528). 최초 비상승 sandbox 시도는 EACCES 127.0.0.1:5432로 exit 1 — 승인 경로 재실행으로 PASS, 두 결과를 구분 기록 |
 | live eval | BLOCKED — LLM_API_KEY 미설정(로드맵 12 게이트, stub PASS로 대체하지 않음) |
 
-실패→복구 이력: nav.spec 초안 5PASS/2FAIL(empty checkout readiness를 heading이 아닌 실제 VALIDATION 텍스트로 교정·문법 수정) → 7PASS → 전체 21/21. 세션 reload 시 `r.data.user` TypeError로 blank 되던 기존 MAJOR 발견·수정, reload e2e로 회귀 검증(pageerror 0, GET /api/session `{ok:true,user}` 증거).
+실패→복구 이력(원인 분리): (a) nav.spec 초안의 2건 실패 = 빈 checkout readiness를 heading이 아닌 실제 VALIDATION 텍스트('카트가 비어 있습니다')로 교정해 해소 — 제품 코드 변경 없는 spec readiness 수정. (b) 그 과정에서 발견된 실제 결함 = 세션 reload 시 `r.data.user` TypeError로 화면 blank(기존 MAJOR) — app.tsx를 최상위 `{ok,user}` 계약대로 수정하고 reload e2e(pageerror 0, GET /api/session `{ok:true,user}` 증거)로 회귀 검증. (c) 별도 이력 = 정규식 이스케이프 TS1109는 테스트 실행 이전의 사전 문법 오류로 러너 실행 수 0 — nav 5PASS/2FAIL이나 reload 결함과 섞지 않는다.
 
 ### 캡처 (390×844, dsf=2, shots/04d/ — git 미포함 로컬 자산)
 
