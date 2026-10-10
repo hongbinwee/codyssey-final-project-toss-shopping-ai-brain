@@ -87,9 +87,9 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 - 구현: 공용 `BottomSheet` 컴포넌트(overlay 클릭/ESC로 닫기, 기존 `.sheet-overlay`/`.sheet` 토큰 재사용·상단 radius만 확대). 정렬 선택에 첫 적용했고 **옵션 선택도 05에서 같은 컴포넌트로 구현됨**(§7-1, 이전 [후속] 표기 해소). 취소 시트(`CancelSheet`)는 기존 마크업 유지(다음 주문 단계에서 공용화 여부 결정).
 - Backend: 없음.
 
-## 7-1. 상품 상세 → 옵션 → 장바구니 [05 구현 완료 — 2026-10-10, PMQA-05-IMPLEMENT-001 · 05 최종 Visual 승인 보류]
+## 7-1. 상품 상세 → 옵션 → 장바구니 [05 구현 완료 · 사용자 최종 Visual 승인 완료(2026-10-11) · 마일스톤 종료는 PM 커밋·Push 검증 후]
 
-아래 스펙은 Phase 05에서 실제 구현됐다. 구현 완료이나 05 마일스톤 최종 종료는 사용자 Visual 승인 게이트에 남아 있다(2026-10-11 현재 승인 보류). 구현 계약:
+아래 스펙은 Phase 05에서 실제 구현됐다. 사용자 최종 Visual 승인은 2026-10-11 완료 — 05 마일스톤 최종 종료는 PM의 최종 커밋·Push HEAD 일치 검증 후 확정된다. 구현 계약:
 
 - 상품 상세 진입 시 **구매 가능한 기본 옵션을 자동 선택**한다. 사용자가 옵션을 고르지 않아도 현재 선택 조합의 가격·CTA가 유효해야 한다.
 - **품절 옵션은 기본 선택에서 제외**한다(표시는 하되 선택 불가 — `badge-soldout` + disabled).
@@ -99,6 +99,9 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 - **[05 추가 계약]** 담기·수량·삭제 등 cart write는 서버 재검증(expected version + idempotency)과 실패 복구를 따른다: 응답 유실/타임아웃 등 **불확정 결과는 localStorage pending intent로 보존**하고 전역 잠금(새 write·옵션·수량·주문 차단) 후 카트 배너의 '결과 확인'으로 `/api/actions?kind=&idempotency_key=ui-<key>` 조회 → SUCCEEDED면 카트 재동기화, 확정 거절(VERSION_CONFLICT·OUT_OF_STOCK)이면 intent 해제 + 최신 상태 재조회 + 사용자 재확인 요청. 자동 재실행은 하지 않는다 [Project — Toss 캡처에 대응 상태 없음].
 - **[05 추가 계약]** 카트 읽기 레이스 방지: 부모 `cartReadSeq`가 쓰기 확정 적용 시점의 in-flight read를 무효화해 늦은 GET이 새 커밋 상태를 덮지 않는다.
 - **[05 추가 계약]** 리뷰는 실제 DB 행 수·실제 cursor/has_more 페이지네이션·출처 칩(시연 리뷰=SYNTHETIC/실사용 리뷰=REAL)을 표시한다. 존재하지 않는 리뷰를 만들지 않는다.
+- **[05-030 추가 계약]** 카트 결제 예상 금액 패널은 Ref126 대응 접힘/펼침 구조다 — 헤더(총 N건 결제 예상 금액+총액+chevron 토글) → 구분선 → 상품 금액·배송비 행(#cart-quote-rows) → 전체폭 주문 CTA. 토글은 표시 전용이다(button+aria-expanded/aria-controls·Enter/Space) — 카트 쓰기·선택·version을 바꾸지 않고, 표시 금액은 items_total_won/shipping_fee_won/total_won 서버값 그대로다(클라이언트 재견적·부분 주문 없음). 선택 subtotal은 전체 견적과 섞이지 않는 보조 행(.cart-summary-count)으로 토글 위에 둔다.
+- **[05-030 추가 계약]** 고정 패널 높이가 변해도 콘텐츠가 가려지지 않아야 한다 — .cart-screen의 padding-bottom을 고정값 대신 ResizeObserver로 실측한 .bottom-bar 높이(--bb-h)로 유지한다.
+- **[05-030]** 상세 정보 위계: 상품명 20px·할인율 15px 보조·판매가 26px 주강조·배송비는 서버값 .price-sub 보조 행으로 분리·info-rows 상단 8px 섹션 밴드([Project] 채택값)·label-value inline 밀도.
 
 ## 8. 로딩·오류·Empty [1차]
 

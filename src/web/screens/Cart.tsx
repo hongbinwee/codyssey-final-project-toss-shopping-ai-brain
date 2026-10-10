@@ -10,7 +10,7 @@ import {
 import type { CartItemView, CartView } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { PRODUCT_META, productImg } from "../display-meta.ts";
-import { IcClose } from "../icons.tsx";
+import { IcChevronDown, IcClose } from "../icons.tsx";
 import {
   listPending, putPending, removePending, lookupAction,
   type PendingWrite,
@@ -46,6 +46,24 @@ export function Cart({
   // 마운트 GET이 늦게 도착해 그 사이 확정된 쓰기(v2)를 과거(v1)로 덮는 레이스 방지.
   // 쓰기가 새 상태를 적용할 때 seq를 올려 진행 중인 read를 무효화한다.
   const readSeq = useRef(0);
+  // 결제 예상 금액 패널 — Ref126은 펼침이 기본 노출 상태다 [Observed cart/126].
+  // 접기·펼치기는 표시 상태만 바꾼다 — 카트 쓰기나 선택을 변경하지 않는다.
+  const [quoteOpen, setQuoteOpen] = useState(true);
+  const screenRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+  // 고정 하단 패널의 실측 높이만큼 문서 끝 여백을 보장한다 — 펼침·부분선택
+  // 안내·pending으로 패널이 커져도 마지막 카드/수량/CTA가 영구 가려지지 않는다.
+  useEffect(() => {
+    const bar = barRef.current;
+    const screen = screenRef.current;
+    if (!bar || !screen || typeof ResizeObserver === "undefined") return;
+    const apply = () =>
+      screen.style.setProperty("--bb-h", bar.offsetHeight + "px");
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  });
 
   useEffect(() => {
     const on = () => setPendings(listPending());
@@ -331,7 +349,7 @@ export function Cart({
   const canSubmit = c.can_checkout && allSelected && !locked;
 
   return (
-    <div className="screen cart-screen">
+    <div className="screen cart-screen" ref={screenRef}>
       {notice && <div className="state-box">{notice}</div>}
       {pendings.length > 0 && (
         <div className="state-box">
@@ -497,17 +515,44 @@ export function Cart({
               </li>
             ))}
           </ul>
-          <div className="bottom-bar">
+          <div className="bottom-bar" ref={barRef}>
             <div className="cart-summary">
               <div className="cart-summary-count">
                 선택 {selectedCount}건 · 선택 상품 합계 {fmtWon(selectedItemsTotal)}
               </div>
-              <div className="muted cart-summary-whole">
-                전체 {c.items.length}건 기준 · 상품 {fmtWon(c.items_total_won)} + 배송비 {fmtWon(c.shipping_fee_won)}
-              </div>
-              <div className="cart-summary-total">
-                <span className="muted">전체 장바구니 결제 예상</span>
-                <b>{fmtWon(c.total_won)}</b>
+              <button
+                type="button"
+                className="cart-summary-total cart-quote-toggle"
+                aria-expanded={quoteOpen}
+                aria-controls="cart-quote-rows"
+                aria-label={
+                  quoteOpen
+                    ? "결제 예상 금액 상세 접기"
+                    : "결제 예상 금액 상세 펼치기"
+                }
+                onClick={() => setQuoteOpen((v) => !v)}
+              >
+                <span className="cart-quote-label">
+                  총 {c.items.length}건 결제 예상 금액
+                </span>
+                <span className="cart-quote-amount">
+                  <b>{fmtWon(c.total_won)}</b>
+                  <IcChevronDown size={15} />
+                </span>
+              </button>
+              <div
+                id="cart-quote-rows"
+                className="cart-quote-rows"
+                hidden={!quoteOpen}
+              >
+                <div className="cart-quote-row">
+                  <span className="muted">상품 금액</span>
+                  <span>{fmtWon(c.items_total_won)}</span>
+                </div>
+                <div className="cart-quote-row">
+                  <span className="muted">배송비</span>
+                  <span>{fmtWon(c.shipping_fee_won)}</span>
+                </div>
               </div>
             </div>
             <div className="cart-checkout-action">

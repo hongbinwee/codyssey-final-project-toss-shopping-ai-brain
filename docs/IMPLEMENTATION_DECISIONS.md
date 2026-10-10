@@ -162,3 +162,17 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 | 리뷰 미지원 요소 정직 표시 | 사진 리뷰 그리드·작성자 표기는 지원하지 않는다. 리뷰는 flat list + 출처 칩(SYNTHETIC=시연/REAL=실사용)과 실제 저장 행 수만 표시하고, 평점은 전체 집계와 일치할 때만 노출한다. 내부 variant id는 사용자 옵션 라벨로 해소한다 | 존재하지 않는 리뷰 메타를 만들지 않는 정직 표시 원칙; PMQA-05 검수에서 내부 id 노출을 해소 요구 |
 | MAJOR/MINOR 분리 | 구조적 결함(CTA 가림·리뷰 가시성·부분선택 구조·비교 캔버스 잘림)은 05 correction 안에서 해소한다. 배송 데모 표기의 줄바꿈·미세 서체/간격 등 표면 polish만 08 Final Visual Polish로 이관한다 | PMQA-05-FIDELITY-FIX-029 — 구조 이슈를 외형 수정으로 미루지 않는다 |
 
+
+## 2026-10-11 · 05 카트 견적 패널·상세 위계 구조 결정 + 사용자 05 Visual 승인 (PMQA-05-FINAL-STRUCTURE-030)
+
+| 항목 | 결정 | 근거 |
+| --- | --- | --- |
+| 카트 견적 패널 구조 | 고정 하단바를 Ref126 대응 접힘/펼침 견적 패널로 재구성 — 헤더(총 N건 결제 예상 금액+총액+chevron) → 구분선 → 상품 금액·배송비 행 → 전체폭 주문 CTA | 사용자 재개 MAJOR — 실제 Toss 카트 견적 화면 대응 |
+| 견적 토글 계약 | 접힘/펼침은 표시 전용 — 카트 쓰기·선택·version 불변. button+aria-expanded/aria-controls(#cart-quote-rows)+키보드 토글. 표시 금액은 서버값(items_total_won/shipping_fee_won/total_won) 그대로, 클라이언트 재견적 없음 | 표시 상태와 Backend 상태 분리 원칙 — e2e가 토글 전후 GET 스냅샷 동일성·비-GET 0건을 검증 |
+| 선택 subtotal 위치 | 선택 합계는 전체 견적과 섞이지 않는 보조 행(.cart-summary-count)으로 토글 위에 둔다 — 견적 행 내부에 넣지 않는다 | 부분 선택 시 주문 CTA disabled 정책과 일관 |
+| 고정 패널 높이 패딩 | .cart-screen padding-bottom을 고정값 대신 ResizeObserver 실측 --bb-h로 유지 — 펼침·부분선택 안내·pending 안내로 패널이 커져도 마지막 카드/CTA 가림 방지 | 390×844·390×600 도달성 검증 |
+| 상세 가격 위계 | 상품명 20px·할인율 15px 보조·판매가 26px 주강조·배송비를 서버값 .price-sub로 분리·info-rows 상단 8px 섹션 밴드·label-value inline 밀도 | Ref04 정보 위계를 반영한 [Project] 적응 — 8px 밴드는 Reference 실측이 아니라 프로젝트 채택값 |
+| 미지원 문구 비추가 | Ref의 최대 보관 수량·보관 기간·멤버십 적립 등 미지원 문구는 추가하지 않는다 | 정직 UI 원칙 — 지원하지 않는 동작을 표시하지 않는다 |
+| 데이터·범위 한계 분리 | 리뷰 사진·작성자·다중 이미지 갤러리는 실데이터 부재로 한계로 유지한다(08 MINOR 아님 — 허위 데이터로 만들지 않는다) | 데이터 계약 부재는 polish 이슈가 아니다 |
+| nav 상태 차이 기록 | 스크롤 깊이에서 구현 nav floating vs Ref05 solid 차이는 관측 사실만 캡션에 기록(수치 단정 없음) — 전환 시점 미세 보정은 08 MINOR | PM 정정 — 미검증 수치 기록 금지 |
+| 05 Visual 승인 | 사용자 05 최종 Visual QA 승인 완료(2026-10-11) — 05 마일스톤 종료는 PM의 최종 커밋·Fast-forward Push HEAD 일치 확인 후 확정. 그 전까지 06 착수 금지 | 사용자 승인 게이트 — PM 전달 |

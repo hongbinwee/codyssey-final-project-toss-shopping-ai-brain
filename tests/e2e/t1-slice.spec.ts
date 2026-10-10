@@ -26,9 +26,13 @@ test("t1 slice: login -> search -> product -> add option -> cart totals", async 
   await page.getByRole("button", { name: "180,000원 담기" }).click();
   await expect(page.getByText("장바구니에 담았어요")).toBeVisible();
 
-  // W03: 카트에서 금액 확인
+  // W03: 카트에서 금액 확인 — 견적 패널의 상품 금액/배송비 행은 서버값 그대로다
   await page.getByRole("button", { name: "장바구니 보기" }).click();
-  await expect(page.locator(".cart-summary-whole")).toContainText("상품 180,000원 + 배송비 3,000원");
+  const quoteRows = page.locator("#cart-quote-rows");
+  await expect(quoteRows).toContainText("상품 금액");
+  await expect(quoteRows).toContainText("180,000원");
+  await expect(quoteRows).toContainText("배송비");
+  await expect(quoteRows).toContainText("3,000원");
   await expect(page.locator(".cart-summary-total b")).toHaveText("183,000원");
 });
 

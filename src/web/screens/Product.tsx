@@ -512,6 +512,12 @@ export function Product({
         </div>
       ) : null}
       {shownWon != null && <div className="price-main">{fmtWon(shownWon)}</div>}
+      {/* Ref04의 가격 보조 행 — 서버 배송료만 표시한다 (단가·적립 등 미지원 정보는 없다). */}
+      <div className="price-sub">
+        {detail.data.shipping_fee_won > 0
+          ? "배송비 " + fmtWon(detail.data.shipping_fee_won)
+          : "무료배송"}
+      </div>
 
       <div className="info-rows">
         <button className="info-row" onClick={goReviews}>
@@ -539,10 +545,6 @@ export function Product({
             <span className="info-v">
               {delivery}
               <small className="signal-demo">데모</small>
-              {" · 배송비 "}
-              {detail.data.shipping_fee_won > 0
-                ? fmtWon(detail.data.shipping_fee_won)
-                : "무료"}
             </span>
           </div>
         )}

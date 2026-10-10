@@ -360,7 +360,10 @@ test("pending 복구 접근점은 첫 화면 고정바에 노출된다 (PMQA-05-
   // SUCCEEDED → snapshot이 아니라 최신 카트 qty·총액으로 재동기화
   await expect(page.locator(".cart-name")).toContainText("코드뷰 모니터 A");
   await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("1");
-  await expect(page.locator(".cart-summary-whole")).toContainText("상품 180,000원 + 배송비 3,000원");
+  await expect(page.locator("#cart-quote-rows")).toContainText("상품 금액");
+  await expect(page.locator("#cart-quote-rows")).toContainText("180,000원");
+  await expect(page.locator("#cart-quote-rows")).toContainText("배송비");
+  await expect(page.locator("#cart-quote-rows")).toContainText("3,000원");
   await expect(page.locator(".cart-summary-total b")).toHaveText("183,000원");
   // pending 해제 — 배너 소멸·주문 가능
   await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toHaveCount(0);
@@ -686,14 +689,18 @@ test("cart stale-read race: held mount GET v1 must not overwrite committed v2", 
   // GET이 hold된 동안 PATCH v2를 완료한다 — 서버 commit + UI 적용
   await page.getByRole("button", { name: /수량 증가/ }).click();
   await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("2");
-  await expect(page.locator(".cart-summary-whole")).toContainText("상품 360,000원 + 배송비 3,000원");
+  await expect(page.locator("#cart-quote-rows")).toContainText("상품 금액");
+  await expect(page.locator("#cart-quote-rows")).toContainText("360,000원");
+  await expect(page.locator("#cart-quote-rows")).toContainText("배송비");
+  await expect(page.locator("#cart-quote-rows")).toContainText("3,000원");
 
   // 늦은 v1 응답을 푼다 — UI가 ×1로 되돌아가면 race 재현
   release();
   await expect.poll(() => delivered, { timeout: 5000 }).toBe(true); // 응답이 실제 전달됐다
   await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("2");
-  await expect(page.locator(".cart-summary-whole")).toContainText("상품 360,000원 + 배송비 3,000원");
-  await expect(page.locator(".cart-summary-whole")).not.toContainText("상품 180,000원 + 배송비 3,000원");
+  await expect(page.locator("#cart-quote-rows")).toContainText("360,000원");
+  await expect(page.locator("#cart-quote-rows")).toContainText("3,000원");
+  await expect(page.locator("#cart-quote-rows")).not.toContainText("180,000원");
   await expect(page.locator(".cart-summary-total b")).toHaveText("363,000원");
 
   // backend와 UI가 같은 v2를 본다 — version은 PATCH 1회 bump
@@ -962,7 +969,28 @@ test("cart: 부분 선택은 whole-cart checkout을 막고 선택삭제는 실�
   await selectA.uncheck();
   await expect(order).toBeDisabled();
   await expect(page.getByText("전체 상품을 선택해야 주문할 수 있어요")).toBeVisible();
-  await expect(page.locator(".cart-summary")).toContainText("전체 2건 기준");
+  await expect(page.locator(".cart-summary")).toContainText("총 2건 결제 예상 금액");
+
+  // 부분선택 안내로 고정 패널이 커진 상태에서도 마지막 카드의 수량 컨트롤에 도달할 수 있다
+  await page.evaluate(async () => {
+    scrollTo(0, document.documentElement.scrollHeight);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  });
+  const partialCover = await page.evaluate(() => {
+    const qtys = document.querySelectorAll(".cart-item .qty-ctrl");
+    const last = qtys[qtys.length - 1];
+    const bar = document.querySelector(".bottom-bar");
+    if (!last || !bar) return { found: false };
+    const r = last.getBoundingClientRect();
+    const target = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return {
+      found: true,
+      aboveBar: r.bottom <= bar.getBoundingClientRect().top,
+      inside: !!target && last.contains(target),
+    };
+  });
+  expect(partialCover, JSON.stringify(partialCover)).toMatchObject({ found: true, aboveBar: true, inside: true });
 
   await page.getByRole("button", { name: "선택 항목 제거" }).click();
   await expect(page.locator(".cart-name")).toHaveCount(1);
@@ -974,7 +1002,122 @@ test("cart: 부분 선택은 whole-cart checkout을 막고 선택삭제는 실�
   await expect(page.getByRole("checkbox", { name: "전체 선택" })).toBeChecked();
   await expect(page.getByRole("button", { name: /1건 · .* 주문하기/ })).toBeEnabled();
   await expect(page.locator(".cart-summary-count")).toContainText("선택 1건 · 선택 상품 합계");
-  await expect(page.locator(".cart-summary-total")).toContainText("전체 장바구니 결제 예상");
+  await expect(page.locator(".cart-summary-total")).toContainText("총 1건 결제 예상 금액");
+  await emptyCart(page);
+});
+
+test("cart: 결제 예상 금액 패널 접기·펼치기 — 서버 금액 그대로, 카트 상태 불변", async ({ page }) => {
+  await loginClean(page);
+  await addFixtureVariant(page, "p-a", "v-a-24");
+  await page.goto("/#/cart");
+
+  const toggle = page.getByRole("button", { name: /결제 예상 금액 상세/ });
+  const rows = page.locator("#cart-quote-rows");
+  // Ref126 기본 노출: 펼침 상태에서 상품 금액·배송비가 서버값 그대로다
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(rows).toBeVisible();
+  await expect(rows).toContainText("상품 금액");
+  await expect(rows).toContainText("180,000원");
+  await expect(rows).toContainText("배송비");
+  await expect(rows).toContainText("3,000원");
+  await expect(page.locator(".cart-summary-total b")).toHaveText("183,000원");
+  await expect(page.locator(".cart-summary")).toContainText("총 1건 결제 예상 금액");
+
+  const readCart = () =>
+    page.context().request.get("/api/cart").then((r) => r.json());
+  const snapshot = (data: {
+    version: number;
+    items: { cart_item_id: string; variant_id: string; quantity: number; unit_price_won: number }[];
+    items_total_won: number;
+    shipping_fee_won: number;
+    total_won: number;
+  }) => ({
+    version: data.version,
+    items: data.items.map((i) => ({
+      cart_item_id: i.cart_item_id,
+      variant_id: i.variant_id,
+      quantity: i.quantity,
+      unit_price_won: i.unit_price_won,
+    })),
+    items_total_won: data.items_total_won,
+    shipping_fee_won: data.shipping_fee_won,
+    total_won: data.total_won,
+  });
+  const before = snapshot((await readCart()).data);
+
+  // toggle 동작 중 카트 쓰기 요청이 없어야 한다 — 표시 상태 전용
+  const cartWrites: string[] = [];
+  const onWrite = (req: { url: () => string; method: () => string }) => {
+    if (req.url().includes("/api/cart") && req.method() !== "GET")
+      cartWrites.push(req.method() + " " + req.url());
+  };
+  page.on("request", onWrite);
+
+  // 접기 — 헤더 총액·주문 CTA는 그대로, 상세 행만 사라진다
+  await toggle.press("Enter");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(rows).toBeHidden();
+  await expect(page.locator(".cart-summary-total b")).toHaveText("183,000원");
+  await expect(page.getByRole("button", { name: /1건 · .* 주문하기/ })).toBeEnabled();
+
+  // 다시 펼치기 — 확장 패널이 반영된 뒤 도달성을 측정한다
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(rows).toBeVisible();
+  page.off("request", onWrite);
+  expect(cartWrites, JSON.stringify(cartWrites)).toEqual([]);
+
+  // render/ResizeObserver/스크롤 반영을 기다린 뒤 확장 패널 아래에서도
+  // 마지막 카드의 수량 컨트롤·패널 토글·주문 CTA가 실제 도달·클릭 가능한지 검증
+  const assertReachable = async (label: string) => {
+    await page.evaluate(async () => {
+      scrollTo(0, document.documentElement.scrollHeight);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const cover = await page.evaluate(() => {
+      const hit = (el: Element | null) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        const target = document.elementFromPoint(
+          r.left + r.width / 2,
+          r.top + r.height / 2,
+        );
+        return {
+          top: r.top,
+          bottom: r.bottom,
+          inside: !!target && el.contains(target),
+        };
+      };
+      const qtys = document.querySelectorAll(".cart-item .qty-ctrl");
+      return {
+        barTop: document.querySelector(".bottom-bar")?.getBoundingClientRect().top ?? null,
+        scrollY,
+        maxScroll: document.documentElement.scrollHeight - innerHeight,
+        qty: hit(qtys[qtys.length - 1] ?? null),
+        toggle: hit(document.querySelector(".cart-quote-toggle")),
+        cta: hit(document.querySelector(".cart-checkout-action .btn")),
+      };
+    });
+    expect(cover, label + " " + JSON.stringify(cover)).toMatchObject({
+      qty: { inside: true },
+      toggle: { inside: true },
+      cta: { inside: true },
+    });
+    return cover;
+  };
+
+  await assertReachable("390x844 expanded");
+
+  // 낮은 viewport에서도 확장 패널 아래 동일한 도달성
+  await page.setViewportSize({ width: 390, height: 600 });
+  await assertReachable("390x600 expanded");
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  // toggle은 표시 상태만 바꾼다 — 서버 카트 version·items·합계·선택 모두 불변
+  const after = snapshot((await readCart()).data);
+  expect(after, JSON.stringify({ before, after })).toEqual(before);
+  await expect(page.getByRole("checkbox", { name: "코드뷰 모니터 A 선택" })).toBeChecked();
   await emptyCart(page);
 });
 
