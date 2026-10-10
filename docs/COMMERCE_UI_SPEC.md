@@ -84,7 +84,7 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 
 - 참고 캡처: 정렬 시트(`search` 계열), 옵션 시트(`product-detail/095`), CS 패널(`cs/057`).
 - 관찰: 딤 55~70% + 상단 라운드 ~20pt + 타이틀 + 항목 리스트(선택 ✓ accent+설명 문구).
-- 구현: 공용 `BottomSheet` 컴포넌트(overlay 클릭/ESC로 닫기, 기존 `.sheet-overlay`/`.sheet` 토큰 재사용·상단 radius만 확대). 정렬 선택에 첫 적용, 이후 옵션 선택 **[후속]**에서 재사용. 취소 시트(`CancelSheet`)는 기존 마크업 유지(다음 주문 단계에서 공용화 여부 결정).
+- 구현: 공용 `BottomSheet` 컴포넌트(overlay 클릭/ESC로 닫기, 기존 `.sheet-overlay`/`.sheet` 토큰 재사용·상단 radius만 확대). 정렬 선택에 첫 적용했고 **옵션 선택도 05에서 같은 컴포넌트로 구현됨**(§7-1, 이전 [후속] 표기 해소). 취소 시트(`CancelSheet`)는 기존 마크업 유지(다음 주문 단계에서 공용화 여부 결정).
 - Backend: 없음.
 
 ## 7-1. 상품 상세 → 옵션 → 장바구니 [05 구현 완료 — 2026-10-10, PMQA-05-IMPLEMENT-001 · 05 최종 Visual 승인 보류]
@@ -93,7 +93,7 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 
 - 상품 상세 진입 시 **구매 가능한 기본 옵션을 자동 선택**한다. 사용자가 옵션을 고르지 않아도 현재 선택 조합의 가격·CTA가 유효해야 한다.
 - **품절 옵션은 기본 선택에서 제외**한다(표시는 하되 선택 불가 — `badge-soldout` + disabled).
-- **구매 가능한 옵션이 하나도 없을 때만 CTA를 disabled**('품절' 표기). 옵션이 여러 개면 재고 있는 조합이 기본 선택된다.
+- CTA 잠금은 두 조건을 구분한다. **구매 가능성**: 전 옵션 품절(`soldOutAll`)이면 구매 불가로 '품절' 표기하고 옵션 CTA·담기 CTA 모두 disabled — 옵션이 여러 개면 재고 있는 조합이 기본 선택된다. **쓰기 잠금**: pending(미확정 cart write) 또는 담기 진행 중에도 버튼은 잠긴다 — 실제 조건은 옵션 CTA `soldOutAll || anyPending`, 담기 CTA `!selected || adding || anyPending || soldOutAll`. 잠금 중에도 장바구니 이동·pending 복구 접근은 막지 않는다.
 - 옵션 변경은 **공용 `BottomSheet`**로 연다(정렬 시트와 같은 컴포넌트 — 관찰된 '옵션 한번에 보기' 시트 패턴).
 - 선택 옵션·수량 변경 시 **가격과 CTA 라벨을 즉시 갱신**한다(관찰된 'n원 결제하기' 금액 포함 CTA 패턴).
 - **[05 추가 계약]** 담기·수량·삭제 등 cart write는 서버 재검증(expected version + idempotency)과 실패 복구를 따른다: 응답 유실/타임아웃 등 **불확정 결과는 localStorage pending intent로 보존**하고 전역 잠금(새 write·옵션·수량·주문 차단) 후 카트 배너의 '결과 확인'으로 `/api/actions?kind=&idempotency_key=ui-<key>` 조회 → SUCCEEDED면 카트 재동기화, 확정 거절(VERSION_CONFLICT·OUT_OF_STOCK)이면 intent 해제 + 최신 상태 재조회 + 사용자 재확인 요청. 자동 재실행은 하지 않는다 [Project — Toss 캡처에 대응 상태 없음].
