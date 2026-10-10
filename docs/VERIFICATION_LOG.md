@@ -493,3 +493,10 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 - 상태 스냅샷: local HEAD `5e3ec6061f60cdf9159a1299f2176b72443b44f4` (origin/main 기준 7 commits ahead, fast-forward 가능) / remote main `689c12667371d910493afd420cf05b651ced103b` (PM hongbinwee 커넥터 조회값).
 - 커넥터 경로는 객체 보존 불가로 배제 — `51bb8be`가 원격에 없어 ref 이동 불가(422), create_commit은 author/committer/date 입력이 없어 SHA가 달라지며, 다른 SHA 재생성을 Push 성공으로 보고하는 것은 금지다.
 - **사용자가 본 Thread에서 직접 승인할 때까지 Push 보류. 04-D 착수는 Push 성공 + PM 독립 원격 검증 이후로 제한(사용자 순서 조건).**
+
+### Push 성공 기록 (2026-10-10, CLOSE-PUSH-003 — 위 '미실행' 기록 Superseded)
+
+- **PM이 04-C 배치 8개 커밋을 기존 로컬 hongbinwee GitCredentialManager 인증 경로로 정상 Push 완료.** 비대화형(계정 선택 명시) fast-forward, Force/Reset/Rebase/커밋 재생성/인증 설정 변경 없음.
+- 원격 검증: hongbinwee GitHub 커넥터로 실제 원격 main = `a51a032cbe30dce95e11e39db58df1453637613f` = local HEAD 완전 일치 확인.
+- 정정: 직전 'Push 미실행' 기록은 '승인 전달 범위의 도구 검토 제약'까지의 이력으로 보존하고, 본 항목이 최신 상태다 — 기존 로컬 인증 경로(hongbinwee GCM)가 실제 지원됨이 확인됐다.
+- 운영 정책 확정: Push·원격 검증 = PM(오케스트레이션) 담당, 구현·테스트·문서·로컬 커밋 = Main SWE. PM은 코드·DB를 수정하지 않는다.
