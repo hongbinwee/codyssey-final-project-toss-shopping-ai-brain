@@ -477,3 +477,11 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 - 구분 기록 유지: eval 미재실행 한계(Frontend·harness 전용 변경 — VERIFY-001 stub dev16·holdout18 인용, Live eval은 키 없어 BLOCKED, 09 게이트 아님)와 최초 비상승 실행의 환경 실패(ECONNREFUSED, 샌드박스 TCP 차단) → 승인 실행 정상(64/64·exit 0)의 실패·복구 이력.
 - 원격 상태: 실제 원격 main = `689c12667371d910493afd420cf05b651ced103b` (PM hongbinwee 커넥터 확인). 로컬은 구현+docs-only 후속 커밋으로 ahead.
 - **이 판정은 사용자 최종 Visual 승인이나 04-C 마일스톤 완료가 아니다.** 사용자 Visual 미승인 / 04-D 미착수 / Push 없음 상태 유지 — 후속 구현은 사용자 승인 후.
+
+## 2026-10-10 · PMQA-04C-CLOSE-001 — 04-C 사용자 최종 승인·완료 + Push
+
+- **사용자 최종 Visual QA 승인 (2026-10-10 KST)** — FIX-002 보정 구현과 Reference/Implementation 비교 자료를 검토한 사용자가 04-C를 최종 승인하고, MINOR 4건의 08 이관·04-C 완료 처리·GitHub Push를 명시 승인했다. 직전 '사용자 Visual 승인 대기' 기록은 이력으로 보존하고 본 항목이 최신 상태다 [Superseded: 승인 대기 → 승인 완료].
+- 판정 연결: 검증 대상 `4719e1b` — 기술 검증 PASS(tsc 0 · build 0 · unit 27/27 · integration 64/64 runner 정상 종료 · e2e 14/14), PM Visual CONDITIONAL PASS(MJ01·MJ02 해결, BLOCKER 0/열린 MAJOR 0).
+- MINOR 4건 → 08 Final Visual Polish 이관 확정: 딜카드 full-bleed vs Ref ~10px 가장자리 · 정사각 에셋 2.5:1 크롭 · 쇼핑백 반투명 원 vs outline · 시즌 배너 높이/여백.
+- **04-C Home Reconstruction = 완료.** 다음 단계는 04-D Navigation Reconstruction — 별도 지시·승인 게이트 유지.
+- Push: 사용자 승인에 따라 미Push 로컬 커밋 + 본 승인 기록 커밋을 `hongbinwee/codyssey_final-mission` main에 반영한다 — 실제 반영 결과와 원격 HEAD 일치는 PM 독립 원격 검증으로 확인한다. Push 경로·제약은 본 문서 후속 기록 또는 PM 보고 참조.
