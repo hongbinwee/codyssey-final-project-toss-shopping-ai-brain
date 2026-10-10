@@ -23,8 +23,10 @@ test("soldout option is disabled on product detail", async ({ page }) => {
   await page.getByPlaceholder("상품 검색").fill("모니터");
   await page.getByPlaceholder("상품 검색").press("Enter");
   await page.getByText("코드뷰 모니터 A").first().click();
-  // v-a-27(27인치)은 stock 0 — 버튼이 비활성이고 품절 배지가 붙는다
-  const soldout = page.locator("button.option-btn", { hasText: "품절" });
+  // v-a-27(27인치)은 stock 0 — BottomSheet 안에서 비활성 + 품절 표시
+  await page.locator(".option-open").click();
+  const sheet = page.getByRole("dialog", { name: "옵션 선택" });
+  const soldout = sheet.locator("button.sort-item", { hasText: "품절" });
   await expect(soldout).toBeVisible();
   await expect(soldout).toBeDisabled();
   await expect(soldout).toContainText("27인치");

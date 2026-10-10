@@ -17,8 +17,8 @@ test("t3: checkout order -> A02 confirm -> cancel REQUESTED on W06", async ({ pa
   await page.getByPlaceholder("상품 검색").fill("모니터");
   await page.getByPlaceholder("상품 검색").press("Enter");
   await page.getByText("코드뷰 모니터 C").first().click();
-  await page.getByRole("button", { name: /27인치.*289,000원/ }).click();
-  await page.getByRole("button", { name: "장바구니 담기" }).click();
+  // 기본 옵션(v-c-27 27인치) 자동 선택 → 금액 포함 CTA로 담기
+  await page.getByRole("button", { name: "289,000원 담기" }).click();
   await page.getByRole("button", { name: "장바구니 보기" }).click();
   await page.getByRole("button", { name: /주문하기/ }).click();
   await page.getByRole("button", { name: "292,000원 결제하기" }).click();

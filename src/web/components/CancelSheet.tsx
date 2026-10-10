@@ -2,7 +2,7 @@
 // 서버의 자격/견적을 조회해 보여주고, 사용자가 사유를 고른 뒤 최종 버튼을 누르면
 // 승인(READY) → 공통 취소 실행 순서로 진행한다. 시트를 여는 것만으로는 아무것도 바뀌지 않는다.
 import { useEffect, useRef, useState } from "react";
-import { api, fmtWon, newActionKey, type ApiResult } from "../api.ts";
+import { api, apiSafe, fmtWon, newActionKey, type ApiResult } from "../api.ts";
 import type {
   CancelEligibilityResult, CancelQuoteResult, CancelRequestResult,
 } from "../../contracts.ts";
@@ -34,7 +34,7 @@ export function CancelSheet({
 
   async function loadEligibility() {
     setElig(null);
-    setElig(await api<CancelEligibilityResult>(
+    setElig(await apiSafe<CancelEligibilityResult>(
       "/api/orders/" + encodeURIComponent(orderId) + "/cancel/eligibility",
     ));
   }
@@ -44,7 +44,7 @@ export function CancelSheet({
     setReason(code);
     setQuote(null);
     setErrMsg(null);
-    setQuote(await api<CancelQuoteResult>(
+    setQuote(await apiSafe<CancelQuoteResult>(
       "/api/orders/" + encodeURIComponent(orderId) + "/cancel/quote?reason_code=" + code,
     ));
   }
@@ -59,7 +59,7 @@ export function CancelSheet({
   // 응답 유실 복구: UI 행동 키로 승인/실행 상태를 찾아 이어서 처리한다.
   async function recoverResult() {
     setBusy(true);
-    const r = await api<{ status: string; operation_id: string; result?: { cancel_request_id?: string }; error_code?: string }>(
+    const r = await apiSafe<{ status: string; operation_id: string; result?: { cancel_request_id?: string }; error_code?: string }>(
       "/api/actions?kind=CANCEL_ORDER&idempotency_key=" + encodeURIComponent(actionKey.current),
     );
     if (!r.ok) { setErrMsg("결과를 확인하지 못했어요. 잠시 후 다시 시도해 주세요."); setBusy(false); return; }

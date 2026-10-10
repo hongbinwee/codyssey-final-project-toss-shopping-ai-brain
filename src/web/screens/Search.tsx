@@ -1,7 +1,7 @@
 // 검색 화면 — 최근 검색어(recents) / 자동완성(suggest) / 결과(results) 3상태.
 // 표시 모드는 입력값과 마지막 제출어 비교로 결정한다. URL의 ?q=는 공유·뒤로가기용.
 import { useEffect, useRef, useState } from "react";
-import { api, type ApiResult } from "../api.ts";
+import { apiSafe, type ApiResult } from "../api.ts";
 import type { SearchResult } from "../../contracts.ts";
 import { ProductCard } from "../components/ProductCard.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
@@ -87,7 +87,7 @@ export function Search({
       return;
     }
     const t = setTimeout(() => {
-      api<SearchResult>("/api/products?query=" + encodeURIComponent(text) + "&limit=5").then(setSugs);
+      apiSafe<SearchResult>("/api/products?query=" + encodeURIComponent(text) + "&limit=5").then(setSugs);
     }, 150);
     return () => clearTimeout(t);
   }, [text, submitted]);
@@ -96,7 +96,7 @@ export function Search({
   useEffect(() => {
     if (!submitted) return;
     setLoading(true);
-    api<SearchResult>(
+    apiSafe<SearchResult>(
       // 카테고리 칩은 상위 그룹(digital/beauty/...)으로, 결과에서 클라이언트 필터한다.
       // 서버 category 파라미터는 단일 값만 받아 monitor가 디지털 그룹에 못 들어가므로 쓰지 않는다.
       // limit=50(서버 최대): 데모 카탈로그(28개) 전체를 한 페이지로 받아야

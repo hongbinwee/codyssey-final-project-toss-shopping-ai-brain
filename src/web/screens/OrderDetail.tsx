@@ -1,7 +1,7 @@
 // W06 주문 상세 — 상품/금액 스냅샷·결제·배송 이력·취소 요청/환불 결과를 한 화면에서 본다.
 // 배송 갱신은 서버 데이터를 다시 조회하는 '새로고침'으로만 — 상태는 시뮬레이터가 바꾼다.
 import { useEffect, useState } from "react";
-import { api, fmtWon, type ApiResult } from "../api.ts";
+import { apiSafe, fmtWon, type ApiResult } from "../api.ts";
 import type { OrderView } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { CancelSheet } from "../components/CancelSheet.tsx";
@@ -36,7 +36,7 @@ export function OrderDetail({
   const [cancelOpen, setCancelOpen] = useState(false);
 
   async function reload() {
-    const r = await api<OrderView>("/api/orders/" + encodeURIComponent(orderId));
+    const r = await apiSafe<OrderView>("/api/orders/" + encodeURIComponent(orderId));
     setRes(r);
     return r;
   }

@@ -17,9 +17,13 @@ test("t1 slice: login -> search -> product -> add option -> cart totals", async 
 
   // W02: 상세 → 옵션 선택 → 담기
   await page.getByText("코드뷰 모니터 A").first().click();
-  await expect(page.getByRole("heading", { name: "옵션 선택" })).toBeVisible();
-  await page.getByRole("button", { name: /24인치.*180,000원/ }).click();
-  await page.getByRole("button", { name: "장바구니 담기" }).click();
+  // 기본 구매 가능 옵션(v-a-24 24인치)이 자동 선택돼 있고, 변경은 BottomSheet.
+  await expect(page.locator(".option-open")).toContainText("24인치");
+  await page.locator(".option-open").click();
+  const sheet = page.getByRole("dialog", { name: "옵션 선택" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: /24인치/ }).click();
+  await page.getByRole("button", { name: "180,000원 담기" }).click();
   await expect(page.getByText("장바구니에 담았어요")).toBeVisible();
 
   // W03: 카트에서 금액 확인

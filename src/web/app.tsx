@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { api } from "./api.ts";
+import { apiSafe } from "./api.ts";
 import type { CartView } from "../contracts.ts";
+import { bindPendingUser } from "./pending.ts";
 import { Shopping } from "./screens/Shopping.tsx";
 import { Search } from "./screens/Search.tsx";
 import { Product } from "./screens/Product.tsx";
@@ -78,7 +79,7 @@ const gotoReplace = (r: Route) => {
   scrollTo(0, 0);
 };
 
-function Login({ onLogin }: { onLogin: (name: string) => void }) {
+function Login({ onLogin }: { onLogin: (id: string, name: string) => void }) {
   const [code, setCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
   async function submit() {
@@ -88,7 +89,7 @@ function Login({ onLogin }: { onLogin: (name: string) => void }) {
       body: JSON.stringify({ code }),
     });
     const j = await r.json();
-    if (j.ok) onLogin(j.user.display_name);
+    if (j.ok) onLogin(j.user.id, j.user.display_name);
     else setErr(j.error?.message ?? "로그인 실패");
   }
   return (
@@ -124,6 +125,7 @@ const BACK_PARENT: Record<string, Route> = {
 
 function App() {
   const [user, setUser] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
   const [route, setRoute] = useState<Route>(parseHash());
   const [agentOpen, setAgentOpen] = useState<AgentBrain | null>(null);
@@ -175,7 +177,10 @@ function App() {
     fetch("/api/session")
       .then((r) => r.json())
       .then((j) => {
-        if (j?.ok && j?.user?.display_name) setUser(j.user.display_name);
+        if (j?.ok && j?.user?.id) {
+          setUser(j.user.display_name);
+          setUserId(j.user.id);
+        }
         setChecked(true);
       })
       .catch(() => setChecked(true));
@@ -192,13 +197,30 @@ function App() {
     return () => removeEventListener("hashchange", onHash);
   }, []);
 
+  // 미확정 쓰기 intent는 세션으로 검증된 user.id로 namespace를 나눈다 —
+  // 계정 전환 시 타인 intent가 보이지도 실행되지도 않는다.
+  useEffect(() => {
+    bindPendingUser(userId);
+  }, [userId]);
+
+  const cartReadSeq = useRef(0);
   const refreshCart = useCallback(() => {
-    api<CartView>("/api/cart").then((r) => r.ok && setCart(r.data));
+    // read 레이스 가드 — 자식이 쓰기 결과를 먼저 적용한 뒤 늦게 도착한 이전
+    // GET이 배지·합계를 과거 상태로 덮지 않는다.
+    const my = ++cartReadSeq.current;
+    apiSafe<CartView>("/api/cart").then(
+      (r) => r.ok && cartReadSeq.current === my && setCart(r.data),
+    );
+  }, []);
+  // 자식 화면이 직접 확정한 최신 CartView 적용 — 진행 중인 read를 무효화한다.
+  const applyCart = useCallback((v: CartView) => {
+    cartReadSeq.current++;
+    setCart(v);
   }, []);
   useEffect(() => { if (user) refreshCart(); }, [user, refreshCart]);
 
   if (!checked) return null;
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user) return <Login onLogin={(id, name) => { setUserId(id); setUser(name); }} />;
 
   const pageContext = {
     screen: route.name,
@@ -305,17 +327,19 @@ function App() {
         )}
         {route.name === "product" && (
           <Product
+            key={route.id}
             productId={route.id}
             onOpenCart={() => goto({ name: "cart" })}
-            onCartChanged={setCart}
+            onCartChanged={applyCart}
           />
         )}
         {route.name === "cart" && (
           <Cart
             cart={cart}
-            onCartLoaded={setCart}
+            onCartLoaded={applyCart}
             onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
             onCheckout={() => goto({ name: "checkout" })}
+            onOpenProduct={(id) => goto({ name: "product", id })}
           />
         )}
         {route.name === "checkout" && (

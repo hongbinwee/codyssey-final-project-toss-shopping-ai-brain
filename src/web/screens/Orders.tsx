@@ -1,6 +1,6 @@
 // W05 내 주문 목록 — 최신순. 행 클릭 시 W06 주문 상세로 이동한다.
 import { useEffect, useState } from "react";
-import { api, fmtWon, type ApiResult } from "../api.ts";
+import { apiSafe, fmtWon, type ApiResult } from "../api.ts";
 import type { OrderListItem } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 
@@ -33,7 +33,7 @@ export function Orders({
   const [res, setRes] = useState<ApiResult<{ orders: OrderListItem[] }> | null>(null);
 
   useEffect(() => {
-    api<{ orders: OrderListItem[] }>("/api/orders").then(setRes);
+    apiSafe<{ orders: OrderListItem[] }>("/api/orders").then(setRes);
   }, []);
 
   if (!res) return <Loading text="주문 내역을 불러오는 중…" />;

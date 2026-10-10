@@ -18,8 +18,8 @@ test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
   await page.getByPlaceholder("상품 검색").fill("모니터");
   await page.getByPlaceholder("상품 검색").press("Enter");
   await page.getByText("코드뷰 모니터 B").first().click();
-  await page.getByRole("button", { name: /24인치.*149,000원/ }).click();
-  await page.getByRole("button", { name: "장바구니 담기" }).click();
+  // 기본 옵션(v-b-24 24인치) 자동 선택 → 금액 포함 CTA로 담기
+  await page.getByRole("button", { name: "149,000원 담기" }).click();
   await page.getByRole("button", { name: "장바구니 보기" }).click();
 
   // W03 -> W04

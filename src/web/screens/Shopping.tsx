@@ -4,7 +4,7 @@
 // 숏컷으로 진입하는 리스팅 뷰. 가격·재고·평점은 API가 정본이고
 // 정가·배송 라벨·섹션 태그는 display-meta의 표시용 메타다.
 import { useEffect, useRef, useState, type ComponentType } from "react";
-import { api, fmtWon, type ApiResult } from "../api.ts";
+import { apiSafe, fmtWon, type ApiResult } from "../api.ts";
 import type { ProductSummary, SearchResult } from "../../contracts.ts";
 import { ProductCard } from "../components/ProductCard.tsx";
 import { Empty, ErrorState } from "../components/CommerceState.tsx";
@@ -537,7 +537,7 @@ export function Shopping({
 
   useEffect(() => {
     setLoading(true);
-    api<SearchResult>("/api/products?limit=50")
+    apiSafe<SearchResult>("/api/products?limit=50")
       .then(setRes)
       .finally(() => setLoading(false));
   }, [tick]);

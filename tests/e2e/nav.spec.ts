@@ -72,10 +72,20 @@ test("혜택 slot lands on 특가 tab while 쇼핑 keeps the global active slot"
     return window.scrollY;
   });
   expect(deep).toBeGreaterThan(120);
-  // 살짝 올려 네비를 복귀시킨 뒤 혜택 탭으로 진입
-  await page.evaluate(() => window.scrollTo(0, window.scrollY - 200));
-  await expect(page.locator(".bottom-nav")).not.toHaveClass(/hidden/);
-  await page.locator(".bottom-nav").getByRole("button", { name: "혜택" }).click();
+  // 스크롤 다운의 숨김이 실제 반영될 때까지 대기한다 — hidden이 아직 적용되지
+  // 않은 상태에서 scroll up하면 'not.hidden' 단언이 원래 false 상태에서 먼저
+  // 통과할 수 있다(첫 nav 테스트와 같은 barrier).
+  const navBar = page.locator(".bottom-nav");
+  await expect(navBar).toHaveClass(/hidden/);
+  await expect(navBar).toBeHidden();
+  const y2 = await page.evaluate(() => {
+    window.scrollTo(0, Math.max(0, window.scrollY - 200));
+    return window.scrollY;
+  });
+  expect(y2).toBeLessThan(deep);
+  await expect(navBar).not.toHaveClass(/hidden/);
+  await expect(navBar).toBeVisible();
+  await navBar.getByRole("button", { name: "혜택" }).click();
   await expect(page.locator(".shop-tab.on")).toHaveText("특가");
   await expect
     .poll(async () => page.evaluate(() => window.scrollY))
@@ -141,8 +151,7 @@ test("direct #/p entry → cart → back → back ends at shop, never exits app"
   try {
     await expect(page.locator(".detail-name")).toHaveText("코드뷰 모니터 A");
 
-    await page.getByRole("button", { name: /24인치.*180,000원/ }).click();
-    await page.getByRole("button", { name: "장바구니 담기" }).click();
+    await page.getByRole("button", { name: "180,000원 담기" }).click();
     await page.getByRole("button", { name: "장바구니 보기" }).click();
     await expect(page).toHaveURL(/#\/cart/);
 

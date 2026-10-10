@@ -1,6 +1,6 @@
 // A01 공통 AI 대화·비교 패널
 import { useState } from "react";
-import { api, fmtWon, newActionKey, type AgentBrain } from "../api.ts";
+import { apiSafe, fmtWon, newActionKey, type AgentBrain } from "../api.ts";
 import type { CompareCard } from "../../contracts.ts";
 
 export interface AgentReply {
@@ -87,7 +87,7 @@ export function AgentPanel({
     setBusy(true);
     const next = [...messages, { role: "user" as const, text }];
     setMessages(next);
-    const r = await api<{
+    const r = await apiSafe<{
       message: string;
       evidence_refs: { products: string[]; variants: string[]; reviews: string[] };
       compare?: CompareCard;

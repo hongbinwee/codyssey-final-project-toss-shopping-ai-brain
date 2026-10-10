@@ -3,7 +3,7 @@
 // 같은 클릭 행동의 재시도는 같은 idempotency key를 쓰고, 견적이 바뀌면 새 키를 쓴다
 // (토큰 해시가 payload라 같은 키+다른 견적은 IDEMPOTENCY_CONFLICT가 된다).
 import { useEffect, useRef, useState } from "react";
-import { api, fmtWon, newActionKey, type ApiResult } from "../api.ts";
+import { api, apiSafe, fmtWon, newActionKey, type ApiResult } from "../api.ts";
 import type { CheckoutQuoteView } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 
@@ -23,7 +23,7 @@ export function Checkout({
   const pendingKey = useRef<string | null>(null);
 
   async function loadQuote() {
-    const r = await api<CheckoutQuoteView>("/api/checkout/quote");
+    const r = await apiSafe<CheckoutQuoteView>("/api/checkout/quote");
     setQuote(r);
     if (r.ok) actionKey.current = newActionKey(); // 새 견적 = 새 행동 키
     return r;
@@ -41,22 +41,27 @@ export function Checkout({
     actionKey.current = key;
     setPhase("processing");
     setNotice(null);
-    const r = await api<{ order_id: string; total_won: number }>(
-      "/api/checkout/confirm",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          quote_token: quote.data.quote_token,
-          idempotency_key: key,
-        }),
-      },
-    );
-    if (r.ok) {
+    let r: ApiResult<{ order_id: string; total_won: number }> | null = null;
+    try {
+      r = await api<{ order_id: string; total_won: number }>(
+        "/api/checkout/confirm",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            quote_token: quote.data.quote_token,
+            idempotency_key: key,
+          }),
+        },
+      );
+    } catch {
+      r = null; // transport/timeout — 서버 커밋 여부 불확정 → 결과 조회 경로
+    }
+    if (r?.ok) {
       onOpenOrder(r.data.order_id); // W04 완료 → W06
       return;
     }
     setPhase("error");
-    if (r.error.code === "OUTCOME_UNKNOWN") {
+    if (!r || r.error.code === "OUTCOME_UNKNOWN") {
       pendingKey.current = key;
       setNotice("주문 결과를 확인하지 못했어요. 결과 확인으로 이어서 확인할 수 있어요.");
       return;
@@ -74,7 +79,7 @@ export function Checkout({
   async function checkPending() {
     const key = pendingKey.current;
     if (!key) return;
-    const r = await api<{ status: string; result?: { order_id?: string } }>(
+    const r = await apiSafe<{ status: string; result?: { order_id?: string } }>(
       "/api/actions?kind=CHECKOUT&idempotency_key=" + encodeURIComponent("ui-" + key),
     );
     if (r.ok && r.data.status === "SUCCEEDED" && r.data.result?.order_id) {

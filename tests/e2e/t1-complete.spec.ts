@@ -17,8 +17,8 @@ test("t1 complete: cart quantity update -> remove -> empty state", async ({
   await page.getByPlaceholder("상품 검색").fill("모니터");
   await page.getByPlaceholder("상품 검색").press("Enter");
   await page.getByText("코드뷰 모니터 A").first().click();
-  await page.getByRole("button", { name: /24인치.*180,000원/ }).click();
-  await page.getByRole("button", { name: "장바구니 담기" }).click();
+  // 기본 옵션(v-a-24 24인치) 자동 선택 → 금액 포함 CTA로 담기
+  await page.getByRole("button", { name: "180,000원 담기" }).click();
   await page.getByRole("button", { name: "장바구니 보기" }).click();
 
   // 수량 +1 -> 2개, 합계 360,000 + 3,000 = 363,000
@@ -53,5 +53,5 @@ test("compare card: tool-derived products, evidence, limitations", async ({
 
   // 카드에서 W02 원문으로 이동
   await card.getByRole("button", { name: "상품 보기" }).first().click();
-  await expect(page.getByRole("heading", { name: "옵션 선택" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "옵션" })).toBeVisible();
 });
