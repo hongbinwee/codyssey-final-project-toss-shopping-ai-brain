@@ -153,3 +153,12 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 | 세션 복원 버그 수정 | GET /api/session은 `{ok,user}` 최상위 반환인데 기존 코드가 `r.data.user`를 참조해 reload 시 TypeError→blank. raw fetch+`j.user.display_name`으로 수정, catch 시 setChecked(true)로 복구 | PM 검수에서 확인된 기존 MAJOR — 04-D 범위 내에서 수정·e2e reload 회귀로 검증 |
 | 신규 캡처 정책 | QA 비교본은 390×844 원본 두 화면이 잘리지 않는 높이의 캔버스/HTML 뷰 사용. 현재 1280×720 합성은 세로 이미지 하단(하단 네비)이 잘려 nav 나란히 비교 증거로 쓰지 않는다 — 04-E에서 보완 | PMQA-04D-CLOSE-002 검수 — iOS status/safe-area와 웹 viewport 차이도 명시 |
 
+## 2026-10-11 · 05 구조 결정 연결 (PMQA-05-FIDELITY-FIX-029 검수 기반)
+
+| 항목 | 결정 | 근거 |
+| --- | --- | --- |
+| 상세 하단 CTA 매핑 | Toss의 4분할 CTA를 그대로 만들지 않고 지원 3 CTA(장바구니 아이콘·옵션 선택·n원 담기)로 매핑한다. 찜 하트·공유 등 미지원 요소는 버튼으로 만들지 않는다 | [Project] 지원하지 않는 동작을 흉내 내지 않는 근거 없는 UI 금지 원칙 |
+| 전체 cart 계약 보존 | can_checkout·checkout은 전체 장바구니 기준을 유지한다. UI 부분선택(항목 checkbox·선택 합계·전체 견적 동시 표시)은 허용하되 비전체 선택 시 주문 CTA를 disabled + 안내로 처리한다 — Backend 부분 주문은 여전히 제외 | 사용자 05 구조 요구 — UI 선택과 Backend 주문 범위를 구분해 혼동과 잘못된 결제를 막는다 |
+| 리뷰 미지원 요소 정직 표시 | 사진 리뷰 그리드·작성자 표기는 지원하지 않는다. 리뷰는 flat list + 출처 칩(SYNTHETIC=시연/REAL=실사용)과 실제 저장 행 수만 표시하고, 평점은 전체 집계와 일치할 때만 노출한다. 내부 variant id는 사용자 옵션 라벨로 해소한다 | 존재하지 않는 리뷰 메타를 만들지 않는 정직 표시 원칙; PMQA-05 검수에서 내부 id 노출을 해소 요구 |
+| MAJOR/MINOR 분리 | 구조적 결함(CTA 가림·리뷰 가시성·부분선택 구조·비교 캔버스 잘림)은 05 correction 안에서 해소한다. 배송 데모 표기의 줄바꿈·미세 서체/간격 등 표면 polish만 08 Final Visual Polish로 이관한다 | PMQA-05-FIDELITY-FIX-029 — 구조 이슈를 외형 수정으로 미루지 않는다 |
+
