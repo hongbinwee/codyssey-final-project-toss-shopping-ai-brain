@@ -795,7 +795,7 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 
 ### e2e 실행 이력 구분 (보존)
 
-- 초기 67-run: FAIL 40·PASS 2·NOTRUN 25 (tmp_e2e_full_06a.log, exit 1 — 전체 스위트 DB 공유 실행 중단 이슈).
+- 초기 67-run: PASS 40·FAIL 2·NOTRUN 25 (tmp_e2e_full_06a.log, exit 1 — 전체 스위트 DB 공유 실행 중단 이슈; 실패 2건은 checkout-t2.spec.ts:12·t4-product-cart.spec.ts:316).
 - 후속 68-run(native exec-b9ab0a43): 실제 FAIL 0 — 초기 중단 이력과 구분해 후속 해소로 기록한다.
 
 ### 기타 기록·현재 게이트 상태
