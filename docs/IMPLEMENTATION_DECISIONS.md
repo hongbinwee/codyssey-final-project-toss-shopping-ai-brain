@@ -274,3 +274,17 @@ commerce_demo_verify 소실 사고(VERIFICATION_LOG PMQA-040-SEED-SAFETY) 이후
 | 비교 라벨 | Ref081은 스크롤 전체 캡처 — 결제 정보 비교는 supplemental 라벨 + 양쪽 동일 영역 crop·범위 명시. Ref080 ETA 존재/impl NOSHIP 차이 정확 표기 | 정확한 상태 대응 |
 | 완료 한계 | 기술 scoped PASS·Visual CONDITIONAL PASS(사용자 승인 대기). 06B 전체 완료 아님 — 신규 69·Integration 미실행, 06C 금지 | PM 판정 |
 | 역할 | 커밋=Main SWE·Push=PM. 샷/백업/tmp_* 자동 stage 금지 | 분업 명확화 |
+
+## 2026-10-12 · PMQA-051-A — base seed 추출 + 격리 DB 준비 오케스트레이션 (실행은 미승인)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 범위 | DB-free 코드 4파일 + 기존 문서 3파일만 — seed.ts base 경로를 신규 scripts/base-seed.ts의 seedBase에 위임, 신규 tests/helpers/isolated-prepare.ts, 신규 단위 1파일(28건). `--demo` 블록 1byte 미변경 | PMQA-051-A 승인 범위 |
+| seedBase 계약 | executor(q) 주입 — seed.ts는 autocommit sql로, isolated-prepare는 트랜잭션 q로 같은 함수를 호출. SQL·params·reseed version=1·cancel DELETE·payment/shipment 의미는 추출 전 원본과 verbatim 동일 | 단일 정본 — autocommit 의미 불변 |
+| read 유지 | seed.ts의 read 헬퍼는 runDemoSeed의 demo-*.json 읽기가 공유 사용 — SEEDS/phaseFiles만 base-seed.ts로 이전 | --demo 불변 제약 |
+| 트랜잭션 경계 | verifyOwnedExec(첫 query·read-only) → pg_advisory_xact_lock(727272) → _migrations CREATE → canonical 3개(디스크 sha256·기존 행 불일치/파일 부재 throw) → seedBase(q,4) 전부 하나의 begin. 실패 시 롤백만 — cleanup·DROP·fallback 없음 | 050-B 소유권 기반 + migrate와 같은 sha 정책·xact lock은 커밋/롤백 시 자동 해제 |
+| SqlClient 타입 | 최소 형태(unsafe·begin·end?)를 deps.connect로 주입 — 기본은 postgres() 래퍼, 단위는 mock. postgres.Sql.unsafe의 제네릭이 SeedExec보다 좁아 호출 경계에서만 캐스팅 | 모듈 top-level connect 0·DB-free 검증 가능 |
+| DATABASE_URL | source DATABASE_URL이 계약과 다르면 connect 전 거부 — buildIsolatedChildEnv와 같은 규칙 | 조용한 덮어쓰기 금지 |
+| 잔여 한계 | 실PG 원자 롤백·격리 launcher·격리 Integration은 여전히 미구현·NOT_RUN — mock 계약 검증은 실DB 롤백 보증이 아니며 실DB 검증은 별도 승인 | 정직 표기 원칙 |
+| 추출 정합성 | HEAD 리터럴 비교는 ON CONFLICT·params를 보장 못 함 → baseline 65161f5 원본 base for-loop의 stub 실행 transcript를 case별 count·sha256으로 test에 inline 고정해 ordered SQL 전체+모든 params 대조(git·외부 golden 비의존, one-off tmp generator만 사용) | PMQA-051-A QA 지적 |
+| 검증 한계 | Golden은 transcript의 count·sha256 비교 — JSON.stringify가 null/undefined·비유한수를 동일 직렬화하므로 현재 fixture/SQL/params 값 검증이며 모든 형변조 검출 보증 아님 → 09 전 후속 | Luna MINOR-Q051 |
