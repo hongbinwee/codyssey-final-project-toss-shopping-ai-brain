@@ -105,9 +105,20 @@ export async function getOrder(
     {
       id: string; variant_id: string; product_name_snapshot: string;
       option_snapshot_json: Record<string, string>; unit_price_won: number;
-      quantity: number; line_total_won: number;
+      quantity: number; line_total_won: number; image: string | null;
+      product_id: string | null;
     }[]
-  >("SELECT * FROM order_items WHERE order_id=$1 ORDER BY id", [o.id]);
+  >(
+    // 현재 카탈로그 이미지를 조회 시점에만 붙인다 — 스냅샷 컬럼은 건드리지 않는다.
+    // image_urls는 jsonb — 첫 URL을 text로 꺼낸다(없으면 null).
+    // variant/product가 삭제돼도 행이 사라지지 않게 LEFT JOIN [PM 지침].
+    "SELECT i.*, p.image_urls ->> 0 AS image, v.product_id AS product_id " +
+      "FROM order_items i " +
+      "LEFT JOIN product_variants v ON v.id = i.variant_id " +
+      "LEFT JOIN products p ON p.id = v.product_id " +
+      "WHERE i.order_id=$1 ORDER BY i.id",
+    [o.id],
+  );
 
   const [pay] = await sql.unsafe<
     {
@@ -146,6 +157,8 @@ export async function getOrder(
         unit_price_won: i.unit_price_won,
         quantity: i.quantity,
         line_total_won: i.line_total_won,
+        image: i.image ?? null,
+        product_id: i.product_id ?? null,
       })),
       items_total_won: o.items_total_won,
       shipping_fee_won: o.shipping_fee_won,

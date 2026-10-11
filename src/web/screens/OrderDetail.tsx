@@ -5,6 +5,7 @@ import { apiSafe, fmtWon, type ApiResult } from "../api.ts";
 import type { OrderView } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { CancelSheet } from "../components/CancelSheet.tsx";
+import { productImg } from "../display-meta.ts";
 
 const SHIP_LABEL: Record<string, string> = {
   PREPARING: "배송 준비 중",
@@ -76,7 +77,16 @@ export function OrderDetail({
       <ul className="cart-list">
         {o.items.map((i) => (
           <li key={i.order_item_id} className="cart-item">
-            <div className="cart-thumb">{i.product_name.slice(0, 1)}</div>
+            <div className="cart-thumb">
+              {/* 조회 시점 카탈로그 이미지 — 이름/옵션/수량/가격은 스냅샷만 [PM 지침] */}
+              <img
+                src={productImg({ product_id: i.product_id ?? i.variant_id, image: i.image })}
+                alt=""
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            </div>
             <div className="cart-info">
               <div>{i.product_name}</div>
               <div className="muted">

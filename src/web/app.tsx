@@ -8,6 +8,7 @@ import { Search } from "./screens/Search.tsx";
 import { Product } from "./screens/Product.tsx";
 import { Cart } from "./screens/Cart.tsx";
 import { Checkout } from "./screens/Checkout.tsx";
+import { OrderComplete } from "./screens/OrderComplete.tsx";
 import { Orders } from "./screens/Orders.tsx";
 import { OrderDetail } from "./screens/OrderDetail.tsx";
 import { AgentPanel, type AgentReply } from "./components/AgentPanel.tsx";
@@ -21,7 +22,8 @@ type Route =
   | { name: "cart" }
   | { name: "checkout" }
   | { name: "orders" }
-  | { name: "order"; id: string };
+  | { name: "order"; id: string }
+  | { name: "orderComplete"; id: string };
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#/, "");
@@ -32,6 +34,9 @@ function parseHash(): Route {
   if (path === "/cart") return { name: "cart" };
   if (path === "/checkout") return { name: "checkout" };
   if (path === "/orders") return { name: "orders" };
+  // '/orders/:id/complete'는 '/orders/' 접두 매칭보다 먼저 파싱한다.
+  if (path.startsWith("/orders/") && path.endsWith("/complete"))
+    return { name: "orderComplete", id: decodeURIComponent(path.slice(8, -9)) };
   if (path.startsWith("/orders/")) return { name: "order", id: decodeURIComponent(path.slice(8)) };
   return { name: "shop", category: params.get("cat") ?? "", sub: params.get("sub") ?? "" };
 }
@@ -56,6 +61,7 @@ const toHash = (r: Route) =>
   : r.name === "cart" ? "#/cart"
   : r.name === "checkout" ? "#/checkout"
   : r.name === "orders" ? "#/orders"
+  : r.name === "orderComplete" ? "#/orders/" + encodeURIComponent(r.id) + "/complete"
   : r.name === "order" ? "#/orders/" + encodeURIComponent(r.id)
   : "#/" + (r.category
       ? "?cat=" + encodeURIComponent(r.category) + (r.sub ? "&sub=" + encodeURIComponent(r.sub) : "")
@@ -112,7 +118,7 @@ function Login({ onLogin }: { onLogin: (id: string, name: string) => void }) {
 // 자체 고정 CTA(.bottom-bar)가 있어 겹치지 않게 한다.
 const NAV_ROUTES = new Set(["shop"]);
 // 뒤로가기 바를 붙이는 푸시 화면
-const BACK_ROUTES = new Set(["cart", "checkout", "orders", "order"]);
+const BACK_ROUTES = new Set(["cart", "checkout", "orders", "order", "orderComplete"]);
 
 // 내부 이동 이력이 없을 때 뒤로가기 fallback 목적지 [Project]
 const BACK_PARENT: Record<string, Route> = {
@@ -121,6 +127,7 @@ const BACK_PARENT: Record<string, Route> = {
   checkout: { name: "cart" },
   orders: { name: "shop", category: "", sub: "" },
   order: { name: "orders" },
+  orderComplete: { name: "shop", category: "", sub: "" },
 };
 
 function App() {
@@ -347,8 +354,21 @@ function App() {
         )}
         {route.name === "checkout" && (
           <Checkout
-            onOpenOrder={(id) => goto({ name: "order", id })}
+            onOpenComplete={(id) => {
+              // 결제 확정으로 서버 카트가 비워졌다 — 성공·pending 복구·재시도가
+              // 공유하는 완료 진입점에서 읽기 갱신(seq 가드)해 홈 복귀 시
+              // 배지가 결제 전 수량으로 남지 않게 한다.
+              refreshCart();
+              goto({ name: "orderComplete", id });
+            }}
             onOpenCart={() => goto({ name: "cart" })}
+          />
+        )}
+        {route.name === "orderComplete" && (
+          <OrderComplete
+            orderId={route.id}
+            onOpenOrder={(id) => goto({ name: "order", id })}
+            onOpenHome={() => goto({ name: "shop", category: "", sub: "" })}
           />
         )}
         {route.name === "orders" && (

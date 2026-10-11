@@ -67,7 +67,23 @@ async function interceptWrite(
       // 실서버 왕복 — 서버가 요청을 처리(commit)했다는 것을 확인한다.
       // 거절/오류 응답이면 시나리오가 아니므로 명시적으로 실패시킨다.
       const res = await route.fetch();
-      if (!res.ok()) throw new Error("interceptWrite: 서버 응답 " + res.status());
+      if (!res.ok()) {
+        // PMQA-06A-VERIFY-FIX-035 — 409 재현 시 원인 회수용 최소 진단:
+        // 보낸 payload(expected_*_version 등) + 실제 error JSON + 지금 서버 카트 상태.
+        let info = "";
+        try { info += " req=" + JSON.stringify(route.request().postDataJSON()); }
+        catch { info += " req=<none>"; }
+        try { info += " res=" + (await res.text()).slice(0, 400); }
+        catch { /* 읽기 불가 */ }
+        try {
+          const c = await page.context().request.get("/api/cart");
+          const cj = await c.json();
+          info += " cart.version=" + cj.data?.version +
+            " items=" + ((cj.data?.items ?? []) as { variant_id: string; quantity: number }[])
+              .map((i) => i.variant_id + "x" + i.quantity).join(",");
+        } catch { /* best-effort */ }
+        throw new Error("interceptWrite: 서버 응답 " + res.status() + info);
+      }
       if (finish === "abort") await route.abort();
       else await route.fulfill({ status: finish.status, json: finish.json });
       resolve();

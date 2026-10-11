@@ -12,7 +12,7 @@ import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { PRODUCT_META, productImg } from "../display-meta.ts";
 import { IcChevronDown, IcClose } from "../icons.tsx";
 import {
-  listPending, putPending, removePending, lookupAction,
+  listCartPending, putPending, removePending, lookupAction,
   type PendingWrite,
 } from "../pending.ts";
 
@@ -37,7 +37,7 @@ export function Cart({
   const [loading, setLoading] = useState(!cart);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pendings, setPendings] = useState<PendingWrite[]>(() => listPending());
+  const [pendings, setPendings] = useState<PendingWrite[]>(() => listCartPending());
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(cart?.items.map((i) => i.cart_item_id) ?? []),
   );
@@ -66,7 +66,7 @@ export function Cart({
   });
 
   useEffect(() => {
-    const on = () => setPendings(listPending());
+    const on = () => setPendings(listCartPending());
     addEventListener("pending-writes", on);
     return () => removeEventListener("pending-writes", on);
   }, []);

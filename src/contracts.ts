@@ -163,6 +163,12 @@ export interface OrderItemView {
   unit_price_won: number;
   quantity: number;
   line_total_won: number;
+  // 현재 카탈로그 이미지 — 구매 시점 스냅샷이 아니라 조회 시점 표시용이다.
+  // 이름/옵션/수량/가격은 저장 스냅샷만 사용하고, 이미지는 없으면 null.
+  image: string | null;
+  // 이미지 fallback·상품 링크에 쓰는 현재 variant의 product id.
+  // variant가 삭제됐으면 null — 스냅샷 필드가 아니라 조회 시점 참조다.
+  product_id: string | null;
 }
 
 export interface PaymentView {

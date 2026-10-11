@@ -28,7 +28,7 @@ import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
 import { PRODUCT_META, SPEC_LABEL, productImg } from "../display-meta.ts";
 import {
-  listPending, putPending, removePending, lookupAction,
+  listCartPending, putPending, removePending, lookupAction,
   type PendingWrite,
 } from "../pending.ts";
 import { IcBack, IcCart, IcChevronRight, IcSearch, IcStar } from "../icons.tsx";
@@ -67,7 +67,7 @@ export function Product({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [addedOk, setAddedOk] = useState(false);
   const [moreLoading, setMoreLoading] = useState(false);
-  const [pendings, setPendings] = useState<PendingWrite[]>(() => listPending());
+  const [pendings, setPendings] = useState<PendingWrite[]>(() => listCartPending());
   const [imgIdx, setImgIdx] = useState(0);
   const seq = useRef(0);
   const heroRef = useRef<HTMLDivElement | null>(null);
@@ -77,7 +77,7 @@ export function Product({
 
   // pending 저장소 변경을 구독 — 같은 actor의 미확정 cart write를 전역 잠금에 쓴다.
   useEffect(() => {
-    const on = () => setPendings(listPending());
+    const on = () => setPendings(listCartPending());
     addEventListener("pending-writes", on);
     return () => removeEventListener("pending-writes", on);
   }, []);

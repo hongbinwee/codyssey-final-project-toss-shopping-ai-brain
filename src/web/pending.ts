@@ -13,7 +13,8 @@
 
 export interface PendingWrite {
   uiKey: string; // 클라이언트 idempotency key (서버 조회 시 'ui-' 접두)
-  kind: "ADD_CART" | "UPDATE_CART" | "REMOVE_CART";
+  // CHECKOUT은 견적 확정 intent다 — 카트 쓰기가 아니므로 카트 소비자에게 노출하지 않는다.
+  kind: "ADD_CART" | "UPDATE_CART" | "REMOVE_CART" | "CHECKOUT";
   path: string;
   method: "POST" | "PATCH" | "DELETE";
   payload: Record<string, unknown>;
@@ -21,11 +22,17 @@ export interface PendingWrite {
   at: number;
 }
 
+const CART_KINDS = new Set<PendingWrite["kind"]>([
+  "ADD_CART",
+  "UPDATE_CART",
+  "REMOVE_CART",
+]);
+
 const LS_PREFIX = "pending-writes-v1:";
 const LS_LEGACY = "pending-writes-v1"; // 사용자 미구분 구버전 키 — 읽지 않고 정리만.
 const MAX = 10;
 
-const KINDS = new Set<string>(["ADD_CART", "UPDATE_CART", "REMOVE_CART"]);
+const KINDS = new Set<string>(["ADD_CART", "UPDATE_CART", "REMOVE_CART", "CHECKOUT"]);
 const METHODS = new Set<string>(["POST", "PATCH", "DELETE"]);
 
 const valid = (x: unknown): x is PendingWrite => {
@@ -101,6 +108,13 @@ function writeAll(list: PendingWrite[]) {
 
 // scope 미바인딩(세션 확인 전)에는 노출하지 않는다.
 export const listPending = (): PendingWrite[] => (scope ? readAll() : []);
+// 카트 화면·상품 화면은 카트 쓰기만 본다 — CHECKOUT intent를 카트 잠금으로
+// 오인하거나 '다시 시도'로 카트 API에 재전송하는 사고를 kind 격리로 막는다 [PM 지침].
+export const listCartPending = (): PendingWrite[] =>
+  listPending().filter((p) => CART_KINDS.has(p.kind));
+// 같은 kind만 골라 보는 접근점 — Checkout 화면은 "CHECKOUT"만.
+export const listPendingByKind = (kind: PendingWrite["kind"]): PendingWrite[] =>
+  listPending().filter((p) => p.kind === kind);
 export const getPending = (uiKey: string) =>
   listPending().find((p) => p.uiKey === uiKey) ?? null;
 

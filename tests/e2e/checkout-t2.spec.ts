@@ -1,12 +1,26 @@
 // Phase 3 E2E: 장바구니 → 주문서 → 모의 결제 → 주문 상세(PREPARING) → CS 설명.
 // 병렬 실행에서 상태가 섞이지 않도록 이 스펙은 전용 사용자 u-c(e2e-c)를 쓴다.
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-async function login(page: import("@playwright/test").Page) {
+async function login(page: Page) {
   await page.goto("/");
   await page.getByPlaceholder("접근 코드").fill("e2e-c");
   await page.getByRole("button", { name: "시작하기" }).click();
   await expect(page.getByPlaceholder("상품 검색")).toBeVisible();
+}
+
+// 첫 테스트가 결제로 확정한 주문 id — 목록/CS 검증을 같은 주문으로 한정한다.
+// 이름이 같은 다른 주문(06a 등 이전 실행 잔여)과 섞이지 않게 하기 위함이다.
+let createdOrderId = "";
+
+// 단독 실행 대비 — 같은 id가 없으면 배송 준비 중인 최신 주문 id를 고른다.
+async function preparingOrderId(page: Page) {
+  const j = await (await page.context().request.get("/api/orders")).json();
+  const o = (
+    j.data.orders as { id: string; shipping_status?: string | null }[]
+  ).find((x) => x.shipping_status === "PREPARING");
+  if (!o) throw new Error("no PREPARING order for e2e-c");
+  return o.id;
 }
 
 test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
@@ -30,15 +44,25 @@ test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
 
   await page.getByRole("button", { name: "152,000원 결제하기" }).click();
 
-  // W04 완료 -> W06 주문 상세. 병렬 실행 시 서버 응답이 느려질 수 있어 넉넉하게 기다린다.
+  // W04 -> W04-C 결제 완료 (Ref077) -> 링크로 W06 주문 상세 진입.
+  await expect(page.getByRole("heading", { name: "결제했어요" })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/152,000원 · 모의 결제/)).toBeVisible();
+  await page.getByRole("button", { name: "주문 상세 내역 보기" }).click();
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible({ timeout: 15000 });
+  // 결제로 확정된 정확한 주문 id를 route에서 회수한다.
+  createdOrderId = decodeURIComponent(
+    page.url().match(/#\/orders\/([^/]+)/)![1],
+  );
   await expect(page.getByText("모의 결제 152,000원")).toBeVisible();
   await expect(page.getByText("배송 준비 중").first()).toBeVisible();
 
-  // W05 목록에서도 같은 주문이 보인다
+  // W05 목록 — 같은 id 행 안에서 상품·총액·배송 badge를 함께 검증한다.
   await page.getByRole("button", { name: "목록" }).click();
-  await expect(page.getByText("코드뷰 모니터 B")).toBeVisible();
-  await expect(page.locator(".badge", { hasText: "배송 준비 중" })).toBeVisible();
+  const row = page.locator(".order-row", { hasText: createdOrderId });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("코드뷰 모니터 B");
+  await expect(row).toContainText("152,000원");
+  await expect(row.locator(".badge", { hasText: "배송 준비 중" })).toBeVisible();
 });
 
 test("cs panel: created order -> shipping status explanation (stub)", async ({
@@ -46,8 +70,9 @@ test("cs panel: created order -> shipping status explanation (stub)", async ({
 }) => {
   await login(page);
   await page.getByRole("button", { name: "내 쇼핑" }).click();
-  // 이전 테스트가 만든 주문을 연다
-  await page.getByText("코드뷰 모니터 B").first().click();
+  // 이전 테스트가 만든 같은 id의 주문을 연다 — 같은 상품명의 다른 주문과 섞이지 않는다.
+  const oid = createdOrderId || (await preparingOrderId(page));
+  await page.locator(".order-row", { hasText: oid }).click();
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
 
   await page.getByRole("button", { name: "AI에게 이 주문 물어보기" }).click();

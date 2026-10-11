@@ -18,7 +18,8 @@ let failWrites = false;
 };
 
 const {
-  bindPendingUser, listPending, putPending, removePending,
+  bindPendingUser, listPending, listCartPending, listPendingByKind,
+  putPending, removePending,
   // storage stub을 심은 뒤 import해야 module 평가 시 참조가 맞는다.
 } = await import("../../src/web/pending.ts");
 
@@ -29,6 +30,16 @@ const intent = (uiKey: string, product = "p-d-e1") => ({
   method: "POST" as const,
   payload: { product_id: product, idempotency_key: uiKey },
   label: "테스트 상품",
+  at: 1,
+});
+
+const checkoutIntent = (uiKey: string) => ({
+  uiKey,
+  kind: "CHECKOUT" as const,
+  path: "/api/checkout/confirm",
+  method: "POST" as const,
+  payload: { quote_token: "t", idempotency_key: uiKey },
+  label: "모의 결제",
   at: 1,
 });
 
@@ -95,5 +106,42 @@ describe("pending writes — storage fallback", () => {
       JSON.stringify([intent("k1"), { uiKey: 1 }, null, { kind: "HACK" }]),
     );
     assert.deepEqual(listPending().map((p) => p.uiKey), ["k1"]);
+  });
+});
+
+describe("pending writes — kind 격리", () => {
+  test("CHECKOUT intent는 cart 소비자에게 노출되지 않는다", () => {
+    bindPendingUser("u-a");
+    putPending(checkoutIntent("k-co"));
+    assert.equal(listCartPending().length, 0, "결제 intent가 카트 잠금에 섞이면 안 된다");
+    assert.deepEqual(
+      listPendingByKind("CHECKOUT").map((p) => p.uiKey),
+      ["k-co"],
+    );
+    // 전체 목록에는 둘 다 보인다 — 소비자별 필터만 다르다.
+    putPending(intent("k-cart"));
+    assert.equal(listPending().length, 2);
+    assert.deepEqual(listCartPending().map((p) => p.uiKey), ["k-cart"]);
+    assert.deepEqual(listPendingByKind("CHECKOUT").map((p) => p.uiKey), ["k-co"]);
+  });
+
+  test("removePending은 kind와 무관하게 uiKey로 해제된다", () => {
+    bindPendingUser("u-a");
+    putPending(checkoutIntent("k-co"));
+    removePending("k-co");
+    assert.equal(listPendingByKind("CHECKOUT").length, 0);
+    assert.equal(listPending().length, 0);
+  });
+
+  test("CHECKOUT intent도 사용자 scope로 격리된다", () => {
+    bindPendingUser("u-a");
+    putPending(checkoutIntent("k-co-a"));
+    bindPendingUser("u-b");
+    assert.equal(listPendingByKind("CHECKOUT").length, 0);
+    bindPendingUser("u-a");
+    assert.deepEqual(
+      listPendingByKind("CHECKOUT").map((p) => p.uiKey),
+      ["k-co-a"],
+    );
   });
 });

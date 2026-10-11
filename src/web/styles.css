@@ -862,7 +862,7 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .select-delete { padding: 7px 10px; border-radius: 9px; background: var(--field); color: var(--text-2); font-size: 12px; }
 .select-delete:disabled { opacity: 0.45; cursor: not-allowed; }
 .cart-list { gap: 10px; }
-.cart-item {
+.cart-screen .cart-item {
   display: block; padding: 12px; background: var(--card);
   border: 1px solid var(--line); border-radius: var(--radius);
 }
@@ -879,7 +879,7 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 }
 .cart-remove:disabled { opacity: 0.4; cursor: not-allowed; }
 .cart-item-body { display: flex; align-items: flex-start; gap: 12px; margin-top: 10px; margin-left: 29px; }
-.cart-thumb { width: 82px; height: 82px; border-radius: 10px; }
+.cart-screen .cart-thumb { width: 82px; height: 82px; border-radius: 10px; }
 .cart-info { flex: 1; min-width: 0; }
 .cart-price-line { display: flex; align-items: baseline; gap: 5px; line-height: 1.25; }
 .cart-price-line b { font-size: 18px; font-weight: 750; }
@@ -984,6 +984,31 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
   border-radius: var(--radius); padding: 14px 16px; margin-top: 14px;
 }
 .checkout-block .section-title { margin-top: 0; }
+
+/* 06A 주문서 — 고정 하단바 실측 높이(--bb-h)만큼 본문 하단 여백 (cart 패턴 재사용) */
+.checkout-screen { padding-bottom: calc(var(--bb-h, 96px) + 14px); }
+.checkout-screen .cart-quote-toggle { width: 100%; }
+/* 주문 금액 행 — Ref051처럼 상품 카드 안에 연결된 접힘/펼침 영역 */
+.checkout-quote-block { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
+/* Ref051/054: 하단 주요 CTA는 전체폭 'N원 결제하기' — 총액 상세는 본문에 둔다 */
+.checkout-paybar { display: block; }
+.checkout-paybar .btn { width: 100%; min-height: 52px; font-size: 16px; }
+
+/* 06A 결제 완료 — Ref077: 중앙 체크 + 상품/배송지 블록 + 홈 CTA + 상세 링크 */
+.oc-screen { display: flex; flex-direction: column; min-height: calc(100dvh - 60px); }
+.oc-cta { margin-top: auto; padding-top: 18px; padding-bottom: 6px; display: flex; flex-direction: column; }
+.oc-cta .oc-home { margin-top: 0; }
+.oc-cta .oc-detail { align-self: center; }
+.oc-head { text-align: center; padding: 26px 0 4px; }
+.oc-check {
+  display: inline-grid; place-items: center;
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+}
+.oc-title { font-size: 21px; font-weight: 800; margin: 12px 0 4px; }
+.oc-note { margin: 14px 2px 0; }
+.oc-home { margin-top: 16px; min-height: 50px; }
+.oc-detail { margin: 12px auto 0; }
 .order-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .order-row {
   width: 100%; display: flex; align-items: center; gap: 12px;

@@ -23,6 +23,9 @@ test("t3: checkout order -> A02 confirm -> cancel REQUESTED on W06", async ({ pa
   await page.getByRole("button", { name: /주문하기/ }).click();
   await page.getByRole("button", { name: "292,000원 결제하기" }).click();
   // 병렬 실행 시 서버 응답이 느려질 수 있어 넉넉하게 기다린다
+  // W04-C 결제 완료를 거쳐 W06 주문 상세로 진입한다.
+  await expect(page.getByRole("heading", { name: "결제했어요" })).toBeVisible({ timeout: 15000 });
+  await page.getByRole("button", { name: "주문 상세 내역 보기" }).click();
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible({ timeout: 15000 });
 
   // 확인 없는 상태에서는 실행 버튼이 열리지 않는다 — 시트를 먼저 연다
