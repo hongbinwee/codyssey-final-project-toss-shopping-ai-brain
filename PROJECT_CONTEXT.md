@@ -66,8 +66,11 @@
    - 미세 1~2px·animation 차이는 08에서 보정하되, IA·section order·
      content density·navigation 구조가 Reference와 크게 다르면 04 미완료.
 
-05 Product Detail / Review / Option / Cart
+05 Product Detail / Review / Option / Cart   ✅ 완료 (2026-10-11, PMQA-05-CLOSE-PUSH-033 —
+                                       사용자 최종 Visual 승인 + PM 단건 Push·원격 일치 확인)
 06 Checkout / Payment / Order / Shipment / Cancel
+                                       🟡 착수 — 06-A Checkout/모의결제/완료 (PMQA-06A-CHECKOUT-034)
+                                       · B 주문목록/주문상세/배송 · C 취소단계/환불은 순차
 07 Full Buyer Journey QA
 08 Frontend Final Visual Polish
    (전체 화면 연결 후 필요하면 더 강한 모델로 typography/spacing/
