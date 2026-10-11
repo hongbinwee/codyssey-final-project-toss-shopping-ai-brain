@@ -69,10 +69,11 @@
 05 Product Detail / Review / Option / Cart   ✅ 완료 (2026-10-11, PMQA-05-CLOSE-PUSH-033 —
                                        사용자 최종 Visual 승인 + PM 단건 Push·원격 일치 확인)
 06 Checkout / Payment / Order / Shipment / Cancel
-                                       🟡 진행 중 — 06-A Checkout/모의결제/결제완료 구현 완료·표준 E2E 69/69 PASS·승인 DB 정리 완료
-(커밋 7be89d3, PMQA-06A-034/035 + CAPTURE-037 + 040 보정 + PMQA-047 B1/B2/B3) — **사용자 06A 최종 Visual QA 승인(PMQA-041) 유지**
-                                       PM 독립 판정 06A 로컬 기술 QA PASS(현재 승인 범위) — 이전 "36/1/32 FAIL"은 PMQA-047로 Superseded된 이력 · commit&Push 대기 · 최종커밋 독립검수·PM FF Push 전 06B 금지
-                                       · B 주문목록/주문상세/배송 · C 취소단계/환불은 순차
+                                       🟡 진행 중 — 06-A ✅ 완료 (PMQA-047-D 커밋 ca35a43 → PM 단건 Push·원격 일치 확인 → PMQA-047-E PM 최종 확정)
+(커밋 ca35a43, PMQA-06A-034/035 + CAPTURE-037 + 040 보정 + PMQA-047 B1/B2/B3/D/E) — **사용자 06A 최종 Visual QA 승인(PMQA-041) 유지**
+                                       PM 독립 판정 06A 로컬 기술 QA PASS → PM Push 검증 후 06A 전체 완료 확정. 이전 "36/1/32 FAIL"은 PMQA-047로 Superseded된 이력
+                                       · 06-B 주문목록/주문상세/배송 — read-only 착수 분석 중 · 06-C 취소단계/환불은 순차
+                                       · 미검증 유지: Integration NOT_RUN·실DB rollback 오류 주입·09용 non-portable infra
 07 Full Buyer Journey QA
 08 Frontend Final Visual Polish
    (전체 화면 연결 후 필요하면 더 강한 모델로 typography/spacing/

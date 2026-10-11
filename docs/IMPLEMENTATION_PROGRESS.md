@@ -2,6 +2,14 @@
 
 > 표기 규칙: Phase 0~5의 '완료'는 **로컬 구현 + 로컬 검증**(unit·integration·e2e·stub eval·holdout·Docker 빌드) 기준이다. 실제 LLM live eval·외부 배포·실사용자 테스트는 미완료이며 프로젝트 로드맵 12~13에서 수행한다(PROJECT_CONTEXT.md §현재 프로젝트 방향).
 
+## 06A 종료 — PM 단건 Push 검증 + 최종 완료 확정 (PMQA-047-D/E, 2026-10-12)
+
+- **커밋(SWE)**: ca35a438d6f3a9ab4bbf5c303eeacde0d6877fed "fix(06A): align checkout hierarchy and guard approved test cleanup", parent 289dcc48. 승인 후보 23파일(+4262/−167)만 explicit stage, git diff --cached --check exit 0, staged 목록에 tmp_*/shots/dumps/test-results/reference 영상 없음 확인. 커밋 문서에 정정 2건 포함: 't2 정확 ID 캡처'→'t2 E2E(동일 orderId·상품·금액·배송 상태 단정)', '미감사 상태'→'읽기 감사済·삭제 미승인'.
+- **Push(PM 실행·인용)**: 정상 require_escalated git push(hongbinwee GCM) exit 0 — 원격 289dcc48cb2a3178fbced4e58d0014710cfb73d3→ca35a438d6f3a9ab4bbf5c303eeacde0d6877fed FF 1커밋, 2026-10-11 15:08:26 UTC(10-12 00:08 KST). PM의 fresh GitHub connector fetch_commit(main) = full ca35a438… = local HEAD = origin/main, ahead/behind 0/0, tracked clean.
+- **PM 최종 판정(인용)**: 전체 23파일·18개 코드 blob 검수본 일치·69 PASS·unit 104·check/build 046 동일 소스·13+57 cleanup·보호77/보존36 지문·dev commerce 불변·Visual 041 기존 승인 유지 → **06A 전체 완료 확정**. 미검증 유지: Integration NOT_RUN·실DB rollback 오류 주입 미검증·09 Freeze 전 해결 필수 non-portable infra(local OID 16516+로컬 gitignored 043 dump 의존·신규 산출물 cleanup 미승인으로 자동 반복 불가).
+- 아래 047 섹션의 'commit&Push 대기·06B 미착수' 표현은 본 항목으로 Superseded. 신규 12주문·2취소·116 action은 여전히 **읽기 감사済·삭제 미승인**.
+- **06B 착수**: read-only 분석 시작 — 주문 목록/상세·배송 정보, Ref orders 079/080/081/084/090/091·SCREEN_INVENTORY V2-28~41 실제 대조. 코드 수정·DB write 0. PM의 code 범위 승인·실행 조건 정의 후 구현.
+
 ## 최신 06A QA — PMQA-047 승인 한정 정리 + 표준 E2E 69 (2026-10-11)
 
 - **B1 preflight**(read-only RR txn): 승인 043 dump SHA `8ca19650…0b57` 일치, live `commerce_test` OID 16516의 보호77/보존36/삭제70 지문이 승인 baseline과 정확히 일치(`allMatch:true`), plan=remediate, 승인 13주문 전부 CONFIRMED·missing 0, sessions 0, dev `commerce` 13테이블 fp 기준선 확보, demo_verify 부재.
@@ -9,7 +17,7 @@
 - **B3 표준 E2E**: `run-a120fc0f` 배타 `--output` 경로. `--list` Total 69 확인 → **69 passed(1.3m)·0 fail·0 not-run**. 경로 이력: npx.cmd spawn 실패(DB 미접촉)→cli.js 직접 호출, wrapper 후감사 SQL 42703은 E2E 실패가 아니라 감사 결함 → 정정 SELECT-only 감사 `run-4a1d5ed7` exit 0.
 - 후감사: 신규 주문12·결제12·배송12·취소2(REQUESTED)·action+116 — 전부 승인 E2E 산출물로 **읽기 감사済·삭제 미승인** 보존. 강화 감사 `run-8a3b977d` exit 0: 필드별 정확 diff는 전 4개 카트(u-a/u-b/u-c/u-d)의 `updated_at`뿐(FP 정규화 제외 필드 16건은 구조적 차이로 별도 분류), 금액 원장(items 합계·shipping·total·SIMULATED PAID=paid)과 재고 원장(seed−Σqty=현재, 전 6 variant) 전부 일치·orphans 0·음수 0. dev commerce 13 fp B1 동일·demo_verify 부재·migrations 불변.
 - 이전 `36 pass/1 fail/32 not-run`은 이력 보존. t4 실패 원인 확정: v-b-24 stock 0 → v-b-27 기본 선택, fixture 복원(8) 후 원 selector 그대로 PASS.
-- **현재 상태: PM 독립 판정 06A 로컬 기술 QA PASS(현재 승인한 범위)·Visual 승인 유지·commit&Push 대기·06B 미착수.** 신규 산출물의 삭제·69 재실행은 미승인 — globalSetup은 baseline 외 행 감지 시 fail-closed abort. Integration 최신 NOT_RUN·실DB rollback 오류 주입 미검증 유지. 09 Freeze 전 해결 필수 infra 이슈: 표준 globalSetup이 local OID 16516+로컬 gitignored 043 dump에 의존해 자동 반복 불가.
+- **당시 상태(이력): PM 독립 판정 06A 로컬 기술 QA PASS(현재 승인한 범위)·Visual 승인 유지·commit&Push 대기·06B 미착수 — (PMQA-047-E로 Superseded: 실제 Push 완료·06A 전체 완료 확정·06B read-only 착수, 위 최상단 섹션 참조).** 신규 산출물의 삭제·69 재실행은 미승인 — globalSetup은 baseline 외 행 감지 시 fail-closed abort. Integration 최신 NOT_RUN·실DB rollback 오류 주입 미검증 유지. 09 Freeze 전 해결 필수 infra 이슈: 표준 globalSetup이 local OID 16516+로컬 gitignored 043 dump에 의존해 자동 반복 불가.
 
 ## 최신 06A 안전 보완 — PMQA-046-A (2026-10-11)
 

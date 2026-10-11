@@ -1152,5 +1152,24 @@ PM이 실제 코드, full SHA gate의 동일 Buffer baseline 파생, private txn
 
 - PM 최종 READ ONLY 감사: chunk87d47d exit 0 — 대상 `commerce_test` OID 16516·승인 백업 SHA `8ca19650…` exact·보호 77 NoCartTs 지문 전체 동일·**4개 카트(u-a/u-b/u-c/u-d)의 updated_at만 변경**·원본 36 action SHA `ddadc09a…` exact·삭제 70 잔존 0 → **PASS**. chunk009aa1 exit 0 — dev `commerce` OID 16384의 13테이블 전부 47B1 count+full fp와 일치·demo_verify 부재 → **PASS**.
 - PM 앞선 stock/amount 감사 chunk0e4b1f는 `stockOk:true`·`amountOk:true`였지만 "cart-u-b only"로 잘못 좁게 단정해 exit 1 — 실DB 불일치가 아닌 감사측 결함으로 보존한다.
-- **판정: 06A 로컬 기술 QA PASS(현재 승인한 범위에서) — 제품·Backend 회귀 69건 fresh PASS + 안전 cleanup 지문 근거 충족·구조 3건 MAJOR 해소.** 06A Visual 승인(041) 유지. commit·Push는 PM 별도 지시 대기. 06B 미착수.
+- **판정: 06A 로컬 기술 QA PASS(현재 승인한 범위에서) — 제품·Backend 회귀 69건 fresh PASS + 안전 cleanup 지문 근거 충족·구조 3건 MAJOR 해소.** 06A Visual 승인(041) 유지. commit·Push는 PM 별도 지시 대기. 06B 미착수. **(→ 이 대기 상태는 아래 PMQA-047-D/E 기록으로 Superseded: 커밋·Push·06A 전체 완료 확정·06B read-only 착수.)**
 - 미검증으로 유지: Integration 최신 NOT_RUN·실DB rollback 오류 주입 미검증·09 Freeze 전 해결 필수 non-portable infra(local OID 16516+로컬 gitignored 043 dump 의존, 신규 산출물 cleanup 미승인으로 자동 반복 불가).
+
+## PMQA-047-D/E — 06A 커밋·Push·최종 종료 기록 (2026-10-12)
+
+### 커밋 (SWE 실행)
+
+- 명시 git add 23파일 → git diff --cached --check exit 0 → 정상 git commit 1개: ca35a438d6f3a9ab4bbf5c303eeacde0d6877fed "fix(06A): align checkout hierarchy and guard approved test cleanup", parent 289dcc48cb2a3178fbced4e58d0014710cfb73d3, +4262/−167.
+- staged 파일명 목록에 tmp_*/shots/dumps/test-results/toss쇼핑_화면(reference 영상) 없음 확인. 커밋에 문서 정정 2건 포함: 't2 정확 ID 캡처'→'t2 E2E'(본 문서 1130), '미감사 상태'→'읽기 감사済·삭제 미승인'(본 문서 1137).
+
+### Push·검증 (PM 실행·인용 기록 — SWE 자기실행 아님)
+
+- PM 정상 require_escalated git push(hongbinwee GCM) exit 0(chunk72f4e9). 원격 289dcc48cb2a3178fbced4e58d0014710cfb73d3→ca35a438d6f3a9ab4bbf5c303eeacde0d6877fed FF 1커밋. 시각 2026-10-11 15:08:26 UTC(2026-10-12 00:08 KST).
+- PM fresh GitHub connector fetch_commit(main): full SHA ca35a438… = local HEAD = origin/main, ahead/behind 0/0, tracked clean(chunk520e11).
+- PM 독립 검수: 전체 23파일·18개 코드 blob이 검수본과 일치.
+
+### PM 최종 판정 (인용)
+
+- **06A 전체 완료 확정** — 69 PASS·unit 104·check/build 046 동일 소스·13+57 cleanup·보호77/보존36 지문·dev commerce 불변·Visual 041 기존 승인 유지.
+- 미검증으로 유지: Integration NOT_RUN·실DB rollback 오류 주입 미검증·09 infra(non-portable: local OID 16516 + gitignored 043 dump, 신규 산출물 cleanup 미승인으로 자동 반복 불가).
+- 위 047 섹션의 'commit&Push 대기' 표현은 본 항목으로 Superseded.
