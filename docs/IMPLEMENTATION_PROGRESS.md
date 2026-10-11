@@ -11,7 +11,8 @@
 - **배송 포커스 증거 정정**: 기존 shipping 캡처의 미완성(scroll 미완료 시점 촬영)을 bounded rAF poll로 해소 — chip/dark/light done=true, timeline bbox 661.75~713.75 ⊂ backBottom 48~barTop 773, scrollY 103 안정. 실제 UI 결함 아님이 확인됐다.
 - **당시 오류 정정**: ① run-01026234의 'PENDING 실데이터 통과' 주장은 부정확(mock '환불 처리 중' DOM만 관측, 두 단정은 7b0a77f7에서 검증) ② 초기 06 payment crop 좌표 오류(전화번호 일부 포함·모의결제 절단) → 눈금 실측 y≈496–656으로 정정 ③ 파생 QA 3회 덮어쓰기로 711d95bb/qa 초기 2버전 소실 — 생성기를 배타 dir·사전 검증·wx 쓰기로 보완, 정본은 qa-final.
 - 안전 제약·한계: scratch DB 재생성·모의 주문 금지 유지 · 읽기 검증은 로컬 OID 16516/16384·승인 backup/facts 지문에 의존(이식성 한계 — 09 Freeze 전 과제) · 신규 116 action은 047 시점 전체 payload 지문 부재로 ID·연결·건수 대조 한계 유지 · 08 MINOR(미세 font/icon·PC·반응형) 이관 목록에 기록.
-- 역할·게이트: 커밋은 **Main SWE**, Push는 **PM** — 현재 커밋은 PM 최종 25파일+문서 검수 대기이며 shots/backup/tmp_*는 자동 stage 금지. **06B 전체 완료 아님·06C 착수 금지**.
+- **config 수집 결함 수정(PMQA-049-DBFREE, 미커밋)**: 표준 `playwright.config.ts`에 `testIgnore: /readonly-.*\.spec\.ts/` 추가 — `readonly-orders.spec.ts` 22건이 testIgnore 부재로 표준 경로(3101·globalSetup·commerce_test webServer)에 오수집되던 결함 해소. DB-free `--list` 실측 91/11 → 69/10(수집 수이며 런타임 PASS 아님). PM049 static 추가 판정: Integration/verify/eval은 보존 commerce_test에 여전히 실행 불가(ensureTestDb의 seed upsert·cleanUserData의 비구분 삭제·TEST_DB_URL 고정) — **09 Freeze 전 테스트 격리/반복 실행 경로·보호 지문·실DB rollback fault 검증 해소 필수**. 08의 4뷰포트 매트릭스는 NOT_RUN 유지(390×844·390×600만으로 전수 PASS 아님).
+- 역할·게이트: 커밋은 **Main SWE**, Push는 **PM** — 06B 코드 5755f27+문서 97aa7ce는 PM Push·원격 일치 완료(97aa7ce 원격 확인 2026-10-11 17:31:22 UTC PM native 참조). '25파일 커밋 검수 대기'는 Superseded — **현재 커밋 검수 대기는 PMQA-049 config+문서 3파일 총 4파일**이며 shots/backup/tmp_*는 자동 stage 금지. **06B 전체 완료 아님·06C 착수 금지**.
 - 아래 '## 최신 06B — PMQA-048-A … 동적·Visual 미승인' 섹션은 본 항목으로 **Superseded**(당시 코드+DB-free 기준 기록은 이력으로 보존).
 
 ## 최신 06B — PMQA-048-A 코드 구현 + DB-free 검증 완료 (2026-10-12, 동적·Visual 미승인) [Superseded → 위 최신 항목]

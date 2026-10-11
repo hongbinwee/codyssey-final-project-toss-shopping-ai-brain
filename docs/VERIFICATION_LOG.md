@@ -1274,3 +1274,20 @@ PM이 실제 코드, full SHA gate의 동일 Buffer baseline 파생, private txn
 - 커밋(SWE): `5755f270b940c47730e015c57712bdae410f7286` "feat(06B): order list/detail/shipping screens + readonly-audit e2e verification", parent 3673bc26. 승인 후보 25파일(+3770/−139)만 explicit stage, cached diff --check exit 0 — EOF 공백 6파일은 PM 승인으로 말미 빈 줄만 제거(마지막 개행 1개 유지·비기능 변경, PM이 TrimEnd 비교로 독립 확인).
 - Push(PM 실행·인용): `git -c credential.username=hongbinwee push origin main` 정상 require_escalated exit 0 — 원격 3673bc26→5755f270 Fast-forward 1커밋. PM의 fresh GitHub fetch_commit(main) = full 5755f270… = local HEAD = origin/main, ahead/behind 0/0, tracked clean(2026-10-11 17:29:39 UTC). 검수 19 blob exact 일치.
 - 상태: 06B 기술 scoped PASS·구조 MAJOR2 해소·Visual CONDITIONAL PASS — **사용자 최종 Visual 승인 대기, 06B 완료 아님 · 06C 착수 금지**. 다음 활성 단계는 09 Freeze 방향의 후속 게이트(06C/Visual 승인 전 순서는 PM 결정).
+
+### PMQA-049-DBFREE — 표준 config의 readonly spec 오수집 결함 수정 + DB-free 수집 실측 (2026-10-12)
+
+- **근본 원인(확정)**: `playwright.config.ts`의 `testDir: "tests/e2e"` + `testIgnore` 부재 → installed default testMatch '**/*.@(spec|test).?(c|m)[jt]s?(x)'가 `readonly-orders.spec.ts` 22건까지 표준 경로(baseURL 3101·globalSetup·webServer commerce_test)에 수집했다. readonly spec은 `playwright.readonly.config.ts` + `tests/e2e/readonly-audit.ts` 전용 경로(RO 서버·읽기 가드·감사 gate)로만 실행되어야 하는데 표준 69 경로에 섞인 설계 결함.
+- **수정(코드 1파일·config만)**: `playwright.config.ts`에 `testIgnore` 추가 — readonly 전용 config는 변경하지 않았고 기존 69 수집은 보존. PM diff 검수에서 초기 `/readonly-.*.spec.ts/`의 unescaped dot가 wildcard로 읽혀 범위가 넓다고 지적돼 `/readonly-.*\.spec\.ts/`(escaped)로 좁혔다.
+- **DB-free 실측(실제 명령·정상 승인)**: `node node_modules/playwright/cli.js test --config=playwright.config.ts --list --reporter=line --output=shots/pmqa049/list-out(-after)`. before: **91 tests in 11 files**(readonly 22 포함) → after: **69 tests in 10 files**(readonly 0, 표준 69 수집 보존 — 047 baseline 수와 일치). narrowed matcher 재확인: `--output=shots/pmqa049/list-out-narrowed`(신규 경로, 덮어쓰기 없음) → **69 tests in 10 files** 유지. `shots/pmqa049/list-log.md`는 Add-Content로 남긴 요약 기록이다. **실제 증거는 Main SWE Thread의 exec-42129cb6(before 91)·exec-8052561e(after 69)·exec-e1fbe6b4(narrowed 69) 명령 출력**이다 — list-out*는 --output 인수일 뿐 --list가 파일을 생성하지 않으므로 해당 경로에 파일이 보관된다고 주장하지 않는다.
+- **PM 독립 비교(인용)**: before-91에서 readonly 22를 제외한 69개의 identity(파일·line·col·title)가 after-69와 **완전히 동일** — 개수 대조가 아닌 identity 일치로 기존 수집 누락 0·수집 결함 해소를 확인했다.
+- **DB-free 근거**: PM이 installed runner `_innerListTests` 검수 — createLoadTask+createReportBeginTask만 실행되고 globalSetup·webServer·test body 미실행, src/db.ts import 미연결. 실제 --list 실행도 DB 접촉 없이 종료. **본 수치는 수집 검증이며 런타임 PASS가 아니다** — 표준 69 실행·Integration·브라우저·DB write·커밋·Push 전부 미실행.
+- **PM049 static 추가 판정(Luna+PM 독립 확인 — 신규 risk 발견이며 사고 발생 아님, 데이터 변경 0)**:
+  - Integration/verify/eval은 여전히 보존 commerce_test에 실행 불가: `ensureTestDb→setupTestDb:150→seed phase`는 스키마 체크 충족 시에도 seed upsert를 항상 실행.
+  - `checkout.test.ts` before46→`cleanUserData:204`는 u-a~d의 전체 action·취소·cartItems·version 및 비-seed 주문 종속을 삭제 — 보존 36(독립 action 기록)/신규 12주문·2취소·116 action을 구분하지 않는다.
+  - verify9 Integration→eval57은 ensureTestDb(phase=4) + 케이스별 clean 반복.
+  - `env DATABASE_URL`만 바꿔서는 별도 DB 사용 불가(`TEST_DB_URL:26` 고정, child:179 강제).
+  - demo-seed 5건은 unconditional skip이고 scratch helper는 unit-mock 연결뿐 — 실제 Integration 안전 증거가 아니다.
+  - **09 Freeze 전 해소 필수로 기록**: 안전한 소유권 검증의 테스트 격리/반복 실행 경로 + 보호 지문 + 실DB rollback fault 미검증.
+- **PM08 사전 static 판정**: shell/nav/CTA/sheet의 max480 모바일 중앙 구조는 있으나 테스트에 360/768/1440 뷰포트 전수 coverage가 없다 → 08의 **4뷰포트×핵심 화면·인터랙션 매트릭스는 NOT_RUN 유지**. 기존 390×844·390×600 실측 PASS를 4뷰포트 전수 PASS로 부르지 않는다.
+- 미검증 유지: 표준 69·Integration·eval·runtime 전부 NOT_RUN · Visual 사용자 승인 대기 유지 · 06C 착수 금지.

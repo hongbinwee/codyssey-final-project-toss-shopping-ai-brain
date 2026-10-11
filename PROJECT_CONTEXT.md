@@ -72,8 +72,8 @@
                                        🟡 진행 중 — 06-A ✅ 완료 (PMQA-047-D 커밋 ca35a43 → PM 단건 Push·원격 일치 확인 → PMQA-047-E PM 최종 확정)
 (커밋 ca35a43, PMQA-06A-034/035 + CAPTURE-037 + 040 보정 + PMQA-047 B1/B2/B3/D/E) — **사용자 06A 최종 Visual QA 승인(PMQA-041) 유지**
                                        PM 독립 판정 06A 로컬 기술 QA PASS → PM Push 검증 후 06A 전체 완료 확정. 이전 "36/1/32 FAIL"은 PMQA-047로 Superseded된 이력
-                                       · 06-B 주문목록/주문상세/배송 — read-only 착수 분석 중 · 06-C 취소단계/환불은 순차
-                                       · 미검증 유지: Integration NOT_RUN·실DB rollback 오류 주입·09용 non-portable infra
+                                       · 06-B 주문목록/주문상세/배송 — 구현 완료·기술 scoped PASS(readonly 22/22)·Visual CONDITIONAL PASS, 커밋 5755f27+97aa7ce PM Push·원격 일치. **사용자 최종 Visual 승인 대기 — 완료 아님** · 06-C 취소단계/환불 착수 금지
+                                       · 미검증 유지: Integration NOT_RUN·실DB rollback 오류 주입·09용 non-portable infra — PM049 추가: Integration/verify/eval은 보존 commerce_test 실행 불가(seed upsert·비구분 clean·TEST_DB_URL 고정), 09 전 테스트 격리/보호 지문/rollback fault 검증 해소 필수
 07 Full Buyer Journey QA
 08 Frontend Final Visual Polish
    (전체 화면 연결 후 필요하면 더 강한 모델로 typography/spacing/

@@ -2,6 +2,10 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "tests/e2e",
+  // readonly-* spec은 playwright.readonly.config.ts + tests/e2e/readonly-audit.ts
+  // 전용 경로(RO 서버·읽기 가드·감사 gate)로만 실행한다 — 표준 3101/globalSetup
+  // 경로에 섞이지 않도록 수집에서 제외 [PMQA-049-DBFREE].
+  testIgnore: /readonly-.*\.spec\.ts/,
   timeout: 30_000,
   workers: 1,
   retries: 0,
