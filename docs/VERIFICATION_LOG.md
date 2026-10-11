@@ -803,4 +803,12 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 - 첫 실행 산출 probe_states.json의 fails 필드 결함(String spread → 수백 개 char key)은 스크립트 수정으로 해소 — 재생성 산출물은 `{name,error}` 형태.
 - 캡처 권한 BLOCKED: 037 승인 실행으로 **현재 해소**(과거 BLOCKED 이력은 위 §035 기록에 보존). 기술 QA PASS · Visual은 CONDITIONAL PASS(열린 코드 BLOCKER/MAJOR 0, 사용자 승인 게이트 잔여).
 - **human 06A Visual 승인: PM이 사용자에게 최종 Visual 질문을 제출했으나 아직 응답 없음 — '요청·응답대기' 상태로 기록(미제출 아님).**
-- Push: PM 처리 예정, 현재 미실행. 보존: 서버 3210(PID 35284, commerce)·3211(PID 29612, commerce_demo_verify) 실행 유지 · scratch DB 승인 3주문 포함 보존 · DROP 금지.
+- Push: PM 처리 예정, 현재 미실행. **(Superseded — 실제 Push 완료·검증은 아래 PMQA-06A-PUSH-RECORD-039 참조)** 보존: 서버 3210(PID 35284, commerce)·3211(PID 29612, commerce_demo_verify) 실행 유지 · scratch DB 승인 3주문 포함 보존 · DROP 금지.
+
+## 2026-10-11 · PMQA-06A-PUSH-RECORD-039 — 06A 배치 Push 실행·검증 기록 (PM 전담 실행 · 본 스레드 기록만)
+
+- Push 실행(PM 전담, 039 원문의 인증/실행 옵션·승인 범위 그대로 유효): remote main `5414ee8` → `8ee52e7` **fast-forward · exit 0**. 전송 범위: 05 마무리 문서 + 06A 기능 + 06A 문서 커밋 4건(`4ef92d6`·`7be89d3`·`5e93c2d`·`8ee52e7`).
+- Push 검증(PM): GitHub plugin remote fresh 확인 + local HEAD + origin/main **full SHA 일치 — `8ee52e7d7ebc0326c2f6697dcf52b5b4f869c01a`** · ahead/behind **0/0** · tracked clean.
+- 본 스레드 로컬 재확인(기록 시점): `git rev-parse HEAD origin/main` 모두 `8ee52e7d7ebc0326c2f6697dcf52b5b4f869c01a` · `git status -sb` = `## main...origin/main`(0/0·tracked 추가 변경 없음). Push 자체는 PM이 실행 — 본 스레드는 미수행(금지 유지).
+- 정정: 위 §037 기록의 Push 미실행 문구는 실행 이전 시점 사실로 보존하고 본 기록이 최신 상태다(Superseded 마커 부기).
+- 게이트 불변: 사용자 06A Visual 승인 요청·응답 대기 유지 · 06B/C 미착수 · 이번 변경은 문서 기록만(코드·DB·테스트·Push 없음).
