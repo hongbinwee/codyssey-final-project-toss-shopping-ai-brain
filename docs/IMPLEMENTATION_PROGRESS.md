@@ -4,6 +4,8 @@
 
 ## 최신 06B — PMQA-048-B/C 읽기 검증 + Visual Correction 완료 (2026-10-12, 기술 scoped PASS·Visual CONDITIONAL PASS — 사용자 승인 대기)
 
+- **커밋·Push(PM 실행·검증, 2026-10-12)**: SWE 커밋 `5755f270…` 25파일 → PM이 정상 require_escalated push로 원격 main FF(3673bc26→5755f270), fresh fetch 일치·0/0·tracked clean·19 blob 검수 일치. **06B는 사용자 최종 Visual 승인 대기로 완료 아님 · 06C 착수 금지** — 다음 활성 단계는 09 Freeze 방향 후속 게이트(PM 결정).
+
 - **기술 QA 근거(현재)**: readonly-audit **22/22 PASS × run-7b0a77f7/88a16883/711d95bb** (15 real·3 mock·4 capture — mock은 별도 표시 경로, 실제 환불 생성 아님) · unit 178/178 · tsc 0 · build 0 · 두 DB 13테이블 before↔after drift 0. 표준 69는 **06A 047 시점** 기록 — 06B 기준 신규 69·Integration은 **미실행**.
 - **Visual 구조 MAJOR 2 해소**: PM 관측(목록 카드 상품정보 계층·상세 flat 구획) → 048-C 코드 보완('결제 상세 >' 링크=첫 품목 정보열 첫줄·썸네일 76px·주문단위 배송비=첫 품목 정보열·상세 flat 섹션+밴드·총 결제 금액 구분선) → run-88a16883/711d95bb 신규 캡처 + qa-final 비교 6본으로 PM 독립 검수 진행. 결과는 **Visual CONDITIONAL PASS — 사용자 최종 승인 대기**.
 - **배송 포커스 증거 정정**: 기존 shipping 캡처의 미완성(scroll 미완료 시점 촬영)을 bounded rAF poll로 해소 — chip/dark/light done=true, timeline bbox 661.75~713.75 ⊂ backBottom 48~barTop 773, scrollY 103 안정. 실제 UI 결함 아님이 확인됐다.

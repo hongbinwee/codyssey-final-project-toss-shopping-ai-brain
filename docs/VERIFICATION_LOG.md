@@ -1268,3 +1268,9 @@ PM이 실제 코드, full SHA gate의 동일 Buffer baseline 파생, private txn
 
 - qa-final/06_payment_section.png의 실제 crop과 상단 라벨은 정확하다(impl y≈496–656) — 다만 하단 notes 텍스트에 'y≈496–648' stale 8px 오류가 남아 있다. 완성된 PNG는 덮어쓰기/재생성하지 않고, 여기에 정정을 기록한다: **정확한 impl crop 범위는 y≈496–656(결제 정보 헤더~모의결제 안내 전체)**이며, 하단 캡션의 648은 서술 오타다. 기능·Visual 구조 영향 없음.
 - 같은 정정으로 run-88a 산출의 'qa … wx 생성' 표현도 정정됐다(해당 항목 본문 참조) — 당시 생성기는 path 직접 쓰기였고 wx 방식은 711d95bb/qa-final부터.
+
+### PMQA-048 — 06B 커밋·Push 기록 (PM 실행·검증, 2026-10-12)
+
+- 커밋(SWE): `5755f270b940c47730e015c57712bdae410f7286` "feat(06B): order list/detail/shipping screens + readonly-audit e2e verification", parent 3673bc26. 승인 후보 25파일(+3770/−139)만 explicit stage, cached diff --check exit 0 — EOF 공백 6파일은 PM 승인으로 말미 빈 줄만 제거(마지막 개행 1개 유지·비기능 변경, PM이 TrimEnd 비교로 독립 확인).
+- Push(PM 실행·인용): `git -c credential.username=hongbinwee push origin main` 정상 require_escalated exit 0 — 원격 3673bc26→5755f270 Fast-forward 1커밋. PM의 fresh GitHub fetch_commit(main) = full 5755f270… = local HEAD = origin/main, ahead/behind 0/0, tracked clean(2026-10-11 17:29:39 UTC). 검수 19 blob exact 일치.
+- 상태: 06B 기술 scoped PASS·구조 MAJOR2 해소·Visual CONDITIONAL PASS — **사용자 최종 Visual 승인 대기, 06B 완료 아님 · 06C 착수 금지**. 다음 활성 단계는 09 Freeze 방향의 후속 게이트(06C/Visual 승인 전 순서는 PM 결정).
