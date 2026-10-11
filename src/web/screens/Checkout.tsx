@@ -1,6 +1,9 @@
 // W04 주문서·모의 결제 (UI 전용 — Agent가 호출할 수 없는 checkout 경로).
-// Ref051 구조: 배송지 → 일반 배송 상품 N건(실제 상품 이미지) → 주문 금액
-// 접힘/펼침 → 모의결제 명시+동의 → 하단 총액+'N원 결제하기' [Observed→구현].
+// Ref051/054 구조: 배송지(flat, 페이지 배경 위) → '일반 배송 상품 N건' 헤더
+// (카드 밖) + 상품 카드 1개(상품 행 + '주문 금액' 요약 행) → '총 결제 금액'
+// 독립 flat 섹션(토글로 펼침) → 하단 'N원 결제하기' + 모의결제 단일 안내
+// [Observed→구현, PMQA-040]. 큰 섹션 사이의 밴드 구분 구조는 Observed이고,
+// 8px 치수는 측정값이 아닌 [Project] 토큰이다(styles.css .checkout-band 동일 명시).
 // 견적(5분 서명 토큰) → 확인 클릭 → Processing → 성공 시 W04-C 결제 완료로 이동.
 // 같은 클릭의 재시도는 같은 idempotency key를 쓰고, 견적이 바뀌면 새 키를 쓴다
 // (토큰 해시가 payload라 같은 키+다른 견적은 IDEMPOTENCY_CONFLICT가 된다).
@@ -273,91 +276,104 @@ export function Checkout({
         />
       ) : (
         <>
-          {/* 배송지 — Ref051 최상단 블록. 변경칩/메모 필드는 미지원이라 렌더하지 않는다. */}
-          <div className="checkout-block">
+          {/* 배송지 — Ref051: 페이지 배경 위 열린(flat) 영역, 카드 아님.
+              주소/상세가 주 정보, 이름·연락처는 보조 [Observed→구현].
+              변경 칩·배송 요청 필드는 미지원이라 렌더하지 않는다. */}
+          <section className="checkout-sec checkout-ship">
             <h3 className="section-title">배송지 (테스트)</h3>
-            {/* Ref051: 주소/상세가 배송지의 주 정보 — 이름·연락처는 보조 [Observed→구현] */}
-            <div>{quote.data.address.address} {quote.data.address.detail}</div>
-            <div className="muted">
+            <div className="ship-addr">
+              {quote.data.address.address} {quote.data.address.detail}
+            </div>
+            <div className="ship-sub">
               {quote.data.address.name} · {quote.data.address.phone}
             </div>
-          </div>
+          </section>
 
-          {/* 일반 배송 상품 N건 — 실제 상품 이미지 [Observed Ref051→구현].
-              도착예정 라벨은 서버 데이터가 없어 렌더하지 않는다.
-              주문 금액 행은 Ref051처럼 같은 상품 카드 안에 연결된다. */}
-          <div className="checkout-block">
-            <h3 className="section-title">일반 배송 상품 {quote.data.cart.items.length}건</h3>
-            <ul className="cart-list">
-              {quote.data.cart.items.map((i) => (
-                <li key={i.cart_item_id} className="cart-item">
-                  <div className="cart-thumb">
-                    <img
-                      src={productImg({ product_id: i.product_id, image: i.image })}
-                      alt=""
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
-                    />
-                  </div>
-                  <div className="cart-info">
-                    <div>{i.product_name}</div>
-                    <div className="muted">
-                      {Object.values(i.option_values).join(" · ")} · {i.quantity}개
+          {/* Ref051: 큰 섹션 사이를 밴드로 구분하는 구조 [Observed].
+              8px 치수는 [Project] 토큰. */}
+          <div className="checkout-band" aria-hidden="true" />
+
+          {/* 일반 배송 상품 N건 — Ref051: 섹션 헤더는 카드 밖 페이지 배경 위,
+              상품 행과 '주문 금액' 요약 행은 카드 1개 안 [Observed→구현].
+              도착예정 라벨은 서버 데이터가 없어 렌더하지 않는다. */}
+          <section className="checkout-sec">
+            <h3 className="section-title">
+              일반 배송 상품 {quote.data.cart.items.length}건
+            </h3>
+            <div className="checkout-card">
+              <ul className="checkout-items">
+                {quote.data.cart.items.map((i) => (
+                  <li key={i.cart_item_id} className="checkout-item">
+                    <div className="checkout-thumb">
+                      <img
+                        src={productImg({ product_id: i.product_id, image: i.image })}
+                        alt=""
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
                     </div>
-                  </div>
-                  <div className="cart-right"><b>{fmtWon(i.unit_price_won * i.quantity)}</b></div>
-                </li>
-              ))}
-            </ul>
+                    <div className="checkout-item-info">
+                      <div>{i.product_name}</div>
+                      <div className="muted sm">
+                        {Object.values(i.option_values).join(" · ")} · {i.quantity}개
+                      </div>
+                      <div className="checkout-item-price">
+                        <b>{fmtWon(i.unit_price_won * i.quantity)}</b>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
 
-            {/* 주문 금액 — Ref051의 접힌 행('주문 금액 N원 >') + Ref054의 펼쳐진
-                금액 행. 토글 동작 자체는 미관측이라 [Project] 접힘/펼침으로 구현.
-                할인·쿠폰·포인트 행은 미지원이므로 상품 금액·배송비만 표시한다. */}
-            <div className="checkout-quote-block">
-            <button
-              type="button"
-              className="cart-quote-toggle"
-              aria-expanded={quoteOpen}
-              aria-controls="checkout-quote-rows"
-              aria-label={quoteOpen ? "주문 금액 상세 접기" : "주문 금액 상세 펼치기"}
-              onClick={() => setQuoteOpen((v) => !v)}
-            >
-              <span className="cart-quote-label">주문 금액</span>
-              <span className="cart-quote-amount">
-                <b>{fmtWon(quote.data.cart.total_won)}</b>
-                <IcChevronDown size={15} />
-              </span>
-            </button>
-            <div
-              id="checkout-quote-rows"
-              className="cart-quote-rows"
-              hidden={!quoteOpen}
-            >
-              <div className="cart-quote-row">
-                <span className="muted">상품 금액</span>
-                <span>{fmtWon(quote.data.cart.items_total_won)}</span>
-              </div>
-              <div className="cart-quote-row">
-                <span className="muted">배송비</span>
-                <span>{fmtWon(quote.data.cart.shipping_fee_won)}</span>
-              </div>
+              {/* 주문 금액 — Ref051 카드 내 요약 행(접힘: 총액+chevron).
+                  펼치면 카드 밖 '총 결제 금액' 독립 섹션(Ref054)이 열린다 —
+                  Ref051의 카드 내 행과 Ref054의 독립 결제 영역은 서로 다른
+                  영역이며, 표시 전용 토글 [Project]이 두 상태를 잇는다. */}
+              <button
+                type="button"
+                className="cart-quote-toggle checkout-quote-toggle"
+                aria-expanded={quoteOpen}
+                aria-controls="checkout-quote-rows"
+                aria-label={quoteOpen ? "주문 금액 상세 접기" : "주문 금액 상세 펼치기"}
+                onClick={() => setQuoteOpen((v) => !v)}
+              >
+                <span className="cart-quote-label">주문 금액</span>
+                <span className="cart-quote-amount">
+                  <b>{fmtWon(quote.data.cart.total_won)}</b>
+                  <IcChevronDown size={15} />
+                </span>
+              </button>
             </div>
-            </div>
-          </div>
+          </section>
 
-          {/* 결제 — Ref의 개인정보 동의/포인트/쿠폰/멤버십 문구는 미지원 업무로
-              오인되므로 복제하지 않고, 주문 확인+모의결제 안내로 표현한다 [PM 지침]. */}
-          <div className="checkout-block">
-            <h3 className="section-title">결제</h3>
-            <div className="muted sm">모의 결제 — 실제 결제는 발생하지 않아요</div>
-            <div className="muted">
-              주문 내용을 확인했어요. 모의 결제로 실제 청구는 발생하지 않아요.
+          {/* 총 결제 금액 — Ref054: 상품 카드와 분리된 독립 flat 섹션
+              (페이지 배경 위, 카드 아님). 강조 총액 행 + 상품 금액/배송비
+              보조 행 — 지원 데이터만 표시하고 쿠폰/포인트/할인 행은
+              미지원이므로 렌더하지 않는다. 위 카드의 '주문 금액' 토글이
+              이 영역을 연다 [Observed Ref054→구현]. */}
+          <section
+            id="checkout-quote-rows"
+            className="checkout-total"
+            hidden={!quoteOpen}
+          >
+            <div className="checkout-total-head">
+              <span className="checkout-total-label">총 결제 금액</span>
+              <b>{fmtWon(quote.data.cart.total_won)}</b>
             </div>
-          </div>
+            <div className="cart-quote-row">
+              <span className="muted">상품 금액</span>
+              <span>{fmtWon(quote.data.cart.items_total_won)}</span>
+            </div>
+            <div className="cart-quote-row">
+              <span className="muted">배송비</span>
+              <span>{fmtWon(quote.data.cart.shipping_fee_won)}</span>
+            </div>
+          </section>
 
-          {/* Ref051/054: 주요 CTA는 하단 전체폭 'N원 결제하기' — 총액 상세는
-              본문의 주문 금액 행에 둔다. [Observed→구현] */}
+          {/* Ref051/054: 주요 CTA는 하단 전체폭 'N원 결제하기'. Ref의 동의
+              미세 문구 위치에 모의결제 안내를 둔다 — '실제 결제는 발생하지
+              않는다'를 CTA 주변 단일 문구로 명시 [PM 지침]. */}
           <div className="bottom-bar checkout-paybar" ref={barRef}>
             <button
               className="btn primary"
@@ -366,6 +382,9 @@ export function Checkout({
             >
               {phase === "processing" ? "결제 처리 중…" : fmtWon(quote.data.cart.total_won) + " 결제하기"}
             </button>
+            <div className="pay-note">
+              주문 내용을 확인했어요 · 모의 결제로 실제 결제는 발생하지 않아요
+            </div>
           </div>
         </>
       )}

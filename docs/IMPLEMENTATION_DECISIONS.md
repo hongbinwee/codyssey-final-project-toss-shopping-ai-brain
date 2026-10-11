@@ -190,3 +190,39 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 | CHECKOUT pending kind 격리 | CHECKOUT intent는 listCartPending에 노출되지 않고 listPendingByKind("CHECKOUT")만 본다. AMBIGUOUS→intent 유지+복구 스트립, 확정 거절→intent 해제. action 조회 키는 'ui-'+uiKey. | 카드 소비자와 결제 복구 책임의 분리 |
 | cart PATCH expected_variant_version 필수 | cart 수량 변경은 expected_variant_version 서버 필수 계약이다(src/cart.ts — 불일치 시 VERSION_CONFLICT/REFRESH_AND_RECONFIRM). 미포함은 호출자 결함이지 제품 결함이 아니다. | 037 S2 스크립트 결함의 근원 — 제품/스크립트 결함 구분 |
 | 미완 상태 캡처 실행 원칙 | scratch DB(commerce_demo_verify) 전용 + cart/모의주문 누적 max3 + confirm 예약 카운트 + SAFETY 즉시 중단(예상 외 주문·confirm 성공 시 정리 없이 중단) + 실행별 facts 별도 파일. 검증 필드 해시로 사후 동일성 실증(전체 DB 동일 단정 금지). | 사용자 승인 범위·기존 데이터 보존·증거 분리 |
+
+## 2026-10-11 · PMQA-040 — scratch DB 수명주기 정책 (040-A 확정)
+
+commerce_demo_verify 소실 사고(VERIFICATION_LOG PMQA-040-SEED-SAFETY) 이후 확정된 테스트 DB 정책. 구현은 `tests/helpers/scratch-db.ts` + `tests/integration/demo-seed.test.ts` 전체 skip + `tests/unit/scratch-db.test.ts`.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| scratch 수명주기 전담 계층 | DB 생성·삭제는 `createOwnedScratchDb` 경유만. 테스트 파일의 ad-hoc admin DROP/CREATE는 금지 | 고정명 FORCE DROP이 보존 DB를 지운 사고의 직접 원인 |
+| 소유 증거 3중 검증 | DROP 조건 = pg_database OID+datdba 일치 AND current_database()==이름 AND _scratch_owner.run_id==이 실행 runId. marker 단독은 불충분 — 같은 이름으로 재생성된 다른 DB를 구분 못 한다 | PM 리뷰 — marker만으로 DB identity 불변 보장 불가 |
+| opt-in 게이트 | `SCRATCH_DB_TESTS=1` 없으면 connect 자체를 하지 않는다(생성·cleanup 양쪽, connect 전 검사). 기본 npm test/verify 경로에서는 관련 테스트가 skip | 사고는 일반 integration 실행 중 발생 — 무의식 실행 차단 |
+| 이름 정책 | 무작위 `scratch_<16hex>`만. 고정명·재사용·보호 DB명·기존 DB 충돌은 전부 거부 | 고정명이 곧 보존 대상과 충돌했다 |
+| adminUrl query 금지 | `?database=` 등 query 포함 adminUrl은 connect 전 거부(조용한 무시도 금지). 대상 URL은 query를 버리고 접속 후 current_database() 재확인 | postgres.js ?database= 우회의 이중 방어 |
+| DROP 형태 | `DROP DATABASE <name>` — IF EXISTS·FORCE 없음. 열린 연결이 남으면 실패하고 fail closed | IF EXISTS는 대상 부재를 숨기고 FORCE는 다른 사용자 연결을 끊는다 |
+| runId 생성 | 함수 내부 randomUUID()만 — 호출자·env 입력 경로 없음 | 외부가 marker를 맞춰 소유권 검증을 우회할 수 없다 |
+| seed --demo 허용 목록 | `DEMO_DBS = commerce, commerce_demo_verify` 유지 — `scratch_*` 확대 금지. 미래 격리 테스트는 '검증된 scratch_*만 허용'하는 좁은 조건을 seed.ts에 별도 추가 후 demo-seed.test.ts 재활성 — **미확정·미승인 제안**(확정 정책 아님) | 허용 목록 확대는 test DB 오염 경로를 다시 연다 |
+| 실패 시 기본값 | 생성 후 단계 실패·identity 변경·증거 부족은 전부 fail closed — 지우지 못해 남는 쪽을 선택 | 잘못 지우는 비용이 잔여 scratch 비용보다 크다 |
+
+## 2026-10-11 · PMQA-046-A — restricted reset·캡처 증거 안전 보완
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| reset mutation 진입점 | restricted reset의 공개 실행 entry는 `restrictedE2EReset(db)`다. 고정 승인 043 dump의 단일 Buffer를 SHA 검증한 뒤 그 바이트에서 보호/삭제 baseline을 파생하고, transaction helper는 private로 둔다. 호출자 제공 baseline·test-only 우회 옵션은 허용하지 않는다. | 승인 기준과 실제 비교 기준의 분리·우회 방지 |
+| 삭제 전 행 검증 | 잠금 후 첫 DELETE/UPDATE 전에 전체 삭제 대상 70행(승인 주문 13 + 직접 종속 57)의 전체 JSON을 승인 baseline과 정확 비교한다. 보호 행도 같은 baseline의 전체 행과 비교한다. 하나라도 다르면 write 0건으로 abort한다. | 건수만 맞는 변경/추가 행이 삭제되는 것을 방지 |
+| 캡처 산출물 | 캡처는 매 실행 UUID 하위 디렉터리를 배타 생성한다. 재사용/덮어쓰기를 허용하지 않으며, 경로 예약 성공 전에는 테스트의 앱/API 동작을 시작하지 않는다. import 및 `--list`는 출력 경로를 만들지 않는다. | 기존 evidence 보존 및 부수효과 순서 보장 |
+| approved dump 테스트 의존성 | 정확 baseline DB-free unit은 로컬 gitignored `shots/06a/pmqa043/commerce_test_prdump.sql`을 필요로 한다. 다른 checkout에 존재한다고 가정하지 않으며, dump를 Git에 포함하거나 파일 부재를 이유로 해당 테스트를 skip하지 않는다. | 증거의 비공개·비변조 보존, 기준 부재 시 명시적 실패 |
+| 06A 재개 경계 | `commerce_demo_verify` 재생성·모의 주문 재생성은 금지 상태로 유지한다. 새 DB-free 보완만 진행하며 전체 기술 검증 미완료·06B 차단을 유지한다. | 06A 임시 DB 삭제 사고 후 최신 오케스트레이션 제한 |
+
+## 2026-10-11 · PMQA-041 — 06A Visual 게이트 결과 + 확정 반응형 정책
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 06A 사용자 최종 Visual QA | 승인 — 화면 게이트만 통과이며 06A 전체 완료·기술 QA 승인이 아니다. 위 06A 섹션의 'Visual 미통과' 기록은 Superseded | PMQA-041 사용자 결정 — PM 040 비교본 검수 경유 |
+| 전체 회귀 상태 | CONDITIONAL 유지 — 최신 전체 실행 36/1/32 FAIL. fixture 복원+표준69 재실행은 별도 사용자 승인 pending(PM 질문 제출·답변 대기) | 새 통합 PASS로 기록 금지 |
+| Visual 비실패 계약 | 상품·가격·iOS 크롬·미지원 쿠폰/포인트/ETA/주소 변경 차이는 실패로 취급하지 않고 허위 데이터 생성 금지. 작은 스타일 차이는 08 이관. 주문서 p-a/183,000과 완료 ord-c0bdcc4d/152,000은 서로 다른 fixture — 연속성 증거 아님 | PMQA-041 |
+| 반응형 정책 | 06~07 모바일 우선(390×844 기준, 다른 너비 깨짐 예방만). 08에서 핵심 전 화면을 360×640/390×844/768×1024/1440×900 검증 — 모바일 유동폭·태블릿 모바일구조+max-width·PC 중앙 모바일 컨테이너·필수 정보 숨김 금지. 09 Freeze 전 3폼팩터 사용성 확인. PC 다열·Brain 패널·비교 레이아웃은 09 이후 향후 검토만 | PMQA-041 확정 · 상세는 COMMERCE_UI_SPEC §10 |
+| 06B 진입 조건 | 기술 회귀 통과 + DB 안전성 + 최종커밋 독립검수 + PM FF Push 확인 전까지 금지 | PMQA-041 |

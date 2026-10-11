@@ -1,0 +1,283 @@
+// scratch DB 안전 소유권 — PMQA-040 사고(고정 이름 FORCE DROP으로 보존 DB
+// 소실) 재발 방지를 위한 생성/삭제 보호 계층.
+//
+// 규칙:
+// - opt-in(SCRATCH_DB_TESTS=1) 없이는 scratch DB 생성/삭제를 실행하지 않는다.
+//   opt-in 확인은 어떤 DB 접속보다도 먼저다(connect 전 게이트).
+//   기본 npm test/verify 경로에서는 관련 테스트가 skip되어 실행 자체가 없다.
+// - 생성 이름은 이 실행이 만드는 무작위 이름(scratch_<16hex>)뿐이다.
+//   고정 이름 사용·재사용은 허용하지 않는다.
+// - 보호 DB(commerce/commerce_test/commerce_demo_verify/postgres/template*)와
+//   이미 존재하는 이름은 절대 CREATE/DROP 대상이 아니다 — 실패 폐쇄.
+// - DROP은 이 실행이 CREATE에 성공하고, 아래 소유 증거가 전부 일치할 때만이다:
+//     pg_database OID + datdba(소유 role)가 CREATE 직후 기록과 정확히 동일
+//     AND scratch DB 안에서 실측한 current_database() === 대상 이름
+//     AND _scratch_owner.run_id === 이 실행의 runId
+//   하나라도 어긋나면 DROP을 실행하지 않는다 — identity 변경은 끝까지
+//   fail closed다. CREATE 실패 뒤 finally에서 기존 DB를 지우는 경로는 없다.
+// - ?database= 같은 URL 옵션 우회는 두 겹으로 막는다 — adminUrl에 query가
+//   있으면 connect 전에 거부하고(조용히 버리는 혼동도 없다), 대상 URL 생성
+//   시 query를 전부 버리며, 실제 접속 후 current_database()를 다시 확인한다.
+// - runId는 외부 입력·env가 아니라 이 함수 안에서 randomUUID()로만 만든다 —
+//   외부가 marker 값을 맞춰 소유권 검증을 우회할 수 없다.
+// - cleanup 전에 대상 DB를 쓰던 연결(테스트의 sql 풀 등)을 먼저 end 할 것.
+//   열린 연결이 남으면 DROP이 실패한다 — 실패해도 fail closed이며 다른 DB는
+//   건드리지 않는다.
+// - 생성 후 단계(identity 기록·마커 삽입)가 실패하면 그 scratch DB는 마커
+//   없이 남는다. 이후 cleanup은 소유권 미확인으로 거부한다 — 지우지 못해
+//   남는 것이 잘못 지우는 것보다 안전하다.
+import { randomUUID } from "node:crypto";
+import postgres from "postgres";
+
+export const SCRATCH_OPTIN_ENV = "SCRATCH_DB_TESTS";
+export const PROTECTED_DBS = new Set([
+  "commerce",
+  "commerce_test",
+  "commerce_demo_verify",
+  "postgres",
+  "template0",
+  "template1",
+]);
+
+// 허용 이름 패턴 — 이 실행 소유인지 이름으로 1차 판별한다.
+const NAME_RE = /^scratch_[0-9a-f]{16}$/;
+
+/** pg_database에서 읽는 DB 신원 — 이름이 같아도 재생성되면 oid가 달라진다. */
+export type DbIdentity = { oid: number; owner: number };
+export type CreatePlan =
+  | { ok: true; dbName: string }
+  | { ok: false; reason: string };
+export type DropPlan = { ok: true } | { ok: false; reason: string };
+
+/** 접속 전 게이트 — opt-in과 adminUrl 형태. 부작용 없는 결정 함수. */
+export function planScratchConnect(opts: {
+  optin: string | undefined;
+  adminUrl: string;
+}): { ok: true } | { ok: false; reason: string } {
+  if (opts.optin !== "1")
+    return {
+      ok: false,
+      reason: "opt-in 없음: " + SCRATCH_OPTIN_ENV + "=1 필요",
+    };
+  if (opts.adminUrl.includes("?"))
+    return {
+      ok: false,
+      reason:
+        "adminUrl query 금지 — ?database= 우회/조용한 무시 혼동 방지: " +
+        opts.adminUrl,
+    };
+  return { ok: true };
+}
+
+/** 생성 계획 — 부작용 없는 결정 함수. existing은 pg_database 실측 목록. */
+export function planScratchCreate(opts: {
+  rand?: () => string;
+  existing: string[];
+}): CreatePlan {
+  const rand =
+    opts.rand ?? (() => randomUUID().replaceAll("-", "").slice(0, 16));
+  const dbName = ("scratch_" + rand()).toLowerCase();
+  if (!NAME_RE.test(dbName))
+    return { ok: false, reason: "허용되지 않는 scratch 이름: " + dbName };
+  if (PROTECTED_DBS.has(dbName))
+    return { ok: false, reason: "보호 DB 이름과 충돌: " + dbName };
+  if (opts.existing.includes(dbName))
+    return {
+      ok: false,
+      reason: "이미 존재하는 DB — 우연일치 fail closed: " + dbName,
+    };
+  return { ok: true, dbName };
+}
+
+/**
+ * DROP 허용 판정 — 부작용 없는 결정 함수.
+ * 소유 증거가 하나라도 어긋나면 거부한다. 어느 경로에서도 DROP은 이 판정을
+ * 통과한 뒤에만 실행된다.
+ */
+export function planScratchDrop(opts: {
+  dbName: string;
+  identity: DbIdentity | null; // cleanup 시점 pg_database 실측(부재면 null)
+  expected: DbIdentity; // 이 실행이 CREATE 직후 기록한 값
+  currentDb: string | null; // scratch DB 안에서 실측한 current_database()
+  marker: string | null; // _scratch_owner.run_id 실측(부재면 null)
+  runId: string; // 이 실행이 CREATE 시 기록한 소유 표시
+}): DropPlan {
+  if (!NAME_RE.test(opts.dbName) || PROTECTED_DBS.has(opts.dbName))
+    return { ok: false, reason: "보호/비허용 이름 DROP 거부: " + opts.dbName };
+  if (opts.identity === null)
+    return { ok: false, reason: "대상 DB 부재 — 삭제 불요/불가" };
+  if (
+    opts.identity.oid !== opts.expected.oid ||
+    opts.identity.owner !== opts.expected.owner
+  )
+    return {
+      ok: false,
+      reason:
+        "DB identity 변경 — 같은 이름의 다른 DB일 수 있음, DROP 거부 " +
+        "(oid " +
+        String(opts.identity.oid) +
+        "!=" +
+        String(opts.expected.oid) +
+        " 또는 owner " +
+        String(opts.identity.owner) +
+        "!=" +
+        String(opts.expected.owner) +
+        ")",
+    };
+  if (opts.currentDb !== opts.dbName)
+    return {
+      ok: false,
+      reason:
+        "접속 DB 불일치: " + String(opts.currentDb) + " != " + opts.dbName,
+    };
+  if (opts.marker === null)
+    return { ok: false, reason: "소유 마커 부재 — 소유권 미확인, DROP 거부" };
+  if (opts.marker !== opts.runId)
+    return { ok: false, reason: "소유 마커 불일치 — 다른 실행 소유, DROP 거부" };
+  return { ok: true };
+}
+
+export type ScratchDb = {
+  dbName: string;
+  runId: string;
+  dbUrl: string;
+  cleanup: () => Promise<void>;
+};
+
+type SqlLike = {
+  unsafe: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]>;
+  end: () => Promise<void>;
+};
+type Connect = (url: string, o?: { max?: number }) => SqlLike;
+
+// adminUrl의 마지막 path 세그먼트만 치환해 대상 DB URL을 만든다.
+// ?database= 등 query는 전부 버린다 — planScratchConnect가 query 있는
+// adminUrl 자체를 거부하므로 여기서 버려지는 query는 없어야 정상이다.
+export function scratchDbUrl(adminUrl: string, dbName: string): string {
+  const u = adminUrl.split("?")[0];
+  return u.replace(/\/[^/]+$/, "/" + dbName);
+}
+
+async function readIdentity(
+  admin: SqlLike,
+  dbName: string,
+): Promise<DbIdentity | null> {
+  const rows = await admin.unsafe(
+    "SELECT oid, datdba AS owner FROM pg_database WHERE datname=$1",
+    [dbName],
+  );
+  const r = rows[0];
+  return r ? { oid: r.oid as number, owner: r.owner as number } : null;
+}
+
+// deps.connect는 단위 테스트 주입용 — 실제 경로는 postgres.
+export async function createOwnedScratchDb(
+  adminUrl: string,
+  deps: { connect?: Connect } = {},
+): Promise<ScratchDb> {
+  const connect: Connect =
+    deps.connect ?? ((url, o) => postgres(url, o) as unknown as SqlLike);
+  // connect 전 게이트 — opt-in 없이는 어떤 DB 접속도 열지 않는다.
+  const gate = planScratchConnect({
+    optin: process.env[SCRATCH_OPTIN_ENV],
+    adminUrl,
+  });
+  if (!gate.ok) throw new Error("scratch create 거부: " + gate.reason);
+  // runId는 이 함수 안에서만 만든다 — 호출자·env 주입 경로가 없다.
+  const runId = randomUUID();
+  const admin = connect(adminUrl, { max: 1 });
+  try {
+    const dbs = (await admin.unsafe("SELECT datname FROM pg_database")).map(
+      (r) => r.datname as string,
+    );
+    const plan = planScratchCreate({ existing: dbs });
+    if (!plan.ok) throw new Error("scratch create 거부: " + plan.reason);
+    // CREATE 실패는 그대로 throw — 이후 cleanup은 등록되지 않는다.
+    await admin.unsafe("CREATE DATABASE " + plan.dbName);
+    // 생성 직후 identity(oid+owner)를 기록한다 — cleanup에서 '같은 이름의
+    // 다른 DB'를 걸러내는 근거다.
+    const expected = await readIdentity(admin, plan.dbName);
+    if (!expected)
+      throw new Error("생성 직후 identity 조회 실패: " + plan.dbName);
+    const dbUrl = scratchDbUrl(adminUrl, plan.dbName);
+    const owned = connect(dbUrl, { max: 1 });
+    try {
+      // ?database= 등으로 다른 DB에 붙었는지 실제 접속명을 확인한다.
+      const [cd] = await owned.unsafe("SELECT current_database() AS db");
+      if (cd.db !== plan.dbName)
+        throw new Error(
+          "접속 DB 불일치: " + String(cd.db) + " != " + plan.dbName,
+        );
+      await owned.unsafe(
+        "CREATE TABLE _scratch_owner (run_id text PRIMARY KEY)",
+      );
+      await owned.unsafe("INSERT INTO _scratch_owner (run_id) VALUES ($1)", [
+        runId,
+      ]);
+    } finally {
+      await owned.end().catch(() => {});
+    }
+    const dbName = plan.dbName;
+    const expectedId = expected;
+    return {
+      dbName,
+      runId,
+      dbUrl,
+      cleanup: async () => {
+        // connect 전 게이트 — opt-in이 cleanup 시점에 사라졌어도 거부한다.
+        const g = planScratchConnect({
+          optin: process.env[SCRATCH_OPTIN_ENV],
+          adminUrl,
+        });
+        if (!g.ok) throw new Error("scratch cleanup 거부: " + g.reason);
+        const adm = connect(adminUrl, { max: 1 });
+        try {
+          const identity = await readIdentity(adm, dbName);
+          let currentDb: string | null = null;
+          let marker: string | null = null;
+          // identity가 기록과 정확히 같을 때만 scratch DB 안을 들여다본다 —
+          // 같은 이름의 다른 DB에 접속하는 경로를 없앤다.
+          if (
+            identity !== null &&
+            identity.oid === expectedId.oid &&
+            identity.owner === expectedId.owner
+          ) {
+            const c = connect(dbUrl, { max: 1 });
+            try {
+              const [cd2] = await c.unsafe(
+                "SELECT current_database() AS db",
+              );
+              currentDb = cd2.db as string;
+              const [reg] = await c.unsafe(
+                "SELECT to_regclass('public._scratch_owner') AS r",
+              );
+              if (reg.r) {
+                const rows = await c.unsafe(
+                  "SELECT run_id FROM _scratch_owner LIMIT 1",
+                );
+                marker = (rows[0]?.run_id as string) ?? null;
+              }
+            } finally {
+              await c.end().catch(() => {});
+            }
+          }
+          const d = planScratchDrop({
+            dbName,
+            identity,
+            expected: expectedId,
+            currentDb,
+            marker,
+            runId,
+          });
+          if (!d.ok) throw new Error("scratch drop 거부: " + d.reason);
+          // IF EXISTS 금지 — 정확히 이 실행 소유로 검증된 이름만 DROP한다.
+          await adm.unsafe("DROP DATABASE " + dbName);
+        } finally {
+          await adm.end().catch(() => {});
+        }
+      },
+    };
+  } finally {
+    await admin.end().catch(() => {});
+  }
+}

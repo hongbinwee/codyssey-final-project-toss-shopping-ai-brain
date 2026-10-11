@@ -985,14 +985,64 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 }
 .checkout-block .section-title { margin-top: 0; }
 
-/* 06A 주문서 — 고정 하단바 실측 높이(--bb-h)만큼 본문 하단 여백 (cart 패턴 재사용) */
+/* 06A 주문서 — Ref051/054 구조 [PMQA-040]: 배송지·총 결제 금액은 페이지
+   배경 위 flat 영역, 상품만 카드 1개. 같은 회색 카드의 균일 반복을 없앤다.
+   전부 .checkout-screen 스코프 — Cart/OrderComplete/OrderDetail/CancelSheet
+   공용 행 스타일과 격리한다. */
 .checkout-screen { padding-bottom: calc(var(--bb-h, 96px) + 14px); }
-.checkout-screen .cart-quote-toggle { width: 100%; }
-/* 주문 금액 행 — Ref051처럼 상품 카드 안에 연결된 접힘/펼침 영역 */
-.checkout-quote-block { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
-/* Ref051/054: 하단 주요 CTA는 전체폭 'N원 결제하기' — 총액 상세는 본문에 둔다 */
-.checkout-paybar { display: block; }
+.checkout-screen .checkout-sec { margin-top: 20px; }
+.checkout-screen .checkout-sec > .section-title { margin: 0 0 12px; }
+/* 큰 섹션 사이 구분 — 페이지 배경 위 밴드. 구분 구조는 [Observed Ref051],
+   8px 치수는 정확 측정값이 아닌 [Project] 토큰이다. */
+.checkout-band {
+  border-top: 8px solid var(--field);
+  margin: 22px calc(-1 * var(--pad)) 0;
+}
+/* 배송지 — flat 영역, 주소 주 정보 / 이름·연락처 보조 [Observed Ref051] */
+.checkout-ship .ship-addr { font-size: 15.5px; line-height: 1.5; color: var(--text); }
+.checkout-ship .ship-sub { margin-top: 4px; font-size: 13.5px; color: var(--muted); }
+/* 상품 카드 — 단일 카드, 내부 행은 중첩 카드 없이 플랫 배치 */
+.checkout-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.checkout-items {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.checkout-item { display: flex; gap: 12px; align-items: flex-start; }
+.checkout-thumb {
+  width: 64px; height: 64px; flex-shrink: 0;
+  border-radius: 10px; overflow: hidden; background: var(--field);
+}
+.checkout-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.checkout-item-info { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.4; }
+.checkout-item-info .muted { margin-top: 3px; }
+.checkout-item-price { margin-top: 5px; font-size: 15.5px; }
+/* 카드 내 '주문 금액' 요약 토글 행 [Observed Ref051] — 펼치면 카드 밖
+   독립 '총 결제 금액' 섹션이 열린다 */
+.checkout-card .cart-quote-toggle {
+  width: 100%;
+  border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px;
+}
+/* 총 결제 금액 — Ref054 독립 flat 섹션: 8px 밴드 위 페이지 배경, 카드 아님 */
+.checkout-total {
+  margin: 22px calc(-1 * var(--pad)) 0;
+  padding: 18px var(--pad) 4px;
+  border-top: 8px solid var(--field);
+}
+.checkout-total[hidden] { display: none; }
+.checkout-total-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.checkout-total-label { font-size: 17px; font-weight: 700; color: var(--text); }
+.checkout-total-head b { font-size: 19px; font-weight: 800; }
+.checkout-total .cart-quote-row { padding: 7px 0; }
+.checkout-total .cart-quote-row > span:last-child { color: var(--text); }
+/* 하단 주요 CTA + 모의결제 단일 안내 (Ref051 하단 미세 문구 위치) */
+.checkout-paybar { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .checkout-paybar .btn { width: 100%; min-height: 52px; font-size: 16px; }
+.checkout-paybar .pay-note { text-align: center; font-size: 12px; color: var(--muted); }
 
 /* 06A 결제 완료 — Ref077: 중앙 체크 + 상품/배송지 블록 + 홈 CTA + 상세 링크 */
 .oc-screen { display: flex; flex-direction: column; min-height: calc(100dvh - 60px); }

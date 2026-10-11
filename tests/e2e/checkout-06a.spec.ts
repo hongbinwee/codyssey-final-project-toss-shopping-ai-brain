@@ -278,6 +278,13 @@ test("주문 금액 패널 토글은 표시 전용 — 비-GET 요청 0건", asy
   await expect(page.locator("#checkout-quote-rows")).toBeVisible();
   await expect(page.locator("#checkout-quote-rows")).toContainText("상품 금액");
   await expect(page.locator("#checkout-quote-rows")).toContainText("배송비");
+  // MJ-06A-VISUAL-02 회귀 — 금액 상세는 상품 카드 밖 독립 '총 결제 금액'
+  // 섹션(Ref054)이고, 토글은 카드 안 '주문 금액' 행(Ref051)에 남는다.
+  await expect(page.locator("#checkout-quote-rows")).toContainText("총 결제 금액");
+  expect(await page.locator(".checkout-card #checkout-quote-rows").count()).toBe(0);
+  await expect(
+    page.locator(".checkout-card").getByRole("button", { name: /주문 금액 상세/ }),
+  ).toBeVisible();
   await toggle.click();
   await expect(page.locator("#checkout-quote-rows")).toBeHidden();
   expect(writes).toHaveLength(0);

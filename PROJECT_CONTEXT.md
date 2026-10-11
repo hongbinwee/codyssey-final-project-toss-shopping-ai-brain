@@ -69,14 +69,19 @@
 05 Product Detail / Review / Option / Cart   ✅ 완료 (2026-10-11, PMQA-05-CLOSE-PUSH-033 —
                                        사용자 최종 Visual 승인 + PM 단건 Push·원격 일치 확인)
 06 Checkout / Payment / Order / Shipment / Cancel
-                                       🟡 진행 중 — 06-A Checkout/모의결제/결제완료 구현·미완 상태 캡처·검증 완료
-(커밋 7be89d3, PMQA-06A-034/035 + CAPTURE-037) — 사용자 Visual 승인 요청·응답 대기
+                                       🟡 진행 중 — 06-A Checkout/모의결제/결제완료 구현 완료·표준 E2E 69/69 PASS·승인 DB 정리 완료
+(커밋 7be89d3, PMQA-06A-034/035 + CAPTURE-037 + 040 보정 + PMQA-047 B1/B2/B3) — **사용자 06A 최종 Visual QA 승인(PMQA-041) 유지**
+                                       PM 독립 판정 06A 로컬 기술 QA PASS(현재 승인 범위) — 이전 "36/1/32 FAIL"은 PMQA-047로 Superseded된 이력 · commit&Push 대기 · 최종커밋 독립검수·PM FF Push 전 06B 금지
                                        · B 주문목록/주문상세/배송 · C 취소단계/환불은 순차
 07 Full Buyer Journey QA
 08 Frontend Final Visual Polish
    (전체 화면 연결 후 필요하면 더 강한 모델로 typography/spacing/
-    visual hierarchy/interaction/responsive/screenshot fidelity 보정)
-09 Commerce Environment Freeze
+    visual hierarchy/interaction/responsive/screenshot fidelity 보정.
+    **[041 확정 반응형]** 핵심 모든 화면(홈/검색/상세/리뷰/옵션/카트/주문서/완료/주문내역/배송/취소)을
+    360×640·390×844·768×1024·1440×900에서 검증 — 고정CTA/시트/모달/스크롤/이미지/금액/가독성·접근성.
+    모바일 유동폭 + 태블릿 모바일구조·max-width + PC 중앙 모바일 컨테이너. 필수 기능·정보 숨김 금지.
+    PC 다열/Brain 패널/비교 레이아웃은 09 이후 향후 검토만 — 현 범위 아님·Toss PC 재현 아님)
+09 Commerce Environment Freeze — **[041] 선행 조건: 모바일/태블릿/PC 사용성 확인**
 10 Brain Architecture 팀 논의
 11 Shopping Brain / CS Brain 구현
 12 Brain Integration / Evaluation / Guardrail
@@ -88,6 +93,7 @@
 - **역할:** Main SWE Thread(구현 담당, id 01a102aa-2504-7601-a65e-9bae83c98b64, host local, cwd C:\문서\codyssey_final)가 코드·테스트·문서·로컬 커밋을 전담한다. PM/QA Thread(오케스트레이션·독립 검수, id 01a11e9e-bb68-7cc3-9ed2-34a4c3fe94de)는 읽기 전용 검수와 지시·회수(wait_threads/read_thread)를 담당하며, 예외적으로 **승인된 일반 마일스톤의 GitHub Push와 원격 SHA 검증**도 수행한다(2026-10-10 사용자 표준 GitHub 운영정책 — PM은 코드·DB를 수정하지 않는다). 최상위 Goal(로드맵 09까지)은 오케스트레이션 Thread에만 설정돼 있으므로 이 Thread에 중복 Goal을 만들지 않는다.
 - **승인 게이트:** 04-C는 사용자 최종 Visual 승인 후 04-D로 진입한다. 그 외 확정 범위의 구현·수정·검증·로컬 커밋은 PM 검수 후 순차 진행한다. 사용자 승인이 필요한 것은: 핵심 화면의 최종 Visual QA, 중요한 DB schema/파괴적 데이터 변경, 유료 API 사용, 큰 scope 변경, 09 Commerce Environment Freeze 최종 승인. **GitHub Push(일반 마일스톤)는 PM 독립 QA 통과 후 오케스트레이션이 기존 성공한 hongbinwee GCM 인증으로 정상 fast-forward Push하도록 사전 허용됐다(2026-10-10 사용자 표준 GitHub 운영정책) — 매회 별도 승인이던 이전 정책은 Superseded.** 단, force-push/이력 재작성/파괴적 변경/중요 scope 변경을 동반하는 Push는 계속 별도 승인이며, Push 후 원격·로컬 full SHA 일치를 커넥터로 매회 검증하고 VERIFICATION_LOG에 기록한다.
 - **live eval 위치:** LLM_API_KEY 미설정으로 live eval이 BLOCKED 상태인 것은 로드맵 10~13 Brain 범위의 기존 제한이다. 04-C나 09 승인이 LLM 키를 요구하는 게이트가 아니다.
+- **서브에이전트·다른 모델 활용(2026-10-11 확정):** 같은 원인으로 반복 차단되면 다른 모델(예: Luna)의 독립 분석을 우선 활용한다. 위임 시 맥락·기존 승인 범위·거부 로그·DB 보호 조건을 함께 전달한다. 역할은 분석·read-only 검토·safe-code·QA까지 가능하나, 파일과 DB의 writer 책임은 사전에 분리한다(이번 PMQA-046 선례: Main=유일 writer / Luna=read-only / PM=최종 QA·Push). 사용자 또는 auto-review가 명시적으로 거부한 동일 작업을 에이전트를 바꿔 우회하는 것은 금지한다. 서브에이전트 활용 자체가 새로운 승인 범위를 부여하지 않는다. 이 정책은 로드맵 09까지 전체에 적용한다.
 - **GitHub 접근:** 저장소 hongbinwee/codyssey_final-mission의 원격 조회는 **연결된 hongbinwee 계정의 GitHub 플러그인/커넥터를 우선**한다. Push 실행은 PM(오케스트레이션)이 기존 로컬 hongbinwee GitCredentialManager 인증 경로로 수행한다(04-C 배치에서 정상 동작 확인, 2026-10-10). project99hong-ai 계정으로 저장소에 접근하지 않고, 인증 재설정(PAT/SSH/GCM)을 시도하지 않는다. 커넥터가 불가능하면 구체적 제약과 안전한 대안을 보고한다(로컬 git 원격 작업의 절대 금지가 아니다). Push 시 branch ref 이동만으로 성공이라 하지 않고, 실제 commit/tree/blob 객체의 원격 도달과 로컬/원격 HEAD 일치를 검증한다(PMQA-GIT-POLICY-20261010).
 
 ### 문서 역할과 읽기 순서

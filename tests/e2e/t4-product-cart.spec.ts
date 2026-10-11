@@ -505,7 +505,8 @@ test("replay는 snapshot이 아니라 최신 카트를 표시한다", async ({ p
       product_id: "p-b", variant_id: "v-b-24", quantity: 1,
       expected_cart_version: await cartVersion(page),
       expected_variant_version: bv,
-      idempotency_key: "e2e-followup-1",
+      // PMQA-044-A — 고정 키가 실행 사이에 보존되면 replay/CONFLICT로 검증이 깨진다.
+      idempotency_key: crypto.randomUUID(),
     },
   });
   expect((await r2.json()).ok).toBe(true);
@@ -551,7 +552,8 @@ test("VERSION_CONFLICT 확정 거절 → 자동 재실행 없이 최신 재조�
       product_id: "p-b", variant_id: "v-b-24", quantity: 1,
       expected_cart_version: await cartVersion(page),
       expected_variant_version: bv,
-      idempotency_key: "e2e-conflict-1",
+      // PMQA-044-A — 고정 키가 실행 사이에 보존되면 replay/CONFLICT로 검증이 깨진다.
+      idempotency_key: crypto.randomUUID(),
     },
   });
   expect((await add.json()).ok).toBe(true);

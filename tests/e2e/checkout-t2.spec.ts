@@ -40,7 +40,10 @@ test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
   await page.getByRole("button", { name: /주문하기/ }).click();
   await expect(page.getByRole("heading", { name: "주문서" })).toBeVisible();
   await expect(page.getByText("배송지 (테스트)")).toBeVisible();
-  await expect(page.getByText("모의 결제 — 실제 결제는 발생하지 않아요")).toBeVisible();
+  // PMQA-040: 모의결제 안내는 하단 CTA 아래 .pay-note 단일 문구로 이동했다.
+  await expect(
+    page.locator(".checkout-paybar .pay-note"),
+  ).toContainText("모의 결제로 실제 결제는 발생하지 않아요");
 
   await page.getByRole("button", { name: "152,000원 결제하기" }).click();
 

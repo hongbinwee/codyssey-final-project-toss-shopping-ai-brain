@@ -1,11 +1,33 @@
-// --demo 시드 안전성 검증. scratch DB(commerce_demo_verify)를 만들어
-// commerce_test/dev를 건드리지 않고 demo reconcile의 소유 경계를 증명한다.
+// --demo 시드 안전성 검증 (현재 상태: 전체 5건 DISABLED — PMQA-040)
+//
+// 검증 의도(재활성 시 기준): scratch DB를 만들어 commerce_test/dev를 건드리지
+// 않고 demo reconcile의 소유 경계를 증명한다.
 // - demo reconcile은 p-d-*/v-d-*/r-d-*만 소유한다
 // - 비-demo 상태(fixture stock/version, 주문, 결제/환불)는 demo 시드가 변경하지 않는다
 // - 데모 상품의 비-demo 리뷰(r-custom)는 보존, stale r-d-*는 정리
 // - 외부 참조가 붙은 stale v-d-*/p-d-*는 삭제 대신 active=false 보존
 // - reconcile+upsert는 단일 트랜잭션 — 중간 실패 시 전체 롤백
 // - DB 가드는 URL이 아니라 current_database() 기준이라 ?database= 우회를 막는다
+//
+// ── PMQA-040 비활성 사유 ────────────────────────────────────────────────
+// 이 파일은 원래 고정 이름 DB(commerce_demo_verify)를
+//   DROP DATABASE IF EXISTS ... WITH (FORCE)
+// 로 만들고 지웠다. 040에서 이 코드가 보존 대상 DB와 그 안 데이터를 소실시킨
+// 사고의 직접 원인이 됐다 — 해당 DROP 코드는 전부 제거됐다.
+//
+// 재활성이 막힌 구조적 이유: scratch_* 이름은 scripts/seed.ts의 --demo 허용
+// DB(DEMO_DBS = commerce, commerce_demo_verify)에 없다. 소유권 검증된
+// scratch 경로로는 --demo를 실행할 수 없고, 보호 DB 허용 목록 확대는 금지다.
+//
+// 재활성 조건(미래 작업 — 현재 승인 범위 아님):
+//   createOwnedScratchDb(tests/helpers/scratch-db.ts)로 만든 scratch DB에
+//   대해서만 --demo가 허용되도록, seed.ts에 '동일 runId 마커 +
+//   current_database() + pg_database OID/owner 검증을 통과한 scratch_*'를
+//   허용하는 좁은 조건을 명시적으로 추가하는 안. 그 조건이 승인·구현되기
+//   전까지 이 파일은 전체 skip을 유지한다.
+//
+// 참고: test 1~3은 DB 변경 없는 거부(refusal) 검증이라 재활성 후보지만,
+// PM 지시로 이번 검증에서는 파일 전체를 제외한다.
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -14,7 +36,9 @@ import { connectDb, sql } from "../../src/db.ts";
 
 const DB = "commerce_demo_verify";
 const DB_URL = "postgres://commerce:commerce@localhost:5432/" + DB;
-const ADMIN_URL = "postgres://commerce:commerce@localhost:5432/postgres";
+
+// PMQA-040 — 파일 전체 skip 사유는 상단 주석 참조.
+const SKIP_040 = "PMQA-040: scratch 수명주기 비활성 — 파일 상단 주석 참조";
 
 const seed = (extra: string[] = [], url = DB_URL) =>
   spawnSync("node", ["scripts/seed.ts", ...extra], {
@@ -22,13 +46,13 @@ const seed = (extra: string[] = [], url = DB_URL) =>
     stdio: "pipe",
   });
 
-test("--demo는 테스트 DB(commerce_test)에서 실행을 거부한다", () => {
+test("--demo는 테스트 DB(commerce_test)에서 실행을 거부한다", { skip: SKIP_040 }, () => {
   const r = seed(["--demo"], "postgres://commerce:commerce@localhost:5432/commerce_test");
   assert.notEqual(r.status, 0);
   assert.match(String(r.stderr) + String(r.stdout), /commerce_test/);
 });
 
-test("--demo 가드는 ?database= 우회도 막는다(실제 접속 DB 기준)", async () => {
+test("--demo 가드는 ?database= 우회도 막는다(실제 접속 DB 기준)", { skip: SKIP_040 }, async () => {
   // postgres.js는 ?database= 옵션을 실제 접속에 사용한다 — URL의 pathname은
   // commerce지만 접속 DB는 commerce_test가 되는 우회. 가드가 실제 DB명을
   // 검사하므로 거부돼야 하고 commerce_test에는 어떤 변경도 없어야 한다.
@@ -49,17 +73,19 @@ test("--demo 가드는 ?database= 우회도 막는다(실제 접속 DB 기준)",
   await tdb.end();
 });
 
-test("--demo와 --phase 동시 사용을 거부한다", () => {
+test("--demo와 --phase 동시 사용을 거부한다", { skip: SKIP_040 }, () => {
   const r = seed(["--demo", "--phase=1"]);
   assert.notEqual(r.status, 0);
 });
 
-test("demo seed는 비-demo 상태를 보존하고 demo 행만 reconcile한다", { timeout: 120000 }, async () => {
-  const admin = postgres(ADMIN_URL);
-  await admin.unsafe("DROP DATABASE IF EXISTS " + DB + " WITH (FORCE)");
-  await admin.unsafe("CREATE DATABASE " + DB);
-  await admin.end();
-
+test("demo seed는 비-demo 상태를 보존하고 demo 행만 reconcile한다", { skip: SKIP_040, timeout: 120000 }, async () => {
+  // PMQA-040 DISABLED — 기존에는 여기서 admin 접속으로
+  //   DROP DATABASE IF EXISTS commerce_demo_verify WITH (FORCE)
+  //   CREATE DATABASE commerce_demo_verify
+  // 를 실행했다(040 사고 원인 — 코드 제거됨). scratch 수명주기는
+  // tests/helpers/scratch-db.ts의 createOwnedScratchDb로 대체하되,
+  // seed.ts DEMO_DBS가 scratch_*를 허용하는 좁은 조건이 먼저 필요하다.
+  // 아래 본문은 재활성 시 참조용으로 보존한다.
   try {
     for (const step of [
       ["scripts/migrate.ts", "--phase=4"],
@@ -219,24 +245,20 @@ test("demo seed는 비-demo 상태를 보존하고 demo 행만 reconcile한다",
   );
   assert.equal(dv.c, 55);
   } finally {
-    // 실패해도 scratch DB는 정리한다. commerce/commerce_test는 절대 DROP하지 않는다.
+    // PMQA-040 DISABLED — 원래는 여기서 FORCE DROP으로 scratch DB를 정리했다.
     try {
       await sql.end();
     } catch {
       // 이미 닫혔을 수 있다
     }
-    const admin2 = postgres(ADMIN_URL);
-    await admin2.unsafe("DROP DATABASE IF EXISTS " + DB + " WITH (FORCE)");
-    await admin2.end();
   }
 });
 
-test("demo seed 도중 실패하면 reconcile+upsert 전체가 롤백된다", { timeout: 120000 }, async () => {
-  const admin = postgres(ADMIN_URL);
-  await admin.unsafe("DROP DATABASE IF EXISTS " + DB + " WITH (FORCE)");
-  await admin.unsafe("CREATE DATABASE " + DB);
-  await admin.end();
-
+test("demo seed 도중 실패하면 reconcile+upsert 전체가 롤백된다", { skip: SKIP_040, timeout: 120000 }, async () => {
+  // PMQA-040 DISABLED — 기존에는 여기서 admin 접속으로
+  //   DROP DATABASE IF EXISTS commerce_demo_verify WITH (FORCE)
+  //   CREATE DATABASE commerce_demo_verify
+  // 를 실행했다(040 사고 원인 — 코드 제거됨). 재활성 조건은 위 테스트와 동일.
   try {
     for (const step of [
       ["scripts/migrate.ts", "--phase=4"],
@@ -331,15 +353,12 @@ test("demo seed 도중 실패하면 reconcile+upsert 전체가 롤백된다", { 
     );
     assert.equal(v2b.active, false);
   } finally {
-    // 실패해도 scratch DB는 정리한다. commerce/commerce_test는 절대 DROP하지 않는다.
+    // PMQA-040 DISABLED — 원래는 여기서 FORCE DROP으로 scratch DB를 정리했다.
     try {
       await sql.end();
     } catch {
       // 이미 닫혔을 수 있다
     }
-    const admin2 = postgres(ADMIN_URL);
-    await admin2.unsafe("DROP DATABASE IF EXISTS " + DB + " WITH (FORCE)");
-    await admin2.end();
   }
 });
 
