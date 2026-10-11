@@ -1291,3 +1291,28 @@ PM이 실제 코드, full SHA gate의 동일 Buffer baseline 파생, private txn
   - **09 Freeze 전 해소 필수로 기록**: 안전한 소유권 검증의 테스트 격리/반복 실행 경로 + 보호 지문 + 실DB rollback fault 미검증.
 - **PM08 사전 static 판정**: shell/nav/CTA/sheet의 max480 모바일 중앙 구조는 있으나 테스트에 360/768/1440 뷰포트 전수 coverage가 없다 → 08의 **4뷰포트×핵심 화면·인터랙션 매트릭스는 NOT_RUN 유지**. 기존 390×844·390×600 실측 PASS를 4뷰포트 전수 PASS로 부르지 않는다.
 - 미검증 유지: 표준 69·Integration·eval·runtime 전부 NOT_RUN · Visual 사용자 승인 대기 유지 · 06C 착수 금지.
+
+### PMQA-050-B — 격리 테스트 소유권 기반 라이브러리 구현 + DB-free 검증 (2026-10-12)
+
+- **범위(PM 승인)**: 소유권 전달/검증 기반만, 코드 최대 4파일. launcher·트랜잭션·seed 오케스트레이션·testdb broad/restricted 분기·src·seed/migrate/devdb/config·Integration 파일·표준/readonly/e2e config 변경은 전부 불허 — 격리 pipeline은 아직 실행 불가.
+- **구현(4파일)**:
+  - `tests/helpers/scratch-db.ts`: 반환형에 `createdIdentity`(CREATE 직후 실측 oid+owner의 Object.freeze 불변 사본) 노출 — 이후 probe 값을 EXPECT로 채택하는 순환 검증 금지. cleanup closure·기존 guard·생성/삭제 동작 미변경.
+  - `tests/helpers/isolated-db.ts`(신규): `parseIsolatedContract`(5필드 전체·부분 누락 거부·scratch 이름 패턴·숫자 OID/OWNER·UUID RUN_ID·URL 로컬 전용·query/fragment 거부·경로=이름 일치·credential 미출력) · `planIsolatedConnect`(opt-in+strict+계약 통합 게이트, 어느 하나 소실이어도 default deny) · `contractFromScratch`(EXPECT 출처=생성 핸들 snapshot뿐) · `buildIsolatedChildEnv`(통째 상속 없이 계약 필드만 명시 구성) · `verifyOwnedExec`(호출자 exec에서 read-only 실측 — current_database·oid·datdba·정확히 1행의 _scratch_owner.run_id 전부 일치 필요). config/devdb/.env 부작용 없음·모듈 top-level connect/spawn 없음.
+  - `tests/unit/isolated-db.test.ts`(신규): 보호 DB·이름/OID/owner/marker 불일치·마커 0행/복수행/부재·부분 계약·URL 부재 형식/query/fragment/원격/경로 불일치·strict·opt-in 소실 → 전부 거부. 통과 시 실행 query가 SELECT 측정뿐임을 mock 기록으로 검증. buildIsolatedChildEnv 출력이 planIsolatedConnect를 통과함을 확인.
+  - `tests/unit/scratch-db.test.ts`: `createdIdentity`가 CREATE-시 identity({oid:70001,owner:10})와 일치·frozen·cleanup이 원본 기준으로 정상 DROP까지 감(반환 사본과 closure 분리) 검증 추가.
+- **검증(actual·DB-free만)**: `npm run check`(tsc) exit 0 · `npm run test:unit` **195/195 exit 0**(178+신규 17) · `npm run build` exit 0 · `git diff --check` 0. **(수정 전 수치 이력 — PM QA 1차 수정 후 최종은 202/202, 아래 항목 참조. 이 수치를 최종 결과로 인용하지 않는다)**
+- **NOT_RUN 유지**: 실DB·HTTP·Docker·listen·migrate/seed 실행·Integration·eval·standard 69·readonly/e2e 전부 미실행 — 본 단계는 DB-free 라이브러리뿐이다.
+- **잔여 위험(Luna 2차·PM 확인 — 본 라이브러리 완성만으로 CLOSED 금지)**: ① static config import가 ensureDevDb 전 검사보다 앞서 .env 값을 채울 수 있음 ② seed base autocommit + migrate CREATE _migrations가 트랜잭션 밖 선행 DDL ③ health child 3998/3999·의도적 invalid DB 테스트 의미 미정 ④ readonly는 mutation 권한 아님 ⑤ 코드 불변 = 런타임 회귀 0 증거 아님 → 최소 smoke 실DB 승인부터 단계적 확대 필요.
+- **다음 승인 게이트**: 실DB scratch CREATE/DROP·migrate/seed write·자식 listen·격리 Integration/eval 실행은 별도 구체 승인 후에만 — 구현 준비 ≠ 실행 승인. rollback fault injection도 별도 승인 항목.
+
+#### PMQA-050-B 1차 수정 — PM/Luna 독립 QA MAJOR 2 + 결함 3 (2026-10-12)
+
+- **MJ-B1 (parse 우회 계약의 verifyOwnedExec 통과 가능) 해소**: exported 경계에서 어떤 DB 조회보다 먼저 `validateContractShape`를 호출해 잘못된 계약은 **조회 0건으로 거부**. 판단 기준은 진입 시점 불변 사본 — async 대기 중 caller가 contract를 변조해도 snapshot으로 판단한다(단위가 mock으로 직접 증명). `contractFromScratch`도 같은 검증 함수를 재사용해 잘못된 소스는 생성 자체를 거부. identity 응답도 정확히 1행만 허용.
+- **MJ-B2 (buildIsolatedChildEnv 임의 env 전달·권한 복원) 해소**: 시그니처를 raw source env 입력으로 변경 — source에 전체 계약+strict+opt-in이 실제로 있어야만 구성하고, source `DATABASE_URL`이 계약과 다르면 거부. 자식 env는 `PATH`/`SystemRoot` 등 명시 allowlist + 계약 키로만 구성 — `NODE_OPTIONS`/`NODE_PATH`/`LD_PRELOAD` 등 임의 실행 제어는 통과하지 않는다. 부재 값을 '1'로 복원하는 기능은 없다.
+- **결함 3건**: ① scratch 반환 핸들 전체 `Object.freeze` + `Readonly` 타입 — `createdIdentity` 속성 교체 차단(cleanup closure는 원본 그대로) ② UUID를 정확한 8-4-4-4-12 그룹 구조로 검증 — `{36}` 패턴이 허용하던 하이픈 36개도 거부 ③ 첫 실측 query 오류는 credential 원문을 노출하지 않고 sanitized 응답으로 처리.
+- **검증(actual·독립 명령·exit 확인)**: `npm run check` exit 0 · `npm run test:unit` **202/202 exit 0**(195+신규 7 — bypass/변조/env 복원/속성 교체/오류 노출 각각 직접 증명) · `npm run build` exit 0 · `git diff --check` exit 0.
+- **이력 구분**: 초기 `npm run check`는 TS2345(fakeExec의 unsafe가 비제네릭 — exec-7bafa5f7)로 실패 → 제네릭 시그니처로 수정 후 최종 PASS. 최초 195는 수정 전 수치이며 최종 결과는 **202**.
+- **범위 정정**: 변경은 코드 4파일(수정 2·신규 2) + 문서 3파일 = 총 7파일. unit 신규는 isolated-db.test.ts 1파일 + 기존 scratch-db.test.ts 1파일 수정 — '신규 2파일' 표기는 오기로 정정한다. 테스트 헤더의 'connect/spawn/write 0 증명' 표현도 '순수 판정·query 0/SELECT-only 범위 실증(실DB 연결·통합 실행 차단 증거 아님)'으로 정정.
+- **OPEN 유지(5 architecture MAJOR — 기반 라이브러리 완성으로 CLOSED 금지)**: ensureDevDb 전 static config import·seed base autocommit·migrate 선행 DDL·health child 3998/3999·의도적 invalid DB 의미·readonly≠mutation 권한·코드 불변≠런타임 회귀 증거 — 최소 smoke 실DB 승인부터 단계적 확대 필요.
+
+- **PM/Luna 최종 판정(인용)**: PMQA-050-B 최종 제한QA PASS — PM이 4 code 실제 검수 + native 명령 회수: tsc exec-76691af8 exit 0 · unit exec-1f628a28 202/202 exit 0 · build exec-3a7104e5 exit 0 · diff exec-dd4a5b63 exit 0. Luna 독립 재검수 4 file hash 안정·5 foundation 지적 해소·추가 MAJOR 없음(static PASS — 실행 검증 아님). pipeline/architecture 5 MAJOR OPEN·실PG/Integration/standard69/eval NOT_RUN·06B Visual 대기·06C 금지 유지.

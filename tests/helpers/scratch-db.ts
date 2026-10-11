@@ -137,12 +137,19 @@ export function planScratchDrop(opts: {
   return { ok: true };
 }
 
-export type ScratchDb = {
+export type ScratchDb = Readonly<{
   dbName: string;
   runId: string;
   dbUrl: string;
+  // CREATE 직후 pg_database에서 실측한 원본 identity의 불변 사본.
+  // 소비자는 이 snapshot을 EXPECT 출처로 쓴다 — 이후 probe 값을 EXPECT로
+  // 채택하는 순환 검증을 금지한다 [PMQA-050-B]. cleanup closure의 기준
+  // (expectedId)과는 별개 객체이며 수정해도 cleanup 동작에 영향이 없다.
+  // 반환 핸들 자체도 freeze — createdIdentity 속성을 새 객체로 교체하는
+  // 경로까지 차단한다 [MJ-B2 정정].
+  createdIdentity: Readonly<DbIdentity>;
   cleanup: () => Promise<void>;
-};
+}>;
 
 type SqlLike = {
   unsafe: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]>;
@@ -219,10 +226,14 @@ export async function createOwnedScratchDb(
     }
     const dbName = plan.dbName;
     const expectedId = expected;
-    return {
+    return Object.freeze({
       dbName,
       runId,
       dbUrl,
+      createdIdentity: Object.freeze({
+        oid: expected.oid,
+        owner: expected.owner,
+      }),
       cleanup: async () => {
         // connect 전 게이트 — opt-in이 cleanup 시점에 사라졌어도 거부한다.
         const g = planScratchConnect({
@@ -276,7 +287,7 @@ export async function createOwnedScratchDb(
           await adm.end().catch(() => {});
         }
       },
-    };
+    });
   } finally {
     await admin.end().catch(() => {});
   }

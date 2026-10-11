@@ -291,4 +291,20 @@ describe("createOwnedScratchDb — DB-free mock 검증", () => {
       "postgres://commerce:commerce@localhost:5432/scratch_0000000000000001",
     );
   });
+
+  test("createdIdentity는 CREATE 직후 원본 identity의 불변 사본이다", async () => {
+    // okHandler의 firstIdentity = {oid:70001, owner:10} — CREATE 직후 실측값.
+    const { connect, queries } = fake(okHandler());
+    const s = await createOwnedScratchDb(ADMIN, { connect });
+    assert.deepEqual(s.createdIdentity, { oid: 70001, owner: 10 });
+    assert.equal(Object.isFrozen(s.createdIdentity), true);
+    // 핸들 자체도 frozen — createdIdentity 속성을 새 객체로 교체할 수 없다.
+    assert.equal(Object.isFrozen(s), true);
+    const desc = Object.getOwnPropertyDescriptor(s, "createdIdentity")!;
+    assert.equal(desc.writable, false);
+    // 반환 사본과 cleanup closure의 기준(expectedId)은 별개다 — cleanup은
+    // 여전히 원본 값으로 검증해 정상 DROP까지 간다.
+    await s.cleanup();
+    assert.equal(dropQueries(queries).length, 1);
+  });
 });

@@ -240,6 +240,28 @@ commerce_demo_verify 소실 사고(VERIFICATION_LOG PMQA-040-SEED-SAFETY) 이후
 | 회귀 선택자 | 목록 헤딩 '주문 목록', 취소 CTA '취소하기', 취소요청 표기=cardHead '취소요청' + data-order-id 스코프 — 기존 spec 3파일 최소 대응 | PM048-A 승인 범위 |
 | 미구현 유지 | 영수증·포인트·송장·택배사·주소 변경·배송 메모·구매 확정 — 데이터·기능 부재. 환불 상태 변경 실행은 이번 06B에서 하지 않으며, 06C UI/검증에서 기존 Backend 취소·모의 환불 기능을 그대로 사용(실제 PG 환불은 범위 밖) | 허위 UI 금지·기존 Backend 재사용 |
 
+## 2026-10-12 · PMQA-050-B — 격리 테스트 소유권 기반만 구현 (launcher·실행은 미승인)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 050-A 초안 거부 사유 | 'cleanUserData 변경 없음' 불성립(assertExecTargetsTestDb가 commerce_test 고정)·setupTestDb만 분기하면 cleanup이 구 DB 조건으로 회귀·migrate CREATE가 트랜잭션 밖 선행 DDL·seed-once가 fixture reset 의미 변경·계약에 role/owner 필드 누락·임의 명령 passthrough 허용·session-api의 TEST_DB_URL→src/server 자식 하드코딩·Integration 10파일인데 11로 오기 | PM 1차 독립 리뷰 7개 지적 |
+| 구현 범위 | 소유권 전달/검증 기반 라이브러리만, 최대 4파일 — scratch 반환형 `createdIdentity`(CREATE-시 snapshot, EXPECT 출처는 이것뿐)·신규 `isolated-db.ts`(계약 파싱·핸들→계약/env·same-exec read-only 실측)·단위 테스트 2파일(신규 1+기존 1 수정 — 최초 '신규 2파일' 표기는 **Superseded**: 1차 수정 항목의 기록 정정 행 참조) | PM050-B 승인 범위 한정 |
+| 계약 형식 | ISOLATED_DB_URL/NAME/OID/OWNER/RUN_ID 5필드 전체 필수·부분 계약·strict·opt-in 소실 시 default deny·URL 로컬 전용+query/fragment 거부·오류에 credential URL 출력 금지 | env는 전달 수단일 뿐 증거 아님 — 증거는 같은 연결의 실측값 |
+| 미구현 명시 | launcher·트랜잭션·seed 오케스트레이션·testdb 분기·migrate/seed 가드·격리 서버 래퍼는 아직 없다 — 격리 pipeline은 실행 불가 | 이번 승인은 기반 라이브러리뿐 |
+| 실행 게이트 | 실DB CREATE/DROP·migrate/seed·자식 listen·격리 Integration/eval은 별도 구체 승인 필수. 최소 smoke 실DB 승인부터 단계적 확대, rollback fault injection도 별도 승인 | 구현 준비 ≠ 실행 승인 |
+| 잔여 위험 | Luna 2차·PM 확인 MAJOR(ensureDevDb 전 static config import·seed autocommit·migrate 선행 DDL·health/의도적 invalid DB 테스트 의미·readonly≠mutation 권한·코드불변≠런타임 회귀 증거)는 기반 완성만으로 CLOSED 금지 | PM050-B 잔여 명세 |
+
+## 2026-10-12 · PMQA-050-B 1차 수정 — PM/Luna 독립 QA MAJOR 해소
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| MJ-B1 | exported verifyOwnedExec가 계약 형식을 DB 조회 전에 검증 + 진입 시점 불변 snapshot으로 판단 + identity 정확히 1행. contractFromScratch도 같은 검증 재사용 — 잘못된 소스는 생성 거부 | parse 우회 caller가 보호/비로컬/부분 계약으로 PASS할 수 있던 경로 차단 |
+| MJ-B2 | buildIsolatedChildEnv는 raw source env를 인가 입력으로 받아 전체 계약+strict+opt-in 실재 시에만 구성. source DATABASE_URL 불일치 거부·allowlist(PATH/SystemRoot 등)만 전달·권한 복원 없음 | 임의 NODE_OPTIONS 등 실행 제어 전달·조용한 덮어쓰기 차단 |
+| 핸들 불변 | scratch 반환 핸들 전체 Object.freeze + Readonly 타입 — createdIdentity 속성 교체 차단, cleanup closure는 원본 유지 | snapshot 속성 재할당 경로 차단 |
+| UUID 검증 | 정확한 8-4-4-4-12 그룹 구조 — {36} 패턴의 하이픈-only 통과 제거 | 형식 검증의 실효성 |
+| 오류 응답 | 첫 실측 query 오류는 credential 원문 노출 없이 sanitized 응답 | 접속 문자열 누출 방지 |
+| 기록 정직 | 초기 TS2345 → generic 수정 → 최종 PASS 이력 분리 기록. 최종 unit 202/202. unit은 신규 1파일+기존 1파일 수정(신규 2 오기 정정). 'connect/spawn/write 0 증명'은 순수 판정·query 범위 실증으로 한정 표기 | PM 문서 정확성 지적 |
+
 ## 2026-10-12 · PMQA-048-C — 06B Visual 구조 보정 + 증거 기준 결정
 
 | 항목 | 결정 | 근거 |
