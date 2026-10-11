@@ -1316,3 +1316,10 @@ PM이 실제 코드, full SHA gate의 동일 Buffer baseline 파생, private txn
 - **OPEN 유지(5 architecture MAJOR — 기반 라이브러리 완성으로 CLOSED 금지)**: ensureDevDb 전 static config import·seed base autocommit·migrate 선행 DDL·health child 3998/3999·의도적 invalid DB 의미·readonly≠mutation 권한·코드 불변≠런타임 회귀 증거 — 최소 smoke 실DB 승인부터 단계적 확대 필요.
 
 - **PM/Luna 최종 판정(인용)**: PMQA-050-B 최종 제한QA PASS — PM이 4 code 실제 검수 + native 명령 회수: tsc exec-76691af8 exit 0 · unit exec-1f628a28 202/202 exit 0 · build exec-3a7104e5 exit 0 · diff exec-dd4a5b63 exit 0. Luna 독립 재검수 4 file hash 안정·5 foundation 지적 해소·추가 MAJOR 없음(static PASS — 실행 검증 아님). pipeline/architecture 5 MAJOR OPEN·실PG/Integration/standard69/eval NOT_RUN·06B Visual 대기·06C 금지 유지.
+
+#### PMQA-050-B 커밋·Push 기록 (PM 실행·검증, 2026-10-12)
+
+- 커밋(SWE): `22909d4dcaf003a779365f01c0ec6e73c0d4c38f` "feat(test): PMQA-050-B - isolated DB ownership transport foundation", parent 5fd3361 — 승인 7파일(코드 4+문서 3)만 explicit stage, cached diff --check exit 0, tmp/shots/dump 자동 stage 없음.
+- Push(PM 실행·인용): `git -c credential.username=hongbinwee push origin main` 정상 require_escalated exit 0(native PM chunk9ce85d) — 원격 5fd3361→22909d4 FF 1커밋. PM의 fresh hongbinwee GitHub fetch_commit(main) = `22909d4dcaf003a779365f01c0ec6e73c0d4c38f` = local HEAD = origin/main, ahead/behind 0/0, tracked clean(2026-10-11 18:08:40 UTC). 4 code SHA256 검수본 전후 일치·7 committed paths 정확.
+- 근거 명시: 향후 이 Push 사실을 인용할 때의 native 근거는 **PM Thread chunk9ce85d/8bceb6 + fresh GitHub 검증**이다 — SWE 측 재검증이 아니라 PM 실행·확인 기록이다.
+- 상태 유지: pipeline/architecture 5 MAJOR OPEN·격리 launcher 미구현·실PG/Integration/standard69/eval NOT_RUN·06B 사용자 Visual 응답 대기·06C 금지·09 active.
