@@ -107,11 +107,13 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 
 아래 계약은 06A에서 실제 구현됐다(기능 검증 완료, 사용자 Visual 게이트는 미통과 상태로 기록).
 
-- 주문서(Checkout): Ref051 수직 구조 — 배송지 블록(주소/상세=주 정보, 이름·연락처=보조 [Observed→구현]) → '일반 배송 상품 N건'(실제 카탈로그 이미지 썸네일 56px·스냅샷 이름/옵션/수량/가격) → '주문 금액' 접힘/펼침 표시 전용 토글(지원 범위: 상품 금액·배송비·총액 — 쿠폰/포인트/혜택/도착예정/주소변경은 미지원 제외) → 모의결제 명시+동의 → 고정 하단 'N원 결제하기' 전체폭 CTA.
-- 결제 완료(OrderComplete, W04-C): Ref077 — 중앙 체크+'결제했어요' → 주문 상품 행 → 배송지 → .oc-cta 하단 그룹(전체폭 '홈으로 가기' + '주문 상세 내역 보기' 링크). 성공 표시는 CONFIRMED+PAID+paid=total일 때만 — 그 외 상태는 상태 라벨로 전환해 직접 진입 오인 방지.
+- 주문서(Checkout): Ref051 수직 구조 — 배송지 블록(주소/상세=주 정보, 이름·연락처=보조 [Observed→구현]) → '일반 배송 상품 N건'(실제 카탈로그 이미지 썸네일 56px·현재 Cart 견적의 이름/옵션/수량/가격) → '주문 금액' 접힘/펼침 표시 전용 토글(지원 범위: 상품 금액·배송비·총액 — 쿠폰/포인트/혜택/도착예정/주소변경은 미지원 제외) → 모의결제 안내 블록 → 고정 하단 'N원 결제하기' 전체폭 CTA.
+- 견적 출처 구분 [06A 확정]: 주문서 화면은 `/api/checkout/quote`의 **현재 Cart 실시간 견적**(가격·재고 서버 검증)을 표시하고, 결제 완료·주문 상세는 confirm 시점에 저장된 **주문 스냅샷**을 표시한다 — 두 출처를 혼동하지 않는다.
+- 동의 checkbox 없음 [06A 확정]: Ref의 개인정보 동의/포인트/쿠폰/멤버십 문구는 미지원 업무이므로 checkbox·수집 UI를 만들지 않는다. 결제 영역은 '모의 결제 — 실제 결제는 발생하지 않아요' 안내 텍스트 블록만 표시한다.
+- 결제 완료(OrderComplete, W04-C): Ref077 — 중앙 체크+'결제했어요' → 주문 상품 행 → 배송지 → .oc-cta 하단 그룹(전체폭 '홈으로 가기' + '주문 상세 내역 보기' 링크). 성공 표시 paidOk는 status=CONFIRMED && payment.status=PAID && paid_amount_won=total_won && !cancel_request 4조건 전부 충족일 때만 — 그 외 상태(취소 요청 접수/완료 포함)는 상태 라벨로 전환해 직접 진입 오인 방지.
 - CHECKOUT pending 계약: kind 격리 — CHECKOUT intent는 카트 소비자(listCartPending)에 노출되지 않고 Checkout은 listPendingByKind("CHECKOUT")만 본다. 미확정 intent 복구 블록은 견적 성공/실패와 독립 렌더 — commit 응답 유실 후 빈 카트 VALIDATION 견적 위에서도 복구 접근점이 유지된다. 미도착(NOT_FOUND)은 같은 키+같은 payload '다시 결제하기'만 허용.
 - order_items 표시 계약: 이름/옵션/수량/가격/주소는 저장 스냅샷, image/product_id는 조회 시점 현재 카탈로그(LEFT JOIN additive) — 두 출처를 혼동하지 않는다.
-- 실패/상태: processing('결제 처리 중…' 비활성)·STALE_QUOTE/CART_BLOCKED→안내+새 견적·확정 거절→intent 해제·AMBIGUOUS→intent 유지+복구 스트립·완료 GET 실패→ErrorState+재시도·NOT_FOUND→'주문을 찾을 수 없어요'. raw 캡처는 승인 대기 BLOCKED — 기능은 e2e로 검증됨.
+- 실패/상태: processing('결제 처리 중…' 비활성)·STALE_QUOTE/CART_BLOCKED→안내+새 견적·확정 거절→intent 해제·AMBIGUOUS→intent 유지+복구 스트립·완료 GET 실패→ErrorState+재시도·NOT_FOUND→'주문을 찾을 수 없어요'. raw 상태 캡처는 PMQA-06A-CAPTURE-037 승인 실행으로 완료(impl_checkout_processing·impl_checkout_stale·impl_checkout_pending_lost·impl_complete_get_error/notfound — impl-only, VERIFICATION_LOG 037 참조). 기능 자체는 e2e로 검증됨.
 
 ## 8. 로딩·오류·Empty [1차]
 

@@ -48,7 +48,7 @@
 02 Commerce Audit                    ✅ 완료 (docs/COMMERCE_AUDIT.md)
 03 Design System Foundation          ✅ 완료 (docs/COMMERCE_DESIGN_SYSTEM.md)
 
-04 Toss Shopping Shell               🟡 진행 중
+04 Toss Shopping Shell               ✅ 완료 (04-A~04-E 전부 완료)
    04-A 기본 Home/Search/List UI     ✅ 1차 기능 구현 완료 (Visual 목표 미달 — 아래 참조)
    04-B Demo Catalog Expansion       ✅ 완료 (seed safety correction 포함)
    04-C Toss Shopping Home 재구성    ✅ 완료 — 사용자 최종 Visual 승인 (2026-10-10)
@@ -69,7 +69,8 @@
 05 Product Detail / Review / Option / Cart   ✅ 완료 (2026-10-11, PMQA-05-CLOSE-PUSH-033 —
                                        사용자 최종 Visual 승인 + PM 단건 Push·원격 일치 확인)
 06 Checkout / Payment / Order / Shipment / Cancel
-                                       🟡 착수 — 06-A Checkout/모의결제/완료 (PMQA-06A-CHECKOUT-034)
+                                       🟡 진행 중 — 06-A Checkout/모의결제/결제완료 구현·미완 상태 캡처·검증 완료
+(커밋 7be89d3, PMQA-06A-034/035 + CAPTURE-037) — 사용자 Visual 승인 요청·응답 대기
                                        · B 주문목록/주문상세/배송 · C 취소단계/환불은 순차
 07 Full Buyer Journey QA
 08 Frontend Final Visual Polish

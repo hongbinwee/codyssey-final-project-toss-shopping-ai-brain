@@ -434,4 +434,3 @@ test("결제 완료 → 홈 복귀 시 카트 배지 미노출 + 서버 카트 �
   // 완료 진입 콜백의 refreshCart(seq 가드 GET)가 적용되면 배지는 사라진다.
   await expect(page.locator(".cart-badge")).toHaveCount(0);
 });
-

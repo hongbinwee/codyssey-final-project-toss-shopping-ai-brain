@@ -115,7 +115,7 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 | 홈의 AI 진입 카드가 merchandising 영역을 대신한다 | merchandising block(프로모/특가/추천/기획전/배너)을 demo/static UI로 별도 재현. AI 진입점은 유지하되 홈 중심 대형 카드의 위치·형태는 미확정 — 04-C Home 재구성에서 Toss IA·merchandising을 깨지 않는 곳으로 결정 | merchandising 밀도가 토스쇼핑 홈의 핵심 시각 특성 |
 | 개별 컴포넌트 유사도가 화면 구조보다 우선이다 | 화면 단위 IA·콘텐츠 밀도·수직 구조의 재구성이 우선 | 색상/컴포넌트가 유사해도 화면 전체 인상이 다르면 목표 미달 |
 | Brain 개발이 현재 우선순위다 | Commerce Environment(로드맵 04~09) 완성 후 Brain(11~12) | Brain 검증 환경이 먼저 실제 서비스 수준이어야 함. 기존 Tool Registry·Stub·Backend는 보존하되 Brain 완성으로 간주하지 않음 |
-| 04 홈·검색·목록 1차 구현이 최종 완료다 | 기능적 1차 구현만 완료. Visual QA 목표 미달이므로 04 Toss Shopping Shell은 진행 중 | 390×844 실제 비교에서 구조적 유사성 부족 확인 |
+| 04 홈·검색·목록 1차 구현이 최종 완료다 | 기능적 1차 구현만 완료. Visual QA 목표 미달이므로 04 Toss Shopping Shell은 진행 중 **[Superseded 2026-10-11: 04-A~04-E 전부 완료로 04 Shell 완료 확정]** | 390×844 실제 비교에서 구조적 유사성 부족 확인 |
 
 연결 계획(계획만, 미실행) 및 04-B 구현 결정(2026-10-08):
 
@@ -176,3 +176,17 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 | 데이터·범위 한계 분리 | 리뷰 사진·작성자·다중 이미지 갤러리는 실데이터 부재로 한계로 유지한다(08 MINOR 아님 — 허위 데이터로 만들지 않는다) | 데이터 계약 부재는 polish 이슈가 아니다 |
 | nav 상태 차이 기록 | 스크롤 깊이에서 구현 nav floating vs Ref05 solid 차이는 관측 사실만 캡션에 기록(수치 단정 없음) — 전환 시점 미세 보정은 08 MINOR | PM 정정 — 미검증 수치 기록 금지 |
 | 05 Visual 승인 [Superseded 이력 → 최신 승인 완료] | 032에서 '승인 보류'로 정정됐던 기록은, PM 채팅의 최신 사용자 명시 승인(05 최종 Visual QA 승인 + 6커밋 Push 범위 승인, 각각 별개 게이트)으로 Superseded — **05 최종 Visual 승인 완료(2026-10-11)** + PM 단건 Push(5414ee8, 원본 6커밋 FF, 원격 일치 확인)로 **05 완료 확정** | PMQA-05-CLOSE-PUSH-033 — 이전 보류·거부 기록은 사실 이력으로 보존 |
+
+## 2026-10-11 · 06A 주문서·모의 결제·결제 완료 계약 (PMQA-06A-034/035 + CAPTURE-037)
+
+06A에서 확정된 구현 계약. 기능 검증 완료 — 사용자 Visual 게이트는 미통과 상태로 별도 표기한다.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| Checkout=현재 Cart 견적 / Complete=주문 스냅샷 | 주문서는 `/api/checkout/quote`의 현재 카트 실시간 견적(가격·재고 서버 검증)을 표시하고, 결제 완료·주문 상세는 confirm 시점 저장된 주문 스냅샷을 표시한다. image/product_id만 조회 시점 카탈로그 LEFT JOIN. | 스냅샷 정합 — 이후 카탈로그·가격 변경이 확정 주문 기록을 바꾸지 않는다 |
+| 동의 checkbox 없음 | Ref의 개인정보 동의/포인트/쿠폰/멤버십 문구는 미지원 업무이므로 checkbox·수집 UI를 만들지 않고 '모의 결제 — 실제 결제는 발생하지 않아요' 안내 블록만 표시한다. | 미지원 동작을 표시하지 않는 정직 UI 원칙 |
+| OrderComplete paidOk 4조건 | '결제했어요' 성공 구조는 status=CONFIRMED && payment.status=PAID && paid_amount_won=total_won && !cancel_request일 때만. 취소 요청 접수/완료 주문은 별도 상태 라벨로 전환한다. | 신규 결제 외 상태를 성공으로 오인시키지 않는다 |
+| STALE_QUOTE 서버 가드 | 견적 만료·카트 버전 변경·구성/수량/가격·옵션 변경 시 서버가 STALE_QUOTE+REFRESH_AND_RECONFIRM으로 거절한다(src/checkout.ts:101-139). 클라이언트·LLM 판단이 아니라 서버 확정 규칙. | 비즈니스 규칙의 서버 단일 정본 |
+| CHECKOUT pending kind 격리 | CHECKOUT intent는 listCartPending에 노출되지 않고 listPendingByKind("CHECKOUT")만 본다. AMBIGUOUS→intent 유지+복구 스트립, 확정 거절→intent 해제. action 조회 키는 'ui-'+uiKey. | 카드 소비자와 결제 복구 책임의 분리 |
+| cart PATCH expected_variant_version 필수 | cart 수량 변경은 expected_variant_version 서버 필수 계약이다(src/cart.ts — 불일치 시 VERSION_CONFLICT/REFRESH_AND_RECONFIRM). 미포함은 호출자 결함이지 제품 결함이 아니다. | 037 S2 스크립트 결함의 근원 — 제품/스크립트 결함 구분 |
+| 미완 상태 캡처 실행 원칙 | scratch DB(commerce_demo_verify) 전용 + cart/모의주문 누적 max3 + confirm 예약 카운트 + SAFETY 즉시 중단(예상 외 주문·confirm 성공 시 정리 없이 중단) + 실행별 facts 별도 파일. 검증 필드 해시로 사후 동일성 실증(전체 DB 동일 단정 금지). | 사용자 승인 범위·기존 데이터 보존·증거 분리 |

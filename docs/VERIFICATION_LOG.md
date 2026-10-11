@@ -760,3 +760,47 @@ PM 재검수(구조 보정 확인) 통과 — 04-C Visual 미확정, **사용자
 - 환경 상태(보존, 미정리): 서버 3210(PID 35284, self-spawn, commerce)·3211(PID 29612, self-spawn, commerce_demo_verify) 실행 유지, commerce_demo_verify 미삭제 보존 — 캡처 승인 시 현재 scratch 대상에서 계속해야 하므로. pg_stat_activity/DROP은 캡처 권한 확정 후 처리.
 - 최종 검증 actual exits: npm run check(tsc) exit 0 · npm run build exit 0 · npm run test:unit 36/36 exit 0. 전체 e2e 68/68 exit 0은 최종 CSS 수정 이전 실행분 — 이후 CSS 한정 변경은 probe 실측(4조합 bbox/hit·행 flex·배송지 계층·paybar/oc-cta)으로 커버, 전체 재실행은 이번 세션 미실행으로 기록. 옛 실패/미실행 이력은 각 항목 문맥에 보존.
 - 잔여·게이트: (a) 미완 상태 PNG 캡처 — 사용자 승인 pending(BLOCKED); (b) 06A 사용자 Visual 승인 — 미제출·게이트; (c) Push — PM 전담, 본 작업 금지 유지; (d) 06B/C 미착수.
+
+## 2026-10-11 · PMQA-06A-CAPTURE-037 — 미완 상태 캡처 실행 이력·결과·한계 (승인 실행 + stale-only 보정)
+
+### 실행 이력 (3회 전부 보존 — 'full-run exit 0'으로 기록하지 않는다)
+
+1. 첫 실행 `node tmp_probe06a_states.mjs` → **exit 1, 쓰기 전 실패**: auth_subject/uid 해석 실패('demo-a' 코드와 DB user_id 매핑 불일치). DB 쓰기 0건 — facts 보존.
+2. 두 번째 실행(native, 사용자 명시 승인 037: commerce_demo_verify 한정 cart add/qty/delete + 모의주문 최대 3건 + 06A 실패·복구 캡처) → **exit 1**: S1 processing OK · S3 commit_lost OK · S4 complete_get_error OK · **S2 FAIL** — 스크립트가 cart PATCH payload에 `expected_variant_version`을 누락. 서버 필수 계약 위반으로 409 VERSION_CONFLICT(src/cart.ts:232 — `variant_version !== expected_variant_version` → REFRESH_AND_RECONFIRM). **스크립트 검증 결함이며 제품 결함 아님.** 생성 주문 3건: ord-d49db6d3·ord-2d2c0d13·ord-bb539ef8 (전부 ledger 일치, unexpectedOrders=[], v-d-bat-20 stock 11→8·version 8→11, actor cart 복원 0).
+3. 세 번째 `--stale-only` 보정 실행(PM 지시 명시 모드 — S1/S3/S4 전부 skip, 명령 정상 심사 1회) → **exit 0**.
+
+### S2 stale-only 결과 (probe_states_staleonly.json — 별도 파일, 원본 full-run probe_states.json 보존)
+
+- confirmCode=**STALE_QUOTE** · staleEvidence: quoteCartVersion 60 → postPatchCartVersion 61 → staleAsserted(구 견적 카트 버전 ≠ 현재 버전 관측으로 STALE 명백 입증) · 안내 '카트가 변경되었습니다. 다시 확인해 주세요.'
+- 신규 주문 0 실증: delta ordersCreated=[] · unexpectedOrders=[] · variantDelta=[] · cartItemsAfter=[].
+- 전후 스냅샷 비교는 **선택 필드+행 수의 해시**(djb2-32bit) — orders 12→12 · orderItems 12→12 · payments 12→12 · shipments 11→11 · cancels 4→4 · variants 61→61 · cartItems 0→0 · cartsIdentity 1→1 · otherCartVersions 0→0 → **검증 필드 동일**(전체 DB·전 컬럼 완전 동일 단정 금지). actions 63→67(+4 — 이번 실행 쓰기 ADD_CART·UPDATE_CART·REMOVE_CART·CHECKOUT REJECTED, 허용 side effect 기록) · actorCartVersion 59→62(+3 카트 churn, 허용 side effect 기록).
+- 누적 상한: prior ledger 3 IDs는 run baseline orders(총 12건=기존 9+승인 3)에 실존 확인, 총 승인 모의주문 누적 3건 유지. orderGuard는 '예약 카운트' 경로 — stale-only의 실제 안전 근거는 '구 견적이 사전 관측상 확실히 STALE → 서버가 반드시 거절 → 사후 delta 0 실증'이라는 별도 검증 경로임을 구분 기록한다.
+- 캡처: impl_checkout_stale_{dark,light}.png — PM 직접 열람 확인(qty2·총 93,000원·재확인 안내·CTA 유효).
+
+### 4-시나리오 종합 (두 실행의 합산)
+
+- S1 processing ✅(2회차) · S3 commit_lost ✅(2회차) · S4 complete_get_error ✅(2회차) · S2 stale ✅(stale-only) — **합산 4 시나리오 PASS 증거. 첫 full-run은 exit 1이며 이를 'fullrun exit0'으로 기록하지 않는다.**
+- impl_checkout_pending_lost dark/light: PM이 같은 파일(21,990B)을 detail:original로 재열람해 dark에도 pending title+복구 버튼 2개 확인 — 앞선 'dark 블록 부재' 지적은 도구 표시 판정 오류로 **Superseded(VALID)**. 재캡처·원본 LS payload 복원 불필요 — 서버 action_requests.payload_json은 `{quote_token_hash}`만 저장(src/checkout.ts:95)해 원문 복원 불가.
+
+### 한계 명시 (PM 지침)
+
+- 스냅샷 해시는 선택 컬럼+행 수만 비교한다 — 전체 DB·전 컬럼 동일 단정 금지. 32bit 해시 한계(PM은 SHA256 권고, 향후 보정 대상).
+- commerce·commerce_test 미사용 근거는 호출 경로(DB_URL target=commerce_demo_verify·실행 전 current_database() 확인·지문 ord-941c6e10)이며 해당 DB들의 사전 해시는 없다 — '변경 없음'의 독립 증명이 아닌 호출 경로 근거로 한계 유지.
+- baseline 미보관 원칙의 한계: 첫 실행~stale-only 사이 외부 동시 쓰기가 없다는 것은 순차 실행·전용 DB로 추정할 뿐 절대 증명 아님.
+- stale-only 실행 시점의 스크립트에는 `cartV1!==cartV0` 사전 throw 가드가 없었다 — 사후 staleEvidence+diff가 실제 안전 근거였음(PM 정적검수 식별, 향후 재사용 시 반영 대상).
+
+### MINOR — 08 Final Visual Polish 이관
+
+- 결제 처리 중 화면에 '결제 결과를 확인하지 못했어요' 복구 블록이 '결제 처리 중' 상태와 중복 노출될 수 있음 — 버튼은 disabled 상태이나 화면상 링크 비활성 색상 미표현. 08에서 안내 중복·상태 위계 정리.
+
+### e2e 실행 이력 구분 (보존)
+
+- 초기 67-run: FAIL 40·PASS 2·NOTRUN 25 (tmp_e2e_full_06a.log, exit 1 — 전체 스위트 DB 공유 실행 중단 이슈).
+- 후속 68-run(native exec-b9ab0a43): 실제 FAIL 0 — 초기 중단 이력과 구분해 후속 해소로 기록한다.
+
+### 기타 기록·현재 게이트 상태
+
+- 첫 실행 산출 probe_states.json의 fails 필드 결함(String spread → 수백 개 char key)은 스크립트 수정으로 해소 — 재생성 산출물은 `{name,error}` 형태.
+- 캡처 권한 BLOCKED: 037 승인 실행으로 **현재 해소**(과거 BLOCKED 이력은 위 §035 기록에 보존). 기술 QA PASS · Visual은 CONDITIONAL PASS(열린 코드 BLOCKER/MAJOR 0, 사용자 승인 게이트 잔여).
+- **human 06A Visual 승인: PM이 사용자에게 최종 Visual 질문을 제출했으나 아직 응답 없음 — '요청·응답대기' 상태로 기록(미제출 아님).**
+- Push: PM 처리 예정, 현재 미실행. 보존: 서버 3210(PID 35284, commerce)·3211(PID 29612, commerce_demo_verify) 실행 유지 · scratch DB 승인 3주문 포함 보존 · DROP 금지.
