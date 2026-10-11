@@ -1,11 +1,16 @@
-// W06 주문 상세 — 상품/금액 스냅샷·결제·배송 이력·취소 요청/환불 결과를 한 화면에서 본다.
+// W06 주문 상세 — Ref080/081/084/090 구조: 주문 카드 → 배송지 → 결제 정보 →
+// 배송 상태/events → 취소 요청. 스냅샷(이름·옵션·수량·가격)만 서버값으로 쓰고,
+// 이미지·상품 링크는 조회 시점 카탈로그 표시용으로 분리한다 [PM 지침].
 // 배송 갱신은 서버 데이터를 다시 조회하는 '새로고침'으로만 — 상태는 시뮬레이터가 바꾼다.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiSafe, fmtWon, type ApiResult } from "../api.ts";
 import type { OrderView } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { CancelSheet } from "../components/CancelSheet.tsx";
-import { productImg } from "../display-meta.ts";
+import { OrderCard } from "../components/OrderCard.tsx";
+import {
+  cardHead, cardRightLabel, deliveredAtFromEvents, showShipChip,
+} from "../../order-display.ts";
 
 const SHIP_LABEL: Record<string, string> = {
   PREPARING: "배송 준비 중",
@@ -26,24 +31,42 @@ const REASON_LABEL: Record<string, string> = {
 
 export function OrderDetail({
   orderId,
+  focus,
   onBack,
   onAskAgent,
+  onOpenProduct,
 }: {
   orderId: string;
+  focus?: "shipping"; // 목록 '배송 조회' 칩 진입 — 실제 배송 섹션으로 스크롤
   onBack: () => void;
   onAskAgent: (orderId: string) => void;
+  onOpenProduct: (productId: string) => void; // 상품 행 → 실제 상품 링크(지원 경로)
 }) {
   const [res, setRes] = useState<ApiResult<OrderView> | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const shipRef = useRef<HTMLDivElement | null>(null);
+  // 응답 역전 가드 — 주문 A→B 빠른 이동 시 느린 A 응답이 B 화면을 덮지 않는다 [PM 보조 기준].
+  const seqRef = useRef(0);
 
   async function reload() {
+    const seq = ++seqRef.current;
     const r = await apiSafe<OrderView>("/api/orders/" + encodeURIComponent(orderId));
+    if (seq !== seqRef.current) return r; // 오래된 응답 — 상태에 반영하지 않는다
     setRes(r);
     return r;
   }
   useEffect(() => {
+    // orderId 변경 시 이전 주문의 응답·취소 시트가 남지 않게 초기화한다.
+    setRes(null);
+    setCancelOpen(false);
     reload();
   }, [orderId]);
+
+  // '배송 조회' 진입 시 실제 배송 섹션으로만 이동 — 결과가 없으면 Empty가 정직 표시.
+  useEffect(() => {
+    if (focus === "shipping" && res?.ok && shipRef.current)
+      shipRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focus, res]);
 
   if (!res) return <Loading text="주문을 불러오는 중…" />;
   if (!res.ok)
@@ -57,14 +80,32 @@ export function OrderDetail({
       </div>
     );
   const o = res.data;
+  const head = cardHead({
+    order_status: o.status,
+    cancel_status: o.cancel_request?.status ?? null,
+    shipping_status: o.shipping?.status ?? null,
+    payment_status: o.payment?.status ?? null,
+  });
+  const right = cardRightLabel({
+    order_status: o.status,
+    cancel_status: o.cancel_request?.status ?? null,
+    shipping_status: o.shipping?.status ?? null,
+    payment_status: o.payment?.status ?? null,
+    cancelled_at: o.cancelled_at,
+    shipping_estimated_arrival_at: o.shipping?.estimated_arrival_at ?? null,
+    delivered_at: o.shipping
+      ? deliveredAtFromEvents(o.shipping.status, o.shipping.events)
+      : null,
+  });
 
   return (
-    <div className="screen">
+    <div className="screen order-detail">
       <div className="order-head">
         <div>
-          <h2 className="section-title">주문 상세</h2>
+          <h2 className="section-title">주문 상세 내역</h2>
           <div className="muted sm">
-            {o.id} · {new Date(o.created_at).toLocaleString("ko-KR")}
+            {new Date(o.created_at).toLocaleDateString("ko-KR")} ·{" "}
+            {o.payment ? "결제완료" : "결제 정보 없음"}
           </div>
         </div>
         <button className="btn ghost" onClick={() => reload()}>새로고침</button>
@@ -74,37 +115,69 @@ export function OrderDetail({
         <div className="state-box">취소된 주문이에요{o.cancelled_at ? " · " + new Date(o.cancelled_at).toLocaleString("ko-KR") : ""}</div>
       )}
 
-      <ul className="cart-list">
-        {o.items.map((i) => (
-          <li key={i.order_item_id} className="cart-item">
-            <div className="cart-thumb">
-              {/* 조회 시점 카탈로그 이미지 — 이름/옵션/수량/가격은 스냅샷만 [PM 지침] */}
-              <img
-                src={productImg({ product_id: i.product_id ?? i.variant_id, image: i.image })}
-                alt=""
-                onError={(e) => {
-                  e.currentTarget.style.display = "none";
-                }}
-              />
-            </div>
-            <div className="cart-info">
-              <div>{i.product_name}</div>
-              <div className="muted">
-                {Object.values(i.option_values).join(" · ")} · {i.quantity}개
-              </div>
-            </div>
-            <div className="cart-right"><b>{fmtWon(i.line_total_won)}</b></div>
-          </li>
-        ))}
-      </ul>
+      <OrderCard
+        orderId={o.id}
+        headLabel={head.label}
+        headMuted={head.tone === "muted"}
+        rightLabel={right}
+        shipChip={showShipChip({
+          order_status: o.status,
+          cancel_status: o.cancel_request?.status ?? null,
+          shipping_status: o.shipping?.status ?? null,
+          payment_status: o.payment?.status ?? null,
+        })}
+        onShip={() => shipRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        onOpenDetail={() => {}}
+        detailDateLabel=""
+        hideLink
+        onItemClick={(it) => {
+          if (it.productId) onOpenProduct(it.productId);
+        }}
+        items={o.items.map((i) => ({
+          key: i.order_item_id,
+          name: i.product_name,
+          option: Object.values(i.option_values).join(" · ") || null,
+          qty: i.quantity,
+          lineWon: i.line_total_won,
+          image: i.image,
+          productId: i.product_id,
+          clickable: i.product_id != null, // variant 삭제 시 행은 비interactive
+        }))}
+        deliveryLine={
+          o.shipping_fee_won === 0 ? "무료배송" : "배송비 " + fmtWon(o.shipping_fee_won)
+        }
+        onCancel={
+          o.status === "CONFIRMED" && !o.cancel_request
+            ? () => setCancelOpen(true)
+            : undefined
+        }
+        onAsk={() => onAskAgent(o.id)}
+      />
 
-      <div className="checkout-block">
+      <div className="checkout-band" />
+
+      <section className="od-sec">
+        <h3 className="section-title">배송지</h3>
+        {/* Ref080 배송지 — 이름 → 주소/상세 → 연락처 정보 계층 [Observed 계층, 지원 범위] */}
+        <div className="od-addr-name">{o.address_snapshot.name}</div>
+        <div className="od-addr">
+          {o.address_snapshot.address} {o.address_snapshot.detail}
+        </div>
+        <div className="muted sm od-addr-phone">{o.address_snapshot.phone}</div>
+      </section>
+
+      <div className="checkout-band" />
+
+      <section className="od-sec">
         <h3 className="section-title">결제 정보</h3>
+        <div className="pay-row"><span>상품 금액</span><b>{fmtWon(o.items_total_won)}</b></div>
+        <div className="pay-row"><span>배송비</span><b>{fmtWon(o.shipping_fee_won)}</b></div>
+        <div className="pay-row total"><span>총 결제 금액</span><b>{fmtWon(o.total_won)}</b></div>
         {o.payment ? (
           <>
-            <div>
-              모의 결제 {fmtWon(o.payment.paid_amount_won)}
-              <span className="muted sm"> · {new Date(o.payment.paid_at).toLocaleString("ko-KR")}</span>
+            <div className="muted sm">
+              모의 결제 {fmtWon(o.payment.paid_amount_won)} — 실제 결제는 발생하지 않아요
+              {" · "}{new Date(o.payment.paid_at).toLocaleString("ko-KR")}
             </div>
             {o.payment.refund_status !== "NONE" && (
               <div className="muted">
@@ -116,20 +189,11 @@ export function OrderDetail({
         ) : (
           <div className="muted">결제 정보가 없어요</div>
         )}
-        <div className="muted">
-          상품 {fmtWon(o.items_total_won)} + 배송비 {fmtWon(o.shipping_fee_won)} = {fmtWon(o.total_won)}
-        </div>
-      </div>
+      </section>
 
-      <div className="checkout-block">
-        <h3 className="section-title">배송지</h3>
-        <div>{o.address_snapshot.name} · {o.address_snapshot.phone}</div>
-        <div className="muted">
-          {o.address_snapshot.address} {o.address_snapshot.detail}
-        </div>
-      </div>
+      <div className="checkout-band" />
 
-      <div className="checkout-block">
+      <section className="od-sec" ref={shipRef} id="order-shipping">
         <h3 className="section-title">배송 상태</h3>
         {o.shipping ? (
           <>
@@ -141,6 +205,7 @@ export function OrderDetail({
                 </span>
               )}
             </div>
+            {/* [Project] — 배송 Timeline 자체는 Ref에서 Not Observed. 실제 events만 표시한다. */}
             <ul className="timeline">
               {o.shipping.events.map((e, i) => (
                 <li key={i}>
@@ -159,10 +224,12 @@ export function OrderDetail({
         ) : (
           <Empty text="배송 정보가 아직 등록되지 않았어요" />
         )}
-      </div>
+      </section>
 
       {o.cancel_request && (
-        <div className="checkout-block">
+        <>
+        <div className="checkout-band" />
+        <section className="od-sec">
           <h3 className="section-title">취소 요청</h3>
           <div>
             <span className="badge">{CANCEL_LABEL[o.cancel_request.status] ?? o.cancel_request.status}</span>
@@ -176,14 +243,12 @@ export function OrderDetail({
             환불 예정 {fmtWon(o.cancel_request.refund_amount_won)}
             {o.payment?.refund_status === "REFUNDED" ? " — 환불 완료" : o.payment?.refund_status === "PENDING" ? " — 환불 처리 중" : ""}
           </div>
-        </div>
+        </section>
+        </>
       )}
 
       <div className="bottom-bar">
         <button className="btn ghost" onClick={onBack}>목록</button>
-        {o.status === "CONFIRMED" && !o.cancel_request && (
-          <button className="btn ghost" onClick={() => setCancelOpen(true)}>주문 취소</button>
-        )}
         <button className="btn primary" onClick={() => onAskAgent(o.id)}>
           AI에게 이 주문 물어보기
         </button>

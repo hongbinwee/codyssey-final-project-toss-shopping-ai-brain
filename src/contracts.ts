@@ -212,6 +212,17 @@ export interface OrderView {
   } | null;
 }
 
+export interface OrderListFirstItem {
+  product_name: string;                    // 스냅샷
+  option_values: Record<string, string>;   // 스냅샷
+  quantity: number;                        // 스냅샷 — 첫 품목 수량(주문 전체 수량 아님)
+  line_total_won: number;                  // 스냅샷 — 첫 품목 금액(주문 총액 아님, '외 N건'과 총액 별도 표시)
+  // 조회 시점 카탈로그 이미지 — 구매 시점 스냅샷이 아니다. 없으면 null.
+  image: string | null;
+  // 이미지 fallback·상품 링크용 조회 시점 참조 — variant 삭제 시 null. 스냅샷 아님.
+  product_id: string | null;
+}
+
 export interface OrderListItem {
   id: string;
   created_at: string;
@@ -222,6 +233,13 @@ export interface OrderListItem {
   shipping_status: string | null;
   refund_status: string | null;
   cancel_status: string | null;
+  // ── 06B additive (PMQA-048-A) — 기존 소비자 필드 의미 불변, 전부 optional ──
+  item_count?: number;                     // 주문 내 품목 수 — '외 N건' 표시용
+  first_item?: OrderListFirstItem | null;  // 카드 썸네일 행 — 없으면 요약 텍스트로 대체
+  paid_at?: string | null;                 // 'N.N 결제 상세' 라벨 — 없으면 created_at 사용
+  cancelled_at?: string | null;            // 취소 완료 상태일 — 주문 취소 시에만
+  shipping_estimated_arrival_at?: string | null; // 도착 예정 — null이면 미노출(임의 ETA 금지)
+  delivered_at?: string | null;            // 마지막 배송 event가 실제 DELIVERED일 때만 설정
 }
 
 export interface ShippingStatusResult {

@@ -226,3 +226,29 @@ commerce_demo_verify 소실 사고(VERIFICATION_LOG PMQA-040-SEED-SAFETY) 이후
 | Visual 비실패 계약 | 상품·가격·iOS 크롬·미지원 쿠폰/포인트/ETA/주소 변경 차이는 실패로 취급하지 않고 허위 데이터 생성 금지. 작은 스타일 차이는 08 이관. 주문서 p-a/183,000과 완료 ord-c0bdcc4d/152,000은 서로 다른 fixture — 연속성 증거 아님 | PMQA-041 |
 | 반응형 정책 | 06~07 모바일 우선(390×844 기준, 다른 너비 깨짐 예방만). 08에서 핵심 전 화면을 360×640/390×844/768×1024/1440×900 검증 — 모바일 유동폭·태블릿 모바일구조+max-width·PC 중앙 모바일 컨테이너·필수 정보 숨김 금지. 09 Freeze 전 3폼팩터 사용성 확인. PC 다열·Brain 패널·비교 레이아웃은 09 이후 향후 검토만 | PMQA-041 확정 · 상세는 COMMERCE_UI_SPEC §10 |
 | 06B 진입 조건 | 기술 회귀 통과 + DB 안전성 + 최종커밋 독립검수 + PM FF Push 확인 전까지 금지 | PMQA-041 |
+
+## 2026-10-12 · PMQA-048-A — 06B 주문 목록/상세 재구성 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 공용 주문 카드 | 목록·상세가 같은 OrderCard 공유, 카드 내부는 sibling 구조(중첩 button 금지). 상품 행은 product_id 있을 때만 클릭 가능 | Ref anatomy 일치·dead button 금지 |
+| 목록 DTO | additive optional(item_count·first_item·paid_at·cancelled_at·shipping_estimated_arrival_at·delivered_at), 기존 소비자 비파괴·4쿼리 유지 | 최소 변경(Ponytail) |
+| 정직 라벨 | 미확정 결제 '주문 완료' fallback, 서버값 없는 ETA·품목 금액 미표시, '일시불' 등 미지원 표기 제거 | 허위 표시 금지 |
+| 환불 라벨 보존 | 목록 카드에 서버 refund_status 별도 라벨(NONE 미노출, 미확인 원문) — 기존 배지 회귀 복원 | PM048-A 추가 검수 |
+| 배송 앵커 | /orders/:id/shipping 서브경로 = 상세의 배송 섹션 focus — 별도 화면 아님 | 최소 라우팅 |
+| 문의하기 | 목록 '문의하기' → 상세 진입 + CS 패널(orderId 유지) | PM048-A 보정 |
+| 회귀 선택자 | 목록 헤딩 '주문 목록', 취소 CTA '취소하기', 취소요청 표기=cardHead '취소요청' + data-order-id 스코프 — 기존 spec 3파일 최소 대응 | PM048-A 승인 범위 |
+| 미구현 유지 | 영수증·포인트·송장·택배사·주소 변경·배송 메모·구매 확정 — 데이터·기능 부재. 환불 상태 변경 실행은 이번 06B에서 하지 않으며, 06C UI/검증에서 기존 Backend 취소·모의 환불 기능을 그대로 사용(실제 PG 환불은 범위 밖) | 허위 UI 금지·기존 Backend 재사용 |
+
+## 2026-10-12 · PMQA-048-C — 06B Visual 구조 보정 + 증거 기준 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 목록 카드 정보열 | 'N.D 결제 상세 >' 링크는 첫 품목 썸네일 우측 정보열 첫줄 → 상품명→옵션→가격/수량. 썸네일 ~76px(Ref ~78 근접) | PM 중간 관측 + Ref079 anatomy |
+| 주문단위 배송비 | 상세에서 첫 품목 정보열 아래 1회만 — 품목별 반복·품목가격/총액 혼동 금지 | Ref080 관측 |
+| 상세 flat 구획 | 배송지·결제·배송·취소 섹션을 .order-detail 스코프 flat+band로. Checkout/OrderComplete .checkout-block 전역 미변경 | Ref080/081 flat·06A 승인 화면 보호 |
+| 증거 완전성 | shipping-focus 캡처는 timeline bbox 완전 노출 + scrollY 연속 안정 후에만 기록 — bounded rAF poll, 임의 sleep 금지 | 미완료 scroll 캡처 사고 재발 방지 |
+| 파생 증거 보존 | 비교 렌더도 no-overwrite — 배타 UUID dir·사전 검증·wx 쓰기. 덮어쓰기로 소실된 파생 버전은 '모든 증거 불변'으로 기록하지 않고 손실 범위를 명시 | PM 증거 보존 결함 지적 |
+| 비교 라벨 | Ref081은 스크롤 전체 캡처 — 결제 정보 비교는 supplemental 라벨 + 양쪽 동일 영역 crop·범위 명시. Ref080 ETA 존재/impl NOSHIP 차이 정확 표기 | 정확한 상태 대응 |
+| 완료 한계 | 기술 scoped PASS·Visual CONDITIONAL PASS(사용자 승인 대기). 06B 전체 완료 아님 — 신규 69·Integration 미실행, 06C 금지 | PM 판정 |
+| 역할 | 커밋=Main SWE·Push=PM. 샷/백업/tmp_* 자동 stage 금지 | 분업 명확화 |

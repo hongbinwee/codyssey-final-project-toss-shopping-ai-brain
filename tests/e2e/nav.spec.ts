@@ -116,7 +116,7 @@ test("전체 sheet: focus/ESC/outside-close and 내 쇼핑 enters orders", async
 
   await allBtn.click();
   await page.getByRole("menuitem", { name: "내 쇼핑" }).click();
-  await expect(page.getByRole("heading", { name: "내 주문" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "주문 목록" })).toBeVisible();
 });
 
 test("goto revisit vs browser back: new push is not mistaken for pop", async ({

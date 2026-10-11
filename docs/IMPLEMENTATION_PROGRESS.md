@@ -2,6 +2,23 @@
 
 > 표기 규칙: Phase 0~5의 '완료'는 **로컬 구현 + 로컬 검증**(unit·integration·e2e·stub eval·holdout·Docker 빌드) 기준이다. 실제 LLM live eval·외부 배포·실사용자 테스트는 미완료이며 프로젝트 로드맵 12~13에서 수행한다(PROJECT_CONTEXT.md §현재 프로젝트 방향).
 
+## 최신 06B — PMQA-048-B/C 읽기 검증 + Visual Correction 완료 (2026-10-12, 기술 scoped PASS·Visual CONDITIONAL PASS — 사용자 승인 대기)
+
+- **기술 QA 근거(현재)**: readonly-audit **22/22 PASS × run-7b0a77f7/88a16883/711d95bb** (15 real·3 mock·4 capture — mock은 별도 표시 경로, 실제 환불 생성 아님) · unit 178/178 · tsc 0 · build 0 · 두 DB 13테이블 before↔after drift 0. 표준 69는 **06A 047 시점** 기록 — 06B 기준 신규 69·Integration은 **미실행**.
+- **Visual 구조 MAJOR 2 해소**: PM 관측(목록 카드 상품정보 계층·상세 flat 구획) → 048-C 코드 보완('결제 상세 >' 링크=첫 품목 정보열 첫줄·썸네일 76px·주문단위 배송비=첫 품목 정보열·상세 flat 섹션+밴드·총 결제 금액 구분선) → run-88a16883/711d95bb 신규 캡처 + qa-final 비교 6본으로 PM 독립 검수 진행. 결과는 **Visual CONDITIONAL PASS — 사용자 최종 승인 대기**.
+- **배송 포커스 증거 정정**: 기존 shipping 캡처의 미완성(scroll 미완료 시점 촬영)을 bounded rAF poll로 해소 — chip/dark/light done=true, timeline bbox 661.75~713.75 ⊂ backBottom 48~barTop 773, scrollY 103 안정. 실제 UI 결함 아님이 확인됐다.
+- **당시 오류 정정**: ① run-01026234의 'PENDING 실데이터 통과' 주장은 부정확(mock '환불 처리 중' DOM만 관측, 두 단정은 7b0a77f7에서 검증) ② 초기 06 payment crop 좌표 오류(전화번호 일부 포함·모의결제 절단) → 눈금 실측 y≈496–656으로 정정 ③ 파생 QA 3회 덮어쓰기로 711d95bb/qa 초기 2버전 소실 — 생성기를 배타 dir·사전 검증·wx 쓰기로 보완, 정본은 qa-final.
+- 안전 제약·한계: scratch DB 재생성·모의 주문 금지 유지 · 읽기 검증은 로컬 OID 16516/16384·승인 backup/facts 지문에 의존(이식성 한계 — 09 Freeze 전 과제) · 신규 116 action은 047 시점 전체 payload 지문 부재로 ID·연결·건수 대조 한계 유지 · 08 MINOR(미세 font/icon·PC·반응형) 이관 목록에 기록.
+- 역할·게이트: 커밋은 **Main SWE**, Push는 **PM** — 현재 커밋은 PM 최종 25파일+문서 검수 대기이며 shots/backup/tmp_*는 자동 stage 금지. **06B 전체 완료 아님·06C 착수 금지**.
+- 아래 '## 최신 06B — PMQA-048-A … 동적·Visual 미승인' 섹션은 본 항목으로 **Superseded**(당시 코드+DB-free 기준 기록은 이력으로 보존).
+
+## 최신 06B — PMQA-048-A 코드 구현 + DB-free 검증 완료 (2026-10-12, 동적·Visual 미승인) [Superseded → 위 최신 항목]
+
+- 주문 목록 카드 재구성(OrderCard 공용)+상세 블록 재배치+/shipping 앵커+additive list DTO(4쿼리 유지). PM 중간 검수 반영: 미확정 결제 '주문 완료' fallback·first_item null 시 금액 미표시·문의하기=상세+CS·'일시불' 제거·dead button 금지·refund_status 별도 라벨 회귀 보존.
+- 기존 spec 3파일 최소 대응(PM 승인): nav '주문 목록' 헤딩, t3/core '취소하기' CTA, 목록 취소요청 단정=.order-card[data-order-id]+head '취소요청'(REQUESTED≠완료 단정 보존).
+- DB-free 실측: npm run check(tsc) exit 0 · test:unit 116/116 · build exit 0 · git diff --check 0.
+- NOT_RUN: 실DB GET·브라우저·캡처·Integration·E2E·live eval — PM 런타임 계획 승인 대기. 커밋/Push/06C 미착수.
+
 ## 06A 종료 — PM 단건 Push 검증 + 최종 완료 확정 (PMQA-047-D/E, 2026-10-12)
 
 - **커밋(SWE)**: ca35a438d6f3a9ab4bbf5c303eeacde0d6877fed "fix(06A): align checkout hierarchy and guard approved test cleanup", parent 289dcc48. 승인 후보 23파일(+4262/−167)만 explicit stage, git diff --cached --check exit 0, staged 목록에 tmp_*/shots/dumps/test-results/reference 영상 없음 확인. 커밋 문서에 정정 2건 포함: 't2 정확 ID 캡처'→'t2 E2E(동일 orderId·상품·금액·배송 상태 단정)', '미감사 상태'→'읽기 감사済·삭제 미승인'.

@@ -18,6 +18,7 @@
   --sel: rgba(49, 130, 246, 0.1);
   --discount: #f04452;      /* [TDS] red500 — 특가 배지/할인 */
   --danger: #f04452;
+  --ok: #03b26c;            /* [TDS] green500 — '도착 예정' 상태 텍스트 */
   --rate: #3182f6;          /* [Inferred] 할인율 텍스트 */
   --star: #f7b500;          /* [Inferred] 평점 ★ */
   --thumb-a: #eef2f7; --thumb-b: #e2e8ef; --thumb-fg: #9aa8b8;
@@ -64,6 +65,7 @@
     --pchip: #dddddd;    /* [Observed] 카드 혜택 칩 배경 */
     --pline: #9a9ca0;    /* [Observed 근사] 카드 메타 구분 바 */
     --cartline: #ffffff; /* [Observed] 카드 우하단 밝은 윤곽선 쇼핑백 */
+    --ok: #3ecf8e;      /* [Project] dark '도착 예정' 그린 — TDS green500 계열 밝기 조정 */
   }
 }
 * { box-sizing: border-box; }
@@ -1083,6 +1085,77 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .timeline li::before {
   content: ""; position: absolute; left: -16px; top: 9px;
   width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+}
+
+/* 06B 주문 카드 — Ref079/080/084/090/091 anatomy [Observed 구조].
+   카드=article, 내부 행은 전부 sibling(중첩 button 금지). */
+.order-card-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.order-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px 8px;
+}
+.order-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.order-card-head b { font-size: 16px; }
+.order-card-head-right { display: flex; align-items: center; gap: 8px; }
+.order-card-right { font-size: 13px; }
+.order-card-right.ok { color: var(--ok); }
+.order-card-right.muted { color: var(--muted); }
+.order-card-refund {
+  display: inline-block; align-self: flex-start; font-size: 12px;
+  color: var(--text-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 8px; margin-top: 2px;
+}
+.order-ship-chip {
+  border: 1px solid var(--line); background: transparent; color: var(--text-2);
+  font-size: 12px; border-radius: 8px; padding: 4px 10px; cursor: pointer; white-space: nowrap;
+}
+.order-card-link {
+  align-self: flex-start; background: none; border: 0; padding: 0 0 3px;
+  color: var(--muted); font-size: 13px; cursor: pointer; text-align: left;
+}
+.order-card-item {
+  display: flex; gap: 12px; align-items: flex-start; width: 100%;
+  padding: 6px 0; color: var(--text);
+}
+.order-thumb { width: 76px; height: 76px; border-radius: 10px; flex-shrink: 0; }
+.order-thumb-btn {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  display: block; flex-shrink: 0;
+}
+.order-item-body {
+  display: flex; flex-direction: column; gap: 2px; align-items: stretch;
+  background: none; border: 0; padding: 0; text-align: left; cursor: pointer;
+  color: var(--text); font-family: inherit; min-width: 0;
+}
+.order-item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.order-item-delivery { display: block; margin-top: 2px; }
+.order-item-name {
+  font-size: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.order-item-price { font-size: 15px; }
+.order-card-total { padding: 2px 0; }
+.order-card-actions { display: flex; gap: 8px; padding: 8px 0 6px; }
+.order-card-actions .oc-btn {
+  flex: 1; background: var(--field); color: var(--text);
+  font-weight: 600; padding: 12px 0;
+}
+/* 결제 정보 금액 행 — Ref081 상품 금액/배송비/총 결제 금액의 좌라벨·우금액 구조 */
+.pay-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+.pay-row span { color: var(--text-2); }
+.pay-row.total { font-size: 15px; margin-top: 6px; }
+.pay-row.total b { color: var(--accent); }
+
+/* 06B 주문 상세 — Ref080/081 flat 정보 구획 [PMQA-048-C]: 회색 카드 반복 대신
+   페이지 배경 위 섹션 + checkout-band 구분. .order-detail 스코프 전용이므로
+   06A 승인 Checkout/OrderComplete의 .checkout-block에는 영향이 없다. */
+.order-detail .od-sec { margin-top: 20px; }
+.order-detail .od-sec > .section-title { margin: 0 0 10px; }
+.order-detail .od-addr-name { font-size: 15px; font-weight: 600; }
+.order-detail .od-addr { margin-top: 3px; font-size: 14.5px; line-height: 1.5; }
+.order-detail .od-addr-phone { margin-top: 3px; }
+/* 총 결제 금액 — 라벨+금액 강조, 위 구분선 [Ref081] */
+.order-detail .pay-row.total {
+  border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px;
 }
 
 /* 바텀시트 공용 — 그래버 + 딤 + 상단 라운드 [Observed] */

@@ -103,9 +103,9 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 - **[05-030 추가 계약]** 고정 패널 높이가 변해도 콘텐츠가 가려지지 않아야 한다 — .cart-screen의 padding-bottom을 고정값 대신 ResizeObserver로 실측한 .bottom-bar 높이(--bb-h)로 유지한다.
 - **[05-030]** 상세 정보 위계: 상품명 20px·할인율 15px 보조·판매가 26px 주강조·배송비는 서버값 .price-sub 보조 행으로 분리·info-rows 상단 8px 섹션 밴드([Project] 채택값)·label-value inline 밀도.
 
-## 7-2. 주문서 → 모의 결제 → 결제 완료 [06A 구현 — 2026-10-11, PMQA-06A-CHECKOUT-034/035 · 사용자 Visual QA 승인(PMQA-041, 화면 게이트 통과 — 기술 회귀 CONDITIONAL 별개)]
+## 7-2. 주문서 → 모의 결제 → 결제 완료 [06A 구현 — 2026-10-11, PMQA-06A-CHECKOUT-034/035 · 사용자 Visual QA 승인(PMQA-041) · 047 기술 회귀 69/69 통과 + Push 완료 — '기술 회귀 CONDITIONAL'은 Superseded]
 
-아래 계약은 06A에서 실제 구현됐다. '기능 검증'은 034~037 시점의 기술 검증 이력이고, 현재 040 기준 전체 회귀는 미완료다(최신 실행 36 pass/1 fail/32 did not run — fixture 복원+표준69 재실행은 별도 승인 pending). 사용자 Visual QA는 승인됐다(PMQA-041 — 화면 게이트 통과만, 기술 승인 아님).
+아래 계약은 06A에서 실제 구현됐다. '기능 검증'은 034~037 시점의 기술 검증 이력이다. **[Superseded 정정 PMQA-048]** 040 시점에는 '전체 회귀 미완료 — fixture 복원+표준69 재실행 별도 승인 pending'(당시 이력: 36 pass/1 fail/32 did not run)이었으나, 047에서 표준 69건 전체 회귀가 69 passed·실패 0으로 완료됐고 사용자 Visual QA 승인(PMQA-041)과 Push 완료를 거쳤다 — 현재 최신 상태는 기술 회귀 통과 + Visual 승인 + Push 완료다.
 
 - 주문서(Checkout): Ref051 수직 구조 **[040 실제 구현으로 갱신 — 이전 56px·별도 안내 블록 서술은 Superseded]** — 배송지 flat 블록(주소/상세=주 정보, 이름·연락처=보조 [Observed→구현]) → 상품 단일 카드(실제 카탈로그 이미지 `.checkout-thumb` 64px·현재 Cart 견적의 이름/옵션/수량/가격) → 카드 내 '주문 금액' 표시 전용 토글(`.cart-quote-toggle.checkout-quote-toggle`, aria-controls=#checkout-quote-rows)이 **카드 밖 독립 '총 결제 금액' flat 섹션**(`.checkout-total`, Ref054 대응 — 상품 금액·배송비·총액만; 쿠폰/포인트/혜택/도착예정/주소변경 미지원 제외)을 연다 → 고정 `.checkout-paybar` 전체폭 'N원 결제하기' + 그 아래 작은 모의결제 안내(`.pay-note` '주문 내용을 확인했어요 · 모의 결제로 실제 결제는 발생하지 않아요').
 - 견적 출처 구분 [06A 확정]: 주문서 화면은 `/api/checkout/quote`의 **현재 Cart 실시간 견적**(가격·재고 서버 검증)을 표시하고, 결제 완료·주문 상세는 confirm 시점에 저장된 **주문 스냅샷**을 표시한다 — 두 출처를 혼동하지 않는다.
@@ -114,6 +114,20 @@ Toss Shopping Home의 각 영역을 다음 네 상태로 분류한다. 구현자
 - CHECKOUT pending 계약: kind 격리 — CHECKOUT intent는 카트 소비자(listCartPending)에 노출되지 않고 Checkout은 listPendingByKind("CHECKOUT")만 본다. 미확정 intent 복구 블록은 견적 성공/실패와 독립 렌더 — commit 응답 유실 후 빈 카트 VALIDATION 견적 위에서도 복구 접근점이 유지된다. 미도착(NOT_FOUND)은 같은 키+같은 payload '다시 결제하기'만 허용.
 - order_items 표시 계약: 이름/옵션/수량/가격/주소는 저장 스냅샷, image/product_id는 조회 시점 현재 카탈로그(LEFT JOIN additive) — 두 출처를 혼동하지 않는다.
 - 실패/상태: processing('결제 처리 중…' 비활성)·STALE_QUOTE/CART_BLOCKED→안내+새 견적·확정 거절→intent 해제·AMBIGUOUS→intent 유지+복구 스트립·완료 GET 실패→ErrorState+재시도·NOT_FOUND→'주문을 찾을 수 없어요'. raw 상태 캡처는 PMQA-06A-CAPTURE-037 승인 실행으로 완료(impl_checkout_processing·impl_checkout_stale·impl_checkout_pending_lost·impl_complete_get_error/notfound — impl-only, VERIFICATION_LOG 037 참조). 기능 자체는 e2e로 검증됨.
+
+## 7-3. 주문 목록 → 주문 상세 → 배송 정보 [06B 구현 — 2026-10-12, PMQA-048-A/C · 기술 scoped PASS·구조 MAJOR2 해소 · Visual CONDITIONAL PASS(사용자 승인 대기)]
+
+아래 계약은 06B에서 코드 구현됐다. **[Superseded 정정 PMQA-048-C]** '동적 검증 미실시' 기술은 폐기 — 읽기 전용 동적 검증이 완료됐다(readonly-audit 22/22 × run-7b0a77f7/88a16883/711d95bb, 두 DB 13테이블 before↔after 0). Visual은 PM 비교본 검수까지 진행됐으나 **사용자 최종 승인 대기**이며 06B 전체 완료가 아니다(신규 69·Integration 미실행, 06C 금지).
+
+- 주문 카드 해부 [Observed Ref079/080/084/090/091 · 048-C]: 헤더(상태 라벨+우측 상태일) → 조건부 '배송 조회' 칩 → 품목 행(썸네일 버튼 + 상품정보열) → 지원 CTA. 상품정보열 첫줄은 'N.D (요일) 결제 상세 >' 링크(첫 품목만) → 상품명 → 옵션 → 가격/수량 → 주문단위 배송비(첫 품목만, 상세). 목록·상세가 같은 OrderCard를 공유하고, 품목 행은 div > (thumb button | info 열 sibling button) — 중첩 button 금지.
+- 헤더 우선순위: 취소 완료 > 취소요청 > 배송 > 결제. 미확정 결제는 '결제완료'로 단정하지 않고 '주문 완료' fallback. 우측 상태일은 취소 완료일·배송 완료일·도착 예정일 중 서버 실값이 있을 때만 표시 — 임의 ETA 금지.
+- 환불 라벨: 서버 refund_status가 NONE이 아닐 때만 별도 라벨(처리 중/완료·미확인 값 원문). 헤더 CANCELLED로 환불 완료를 유추하지 않는다 — 기존 목록 환불 배지 회귀 보존 [PM048-A 추가 검수].
+- 상품 행: 스냅샷(이름·옵션·수량·품목 금액) + 조회 시점 카탈로그(image·product_id, LEFT JOIN). first_item 없으면 요약+총액만 표시하고 품목 금액·수량을 만들지 않는다. 다건은 '외 N건'+주문 총액 별도 행.
+- CTA 매핑: '취소하기'→기존 CancelSheet(서버 자격·사용자 확인), '문의하기'→상세 진입+CS 패널(orderId 유지), '배송 조회'→/orders/:id/shipping 앵커. 미지원 CTA(리뷰·교환/반품·구매 확정) 미구현.
+- 상세 블록 순서 [Observed Ref080/081/084 · 048-C]: 카드(hideLink) → 배송지 → 결제 정보 → 배송 상태 → 취소 요청(조건부). 각 정보 블록은 `.order-detail` 스코프의 **flat 섹션 + checkout-band 구분**(회색 카드 반복 아님). 배송지는 이름→주소/상세→연락처 계층, 결제 정보는 좌label·우amount + 총 결제 금액 상단 구분선·강조 + '모의 결제 N원 — 실제 결제는 발생하지 않아요'. 상품 행은 product_id 있을 때만 링크.
+- 목록 DTO는 additive optional(item_count·first_item·paid_at·cancelled_at·shipping_estimated_arrival_at·delivered_at), 기존 4쿼리 유지·owner scope 불변. 카드에 data-order-id 부여.
+- 안정성: 목록 moreLock+id-dedupe+실패 시 목록 보존·인라인 재시도, 상세 seqRef stale 응답 무효화·orderId 변경 시 취소 시트 초기화.
+- 배송 상태 블록 타임라인 표현은 [Project] — Ref에 대응 상세 타임라인 미관측. 영수증·포인트·송장·택배사·주소 변경·배송 메모·구매 확정은 데이터 부재로 미구현.
 
 ## 8. 로딩·오류·Empty [1차]
 

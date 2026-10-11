@@ -1173,3 +1173,98 @@ PM이 실제 코드, full SHA gate의 동일 Buffer baseline 파생, private txn
 - **06A 전체 완료 확정** — 69 PASS·unit 104·check/build 046 동일 소스·13+57 cleanup·보호77/보존36 지문·dev commerce 불변·Visual 041 기존 승인 유지.
 - 미검증으로 유지: Integration NOT_RUN·실DB rollback 오류 주입 미검증·09 infra(non-portable: local OID 16516 + gitignored 043 dump, 신규 산출물 cleanup 미승인으로 자동 반복 불가).
 - 위 047 섹션의 'commit&Push 대기' 표현은 본 항목으로 Superseded.
+
+## PMQA-048-A — 06B 주문 목록/상세/배송 DB-free 검증 기록 (2026-10-12)
+
+- 구현 범위: OrderCard 공용 카드·Orders/OrderDetail 재작성·order-display 순수 헬퍼·additive list DTO·/shipping 서브경로·기존 spec 3파일 최소 대응 — PM 승인 범위 내.
+- PM 중간 검수 보정 6건: '주문 완료' safe fallback·first_item null 정직 표시·문의하기 orderId 유지·'일시불' 제거·dead button 금지·refund_status 별도 라벨 회귀 보존(NONE 미노출·미확인 원문).
+- DB-free 실측: tsc exit 0 · unit 116/116(order-display 12) · build exit 0 · git diff --check 0.
+- NOT_RUN: 실DB GET·브라우저·캡처·Integration·E2E·live eval — 런타임은 PM 안전 계획(전용 설정·요청 allowlist·before/after fp·cart GET의 카트 생성 write 유의) 승인 후 진행. 동적 QA·최종 Visual 미승인.
+- 문서 원격 기록: PM이 이번 재검수에서 직접 확인한 사실 — GitHub fetch_commit(main)·git rev-parse HEAD·git rev-parse origin/main 셋이 정확히 3673bc26d8b79705c81aed2a6897360ffcd835ec로 일치(Push 시각은 원본 실행 기록을 재열람하지 않았으므로 단정 없이 SHA 일치만 기록). 별도 문서만 커밋 루프 없이 다음 코드 커밋에 함께 반영한다.
+
+## PMQA-048-B0/B1 — 06B 읽기 검증 하네스 + 첫 실측 기록 (2026-10-12)
+
+### B0 — 하네스 작성·PM 독립 검수 (DB-free)
+
+- 작성: tests/e2e/readonly-{db,guard,server,audit,orders.spec}.ts + playwright.readonly.config.ts + unit 2파일(readonly-guard·readonly-audit).
+- PM/Luna 정적 검수 반영: FILE GATE fail-closed·demo_verify 게이트·npx→execPath cli.js·atomic run dir·wx 쓰기·facts 단일 경로+SHA pin·origin 우선 가드·POSIX 경계 정규식·unreadable 세션·context 분리·resA 예약.
+- Luna 재검수 MAJOR 1건 해소: baselineGate와 test before를 동일 RR READ ONLY txn으로 통합 — 대조↔기준선 사이 txn 틈으로 변경이 정상 baseline으로 흡수되는 결함 제거. runAudit는 gate.before만 사용(재촬영 금지)·gate ok인데 before 부재면 fail-closed·dev before는 별도 RO txn 허용. 추가 단위: gate 스냅샷 재사용 증명·before 부재·probe throw·dev fp diff·evidence write 실패.
+- 주장 한계 명시: 신규 116 actions는 047 시점 전체 payload 지문 증거가 없어 ID·order_ref·건수만 대조 — '047 이후 전체 payload 불변' 주장 금지. B1 증명 범위 = before↔after 13테이블 지문 0 변화.
+- PM B0 판정(인용): DB-free 안전 하네스 PASS — 열린 안전 BLOCKER/MAJOR 0. 실제 Postgres/브라우저/캡처/E2E는 NOT_RUN이므로 전체 06B PASS 아님.
+- 검수본 SHA: audit 28393fbb…ca24933 · db 72b05e3d…ac9413e · guard 3330e0a9…3e151e · server 75a0403c…209256 · spec 0fbff5e4…a6794f · config 8ae81c76…626570b — B1 직전 재측정 전부 일치.
+- DB-free 실측: tsc exit 0 · unit 159/159 · build exit 0 · git diff --check 0.
+
+### B1 첫 실행 — 실측 결과 (run-49ef0230)
+
+- 명령: 'node tests/e2e/readonly-audit.ts' — 직렬 1회, 사용자 사전 승인 범위. run dir: shots/06b/49ef0230-f4ef-4002-87e6-1b857d3dd119 (배타 UUID, 기존 evidence 덮어쓰기 0건, gitignored).
+- 사전 검증 통과: 043 backup SHA 8ca19650…0b57 exact · 047 facts SHA 27c476f3…62de5 exact · 실행 중 node 프로세스 0(단일 DB 작업자) · 하네스 파일 SHA 위와 전부 일치.
+- 통과 구간: FILE GATE → 두 DB readonly probe(commerce_test OID 16516·commerce OID 16384·default_transaction_read_only=on) → demo_verify 부재 → baselineGate(ok — 보호77 fpNCTS 8a72ff5b… 승인 일치·보존36 fpPres ddadc09a… 승인 일치·rowCounts orders16/items17/pays16/ships15/cancels2/actions152/cart_items0 정확·신규 12 orders 본문+종속·2 cancels 대조 통과) → writers/unreadable 0 → audit-before.json wx 기록.
+- 실패 구간: playwright child exit 1 — 1 failed / 21 did not run. 원인 = 하네스 방어 로직 자기충돌: Playwright runner가 pw-output/.last-run.json을 먼저 생성한 뒤 worker 프로세스가 playwright.readonly.config.ts:20을 재평가하면서 assertFreshRunDir(readonly-guard.ts:84)가 runner 자신의 산출물을 '기존 evidence'로 오인해 throw. 제품·DB 결함 아님 — 06B 구현 코드와 무관한 런처 설계 결함.
+- 사후 감사: after 스냅 두 DB 모두 수집 — commerce_test drift [] · commerce(dev) drift [] — 실패한 child는 DB write 0건. verdict FAIL exit 2, 사유는 'playwright exit 1' 단 하나 — gate·drift·errors 전부 무결.
+- 미생성: PNG 캡처 0 · 가드 차단 요청 로그 0(테스트 본문 미실행) — 캡처 존재 주장·비교 완료·Visual 승인 어떤 것도 주장하지 않는다.
+- 별도 BLOCKED 이력: commerce_demo_verify scratch 기반 실결제 경로 캡처는 사용자 명시 거부로 중단 — 본 run은 해당 경로와 무관하며 gate의 demo_verify 탐지가 부재를 확인.
+- 후속: PM 원인 검수 전 재실행·자가 수정 금지. assertFreshRunDir의 자기 산출물 오인(동일 실행 runner 산출물 vs 이전 run 잔여 구분) 수정은 PM 판정 후 결정.
+
+### B1F — 자기충돌 최소 수정 (DB-free, PM 사전검수 반영)
+
+- 실제 설치본으로 검증한 원인: common/index.js deserializeConfig → loadConfig → loadUserConfig → requireOrImport(resolvedConfigFile)가 config 파일을 재import한다. worker에서는 WorkerMain 생성자(workerProcessEntry.js:1376)가 TEST_WORKER_INDEX를 먼저 설정한 뒤 config 재평가가 일어나므로 worker 재평가만 식별 가능하다. runner 측 평가는 같은 프로세스의 모듈 캐시로 top-level 재실행이 없다 — pw-output을 보는 두 번째 평가는 worker뿐이었다(B1 1 fail/21 not run 원인과 일치).
+- 수정(코드만, runtime 미실행): config는 assertFreshRunDir 대신 assertRunAccess를 호출한다.
+  · runner 첫 평가 — assertFreshRunDir(예약 run + pw-output 부재) 그대로 유지 + 소유 정합.
+  · worker 재평가 — 살아있는 runner가 만든 pw-output은 허용하되 TEST_WORKER_INDEX 숫자 형태 + runDir basename===RO_RUN_ID + run-owner.json {runId,nonce}===env + audit-before.json parse(runId 일치·gateOk===true) 전부 요구. 종료 run(audit-after/audit-fail 존재)은 worker 플래그가 있어도 거부.
+  · launcher는 spawn 직전 run-owner.json을 wx로 새기고 nonce를 child env(RO_WORKER_NONCE)에 묶는다 — 상속된 TEST_WORKER_INDEX/TEST_PARALLEL_INDEX는 pwChildEnv가 제거해 첫 runner가 worker로 오인되지 않는다.
+- 부정 DB-free 검증(unit): 기존 output⇒runner 거부+bytes 불변 / 동일 run 정상 worker⇒허용 / 다른 runId·nonce 불일치·marker 부재·nonce env 부재·before 부재/before runId 불일치/gateOk false/basename 불일치/TEST_WORKER_INDEX 비숫자⇒거부 / audit-after·audit-fail 존재 종료 run + worker env 전부 일치⇒거부 / launcher nonce↔spawn env 일치·marker wx 충돌⇒child 0 / pwChildEnv 상속 지표 제거.
+- 구분 기록: run-49ef0230의 거부는 '기본 sandbox/Docker permission denied'가 아니라 **정상 승인 절차로 실행된 실제 readonly exec**다(exec-d96ecd1b). 그 run의 PASS는 'DB before↔after 0 변화'에 한정되고 제품 테스트·캡처는 미실행이다. 과거 commerce_demo_verify scratch 캡처 거부는 사용자 명시 거부로 끝난 Superseded 금지 경로 이력이며, 이번 B1 실행 자체의 권한 차단이 아니다.
+- DB-free 실측: tsc exit 0 · unit 177/177 · build exit 0 · git diff --check 0. DB·server·HTTP·Playwright 재실행은 PM 재승인 전 금지 — assertRunAccess는 아직 실제 런타임에서 검증되지 않았다.
+- Luna 재검수 MAJOR 해소: pwChildEnv의 {...base}가 PLAYWRIGHT_LAST_RUN_OUTPUT_FILE을 상속하면 installed LastRunReporter(runner/index.js:6608)가 outputDir보다 우선하여 외부 기존 파일을 선택하고 onEnd에서 mkdir+writeFile로 덮어쓴다(:6644). pwChildEnv가 PLAYWRIGHT_*_OUTPUT_FILE/_OUTPUT_DIR·HTML_REPORT·HTML_OPEN을 전부 제거해 상속 env가 shots/06b run 밖 경로를 가리키지 못하게 했다 — 현재 부모 env 미설정이어도 코드 보호이며 실제 overwrite 발생 주장은 하지 않는다. 상속 override 부정 unit 추가. 재실측: tsc 0 · unit 178/178 · build 0 · diff --check 0.
+
+### B1 재실행 — run-01026234 (PMQA-048-B1 재개 승인)
+
+- PM B1F 독립 판정(인용): DB-free 안전 보완 PASS — MAJOR 해소. 검수본 SHA audit 6d1b2226…6e9f · guard 9ee5e9fc…488502 · config f3663ae2…104ca — 실행 직전 재측정 전부 일치.
+- 사전 검증: PLAYWRIGHT/출력 override env 부재(실행 허용 조건) · node 프로세스 부재 · 043 backup·047 facts SHA 동일. 명령 'node tests/e2e/readonly-audit.ts' 새 UUID 직렬 1회.
+- gate 전부 통과: readonly GUC on · OID 16516/16384 · 보호77 fpNCTS 8a72ff5b… · 보존36 fpPres ddadc09a… · rowCounts 정확 · 신규 12 orders+2 cancels · demo_verify 부재.
+- 결과: **21/22 PASS · 1 FAIL** — 실패는 [mock:refund] 환불 라벨 테스트의 설계 결함: page.reload()가 SPA 해시 #/orders를 유지해 '주문 목록'에 머물고, openOrders가 홈 전제의 '내 쇼핑' 버튼을 30초 대기해 timeout. **[PMQA-048 정정]** 이 run 시점 'PENDING은 실데이터로 통과' 단정은 부정확 — mock 응답에 '환불 처리 중' DOM은 관측됐으나 navigation timeout으로 PENDING/REFUNDED 두 단정 완료는 미검증이었다(제품 표시 결함 아님 — page snapshot에 mock 적용된 목록과 라벨이 실제 렌더링됨). 두 단정은 후속 전체 run run-7b0a77f7에서 둘 다 검증됐다. 본 경로는 mock이며 실제 환불 상태 생성·외부 환불 발생이 아니다. PM 원인 판정 전 재실행·수정 없음.
+- 사후 감사: commerce_test drift [] · commerce drift [] — 두 번째 run도 DB write 0건. 12장 캡처 PNG + capture-notes.md 생성(캡처 존재 기록이며 비교 완료·Visual 승인 주장 아님). 기존 49ef run·모든 이전 PNG/facts 보존 — 덮어쓰기 0건.
+- 미검증으로 유지: 전체 06B PASS 아님(1 fail 보류·Visual 미승인·Integration/live eval 미실행).
+
+### B1 후속 — 실패 원인 PM 판정·spec 최소 수정 (런타임 미검증)
+
+- 정정: 실행 중간 Get-Process 부재를 완료 근거로 오판할 수 있었다 — 실제 완료는 audit-after.json 생성과 원본 명령 실제 종료코드(exit 1)로 확정한다. 결과는 21 pass/1 fail(error-context.md 기준).
+- 구분: **B1F worker 경로는 실제 런타임 검증 완료** — run-01026234에서 22개 테스트가 worker의 config 재평가를 통과해 실행됐고 자기충돌은 재발하지 않았다. **미검증은 refund mock 테스트뿐**이다.
+- PM 원인 판정(인용): spec의 page.reload()가 SPA 해시 #/orders를 유지해 이미 주문 목록인데 openOrders()가 홈 전제 '내 쇼핑' 버튼을 재클릭해 timeout — test navigation 결함이며 snapshot에 '환불 처리 중' 실제 DOM 존재로 제품 결함 아님.
+- 최소 수정(spec 한 파일·제품 코드 변경 0): mock refund 블록의 reload 후 openOrders 대신 '주문 목록' heading 대기 + refund 라벨 단정으로 변경 — openOrders helper는 다른 테스트용으로 그대로, PENDING/REFUNDED 2상태 단정·skip 금지 준수.
+- DB-free 실측: tsc exit 0 · git diff --check 0. runtime 재실행은 PM 코드 확인 후 별도 지시 — refund 수정분은 아직 미검증.
+
+### PMQA-048-C — 제한적 Visual Correction (코드 보완 완료 / runtime·캡처 PM 지시 대기)
+
+- PM 분류: 기술 22/22 PASS 유지하되 Visual 구조 MAJOR 2(목록 카드 상품정보 계층·상세 flat 정보 구획) — 08 이관 없이 지금 보완.
+- OrderCard 공용(src/web/components/OrderCard.tsx): 'N.N 결제 상세 >' 링크를 별도 전체폭 행에서 첫 품목의 썸네일 우측 상품정보열 첫줄로 이동(정보열 = 링크→상품명→실제옵션→가격/수량) [Observed Ref079]. 썸네일 56→76px(Ref ~78 근접·유동 안전 범위). 주문단위 배송비는 첫 품목 정보열 아래(`.order-item-delivery`) — 품목별 반복·품목가격/총액 혼동 금지 [Observed Ref080]. 중첩 button 금지 유지: 품목 행은 div > (thumb button | info 열 sibling button) 구조, 클릭 불가 품목은 span/div 유지. 총액·외 N건·문의/배송/취소·환불 라벨 기존 정직 계약 보존.
+- OrderDetail 전용 스코프(`.order-detail .od-*`): 배송지·결제정보·배송 상태·취소 요청을 회색 둥근 카드(`.checkout-block`) 반복에서 flat 섹션 + `.checkout-band` 구분으로 변경 [Observed Ref080/081]. 배송지 계층 = 이름→주소/상세→연락처. 결제 정보는 좌label·우amount(pay-row) 유지 + 총 결제 금액 상단 구분선·강조. 모의결제/환불 표기·배송 타임라인 [Project] 표기·read 동작 보존. Checkout/OrderComplete 06A 승인 화면은 전역 CSS 미변경으로 무영향.
+- 비교정정(증거 서술): Ref080은 도착 예정(ETA)이 존재 — 'Reference도 배송 정보 없음' 주장 금지, 공통점은 PAID뿐·impl은 NOSHIP 차이로 명시(spec capture-notes + tmp_qacmp06b 캡션 수정). Ref081 원본은 스크롤 전체 캡처로 crop 아님 — 결제 정보 비교는 양쪽 동일 영역의 supplemental로 라벨(06 본 [SUPPLEMENTAL]).
+- spec 최소 보정(tests/e2e/readonly-orders.spec.ts): 새 DOM 구조에 맞춰 상품 행 클릭 선택자 `.order-card-item`→`.order-item-body` 6곳 — 단정 의미 변경 없음.
+- DB-free 실측: tsc exit 0 · unit 178/178 · build exit 0 · git diff --check 0. runtime/DB/HTTP/캡처/commit/push 미실행 — 새 UUID readonly run은 PM 정적 재검수 후 1회 지시 대기. 기존 run-7b0a77f7/01026234/49ef 증거 전부 보존.
+
+### PMQA-048-C 후속 — 새 UUID readonly 재실행 + QA 비교본 재생성 (run-88a16883)
+
+- 실행 명령(실제, 단 1회·정상 승인): `node tests/e2e/readonly-audit.ts` — 새 runId 자동 생성. PLAYWRIGHT 출력 env 부재·node 프로세스 부재 사전 확인.
+- 결과: **22/22 PASS (12.7s)·exit 0·verdict.pass=true·'변화 0 확인'** — gate 전부 통과(readonly GUC·OID 16516/16384·보호77 fpNCTS 8a72ff5b…·보존36 fpPres ddadc09a…·rowCounts 16/17/16/15/2/152/0·12 orders+2 cancels·demo_verify 부재). drift []·driftDev [].
+- 산출: `shots/06b/88a16883-2767-4a42-9fff-4b5c5a0c10b0/` — captures/ PNG 12장+capture-notes.md·audit-before/after.json·run-owner.json·pw-output/.last-run.json + qa/ 비교 6본. **[PM 정정]** 이 시점의 qa/ 비교본은 'wx 생성'이 아니다 — 당시 tmp 생성기는 screenshot({path}) 직접 쓰기로 새 폴더에 1회 생성한 것이고, 버퍼→writeFileSync wx 방식은 711d95bb/qa-final부터 적용됐다. raw 캡처의 wx 쓰기(spec shot()·facts)와 파생 비교본의 쓰기 방식을 구분해 기록한다.
+- QA 비교본(tmp_qacmp06b.mjs, DB/HTTP 없음·로컬 파일만): 01 Ref079↔list_dark · 02 Ref080↔detail_paid_noship(PAID만 공통·Ref080 ETA 존재 vs impl NOSHIP 명시) · 03 Ref084↔preparing · 04 Ref090↔requested · 05 Ref091↔list_requested · 06 Ref081↔payment_dark [SUPPLEMENTAL — 원본 전체 비교 + 양쪽 결제정보 영역 crop 390폭 추가, crop 범위 명시: Ref 원본 y≈730–1490→렌더 y≈324–661, impl y≈448–624]. 캡션은 048-C 적용 구조 기준 — 이전 gap을 stale하게 남기지 않음.
+- 실행하지 않은 것(구분 기록): 표준 69건 e2e·Integration·globalSetup 경로·DB write·모의 주문 생성·commit·push — 전부 미실행. refund PENDING/REFUNDED·mock 라벨 등 spec의 mock 3건은 본 run에서 PASS했으나 mock 경로이며 실제 환불 상태 생성이 아니다.
+- 기존 run-7b0a77f7/01026234/49ef 원본 PNG·facts·qa 전부 보존 — 덮어쓰기 0.
+
+### PMQA-048-C — run-711d95bb 최종 실측 + 증거 보존 결함 기록 + qa-final (2026-10-12)
+
+- 실행 명령(실제, 단 1회·정상 승인): `node tests/e2e/readonly-audit.ts` — runId `711d95bb-8f6a-46f6-a1e5-134a4dd109b9`. 결과: **22/22 PASS (13.4s)·exit 0·'변화 0 확인'** — gate 전부 통과, drift []·driftDev [].
+- **배송 포커스 증거 정정 완료**: shipping-focus-{chip,dark,light}.json 전부 done=true — timeline bbox 661.75~713.75이 backBottom 48~barTop 773 사이 완전 노출, scrollY 103 안정(9~12 프레임). 이전 88a shipping 캡처의 '상단부터 시작·timeline이 footer에 가림' 증거 부족은 spec bounded-poll 보완으로 해소 — 실제 UI 결함이 아니라 캡처 시점 결함이었다.
+- **증거 보존 결함(정직 기록)**: tmp_qacmp06b.mjs가 screenshot({path}) 직접 쓰기로 711d95bb/qa/ 6본을 3회 덮어썼다 — 초기 2버전 파생 QA는 **소실**. 손실 범위는 해당 파생 비교 렌더뿐이며, 711d95bb raw captures 12PNG·shipping-focus 3JSON·audit-before/after·run-owner·pw-output과 88a run 전체(23파일)·7b0a77f7/01026234/49ef 원본은 보존 — '모든 증거 불변'이라 기록하지 않는다. DB drift 0 기술 결과와 별개의 증거 관리 결함.
+- 생성기 보완(tmp_qacmp06b.mjs): 배타 디렉터리 사전 존재 시 종료·목표 6경로 사전 검증·screenshot 버퍼→writeFileSync wx — 이후 어떤 경로도 덮어쓰지 않는다.
+- **최종 비교본 `shots/06b/711d95bb-…/qa-final/` 단 1회 생성**(no-overwrite): SHA256(앞16) — 01 5ADB2124081619BC · 02 7E38B83513CC2982 · 03 434BFC57322FC39D · 04 AEE5B19CE96CD9CA · 05 C9589B2488BB5ED2 · 06 9CF4FF52BC5D68B5.
+- 비교 범위: 01 Ref079↔list · 02 Ref080↔paid_noship(PAID만 공통·Ref080 ETA vs impl NOSHIP 명시) · 03 Ref084↔preparing · 04 Ref090↔requested · 05 Ref091↔list_requested · 06 Ref081↔payment [SUPPLEMENTAL — 전체 비교 + 양쪽 결제정보 영역 crop: Ref 원본 y≈730–1490→렌더 324–661, impl 실측 눈금 보정 y≈496–656(결제 정보 헤더~모의결제 안내 전체)]. 이전 impl crop y448–624는 전화번호 일부 포함+모의결제 절단 오류 → 눈금 오버레이 실측으로 정정.
+- 711d95bb/qa/ 의 구버전 파생본은 수정·재생성 금지 상태로 둔다(PM 지시) — 정본은 qa-final.
+- 보존 확인 해시(현재 시점, 범위 한정): 711 captures — detail_dark/payment_dark 동일 B22B13A6F793073C · detail_light/payment_light B4FDB4D2C59FA4B3 · shipping_dark 1A53BF0178CA3C81 · shipping_light B0D7C5586CE97E0D · list_dark EC464BA56A635D45 · list_light 826539BE180B0CDF · list_requested ECEED887C917D096 · paid_noship 0DE3960AEFAC11AB · preparing 398F5371BF906746 · requested 9F343AFD9F38836F · focus chip 524758BBB97ECB37 / dark 35889C5BD982A5D6 / light 0286AB9F4C7EE8D9 · audit-after B8D8E8594F352E2B · audit-before C310737E9CAFB5BC. 88a run = 23파일 존재 확인(내용 해시 비교는 이전 기록 지문과 별도 검수 대상).
+- 미실행 유지: 표준 69·Integration·globalSetup·DB writes·모의 주문·commit·push·06C. mock 3건은 mock 경로이며 실제 환불 상태 생성 아님.
+
+### PM 최종 검수 정정 — qa-final 06 하단 캡션 오타 (2026-10-12)
+
+- qa-final/06_payment_section.png의 실제 crop과 상단 라벨은 정확하다(impl y≈496–656) — 다만 하단 notes 텍스트에 'y≈496–648' stale 8px 오류가 남아 있다. 완성된 PNG는 덮어쓰기/재생성하지 않고, 여기에 정정을 기록한다: **정확한 impl crop 범위는 y≈496–656(결제 정보 헤더~모의결제 안내 전체)**이며, 하단 캡션의 648은 서술 오타다. 기능·Visual 구조 영향 없음.
+- 같은 정정으로 run-88a 산출의 'qa … wx 생성' 표현도 정정됐다(해당 항목 본문 참조) — 당시 생성기는 path 직접 쓰기였고 wx 방식은 711d95bb/qa-final부터.

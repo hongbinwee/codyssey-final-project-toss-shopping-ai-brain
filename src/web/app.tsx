@@ -22,7 +22,7 @@ type Route =
   | { name: "cart" }
   | { name: "checkout" }
   | { name: "orders" }
-  | { name: "order"; id: string }
+  | { name: "order"; id: string; focus?: "shipping" }
   | { name: "orderComplete"; id: string };
 
 function parseHash(): Route {
@@ -37,6 +37,9 @@ function parseHash(): Route {
   // '/orders/:id/complete'는 '/orders/' 접두 매칭보다 먼저 파싱한다.
   if (path.startsWith("/orders/") && path.endsWith("/complete"))
     return { name: "orderComplete", id: decodeURIComponent(path.slice(8, -9)) };
+  // 목록 '배송 조회' 칩 → 상세의 배송 섹션 앵커 [PMQA-048-A 소유 범위 내 최소 라우팅].
+  if (path.startsWith("/orders/") && path.endsWith("/shipping"))
+    return { name: "order", id: decodeURIComponent(path.slice(8, -9)), focus: "shipping" };
   if (path.startsWith("/orders/")) return { name: "order", id: decodeURIComponent(path.slice(8)) };
   return { name: "shop", category: params.get("cat") ?? "", sub: params.get("sub") ?? "" };
 }
@@ -62,7 +65,7 @@ const toHash = (r: Route) =>
   : r.name === "checkout" ? "#/checkout"
   : r.name === "orders" ? "#/orders"
   : r.name === "orderComplete" ? "#/orders/" + encodeURIComponent(r.id) + "/complete"
-  : r.name === "order" ? "#/orders/" + encodeURIComponent(r.id)
+  : r.name === "order" ? "#/orders/" + encodeURIComponent(r.id) + (r.focus === "shipping" ? "/shipping" : "")
   : "#/" + (r.category
       ? "?cat=" + encodeURIComponent(r.category) + (r.sub ? "&sub=" + encodeURIComponent(r.sub) : "")
       : "");
@@ -375,13 +378,22 @@ function App() {
           <Orders
             onOpenOrder={(id) => goto({ name: "order", id })}
             onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
+            // 목록 '문의하기'는 대상 주문 상세로 이동한 뒤 기존 CS 패널을 연다 —
+            // id를 버리고 열면 문의 대상이 다른 주문이 될 수 있다 [PM048 검수].
+            onAskAgent={(id) => {
+              goto({ name: "order", id });
+              setAgentOpen("cs");
+            }}
+            onOpenShipping={(id) => goto({ name: "order", id, focus: "shipping" })}
           />
         )}
         {route.name === "order" && (
           <OrderDetail
             orderId={route.id}
+            focus={route.focus}
             onBack={() => goto({ name: "orders" })}
             onAskAgent={() => setAgentOpen("cs")}
+            onOpenProduct={(id) => goto({ name: "product", id })}
           />
         )}
       </main>

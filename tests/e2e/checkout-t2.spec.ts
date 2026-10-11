@@ -51,21 +51,24 @@ test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
   await expect(page.getByRole("heading", { name: "결제했어요" })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(/152,000원 · 모의 결제/)).toBeVisible();
   await page.getByRole("button", { name: "주문 상세 내역 보기" }).click();
-  await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "주문 상세 내역" })).toBeVisible({ timeout: 15000 });
   // 결제로 확정된 정확한 주문 id를 route에서 회수한다.
   createdOrderId = decodeURIComponent(
     page.url().match(/#\/orders\/([^/]+)/)![1],
   );
-  await expect(page.getByText("모의 결제 152,000원")).toBeVisible();
+  // 품목 금액(149,000)과 주문 총액(152,000)을 구분해 단정 — 합산해 꾸미지 않는다.
+  await expect(page.locator(".pay-row.total")).toContainText("152,000원");
+  await expect(page.getByText(/모의 결제 152,000원 — 실제 결제는 발생하지 않아요/)).toBeVisible();
   await expect(page.getByText("배송 준비 중").first()).toBeVisible();
 
-  // W05 목록 — 같은 id 행 안에서 상품·총액·배송 badge를 함께 검증한다.
+  // W05 목록 — 같은 id 카드 안에서 상품·품목 금액·주문 총액·배송 상태를 함께 검증한다.
   await page.getByRole("button", { name: "목록" }).click();
-  const row = page.locator(".order-row", { hasText: createdOrderId });
-  await expect(row).toBeVisible();
-  await expect(row).toContainText("코드뷰 모니터 B");
-  await expect(row).toContainText("152,000원");
-  await expect(row.locator(".badge", { hasText: "배송 준비 중" })).toBeVisible();
+  const card = page.locator(".order-card[data-order-id='" + createdOrderId + "']");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("코드뷰 모니터 B");
+  await expect(card).toContainText("149,000원");
+  await expect(card).toContainText("주문 총액 152,000원");
+  await expect(card.getByText("상품준비중")).toBeVisible();
 });
 
 test("cs panel: created order -> shipping status explanation (stub)", async ({
@@ -75,8 +78,8 @@ test("cs panel: created order -> shipping status explanation (stub)", async ({
   await page.getByRole("button", { name: "내 쇼핑" }).click();
   // 이전 테스트가 만든 같은 id의 주문을 연다 — 같은 상품명의 다른 주문과 섞이지 않는다.
   const oid = createdOrderId || (await preparingOrderId(page));
-  await page.locator(".order-row", { hasText: oid }).click();
-  await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
+  await page.locator(".order-card[data-order-id='" + oid + "']").getByText("결제 상세").click();
+  await expect(page.getByRole("heading", { name: "주문 상세 내역" })).toBeVisible();
 
   await page.getByRole("button", { name: "AI에게 이 주문 물어보기" }).click();
   await expect(page.getByText("AI 고객센터")).toBeVisible();

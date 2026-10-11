@@ -45,7 +45,7 @@ test("delivered order is cancel-ineligible in A02", async ({ page }) => {
   await page.getByRole("button", { name: "내 쇼핑" }).click();
   await page.getByText("코드뷰 모니터 C").first().click(); // ord-a-done (DELIVERED)
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
-  await page.getByRole("button", { name: "주문 취소" }).click();
+  await page.getByRole("button", { name: "취소하기" }).click();
   await expect(page.getByText("지금은 이 주문을 취소할 수 없어요")).toBeVisible();
   await expect(page.getByText("이미 출고된 주문은 취소할 수 없어요")).toBeVisible();
   await expect(page.getByRole("button", { name: "이 주문 취소 요청" })).toHaveCount(0);

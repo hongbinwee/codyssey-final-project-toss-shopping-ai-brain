@@ -8,6 +8,7 @@ import {
   type ShippingStatusResult, type ToolResult,
 } from "./contracts.ts";
 import type { RequestContext } from "./session.ts";
+import { deliveredAtFromEvents } from "./order-display.ts";
 
 type OrderRow = {
   id: string; user_id: string; status: "CONFIRMED" | "CANCELLED";
@@ -33,12 +34,28 @@ export async function listOrders(
   const offset = decCursor(input.cursor);
   if (offset < 0) return fail(err("VALIDATION", "invalid cursor"), trace_id);
 
+  // 첫 품목은 스냅샷(이름·옵션·수량·금액) + 조회 시점 표시용(현재 카탈로그 image·
+  // product_id)으로 조립한다 — getOrder와 동일한 스냅샷/조회시점 분리 [PMQA-048-A].
+  // variant/product 삭제 시 image·product_id는 null — 행 자체는 유지(LEFT JOIN).
   const rows = await sql.unsafe<
-    (OrderRow & { first_name: string; item_count: number })[]
+    (OrderRow & {
+      first_name: string; item_count: number;
+      first_item: {
+        product_name: string; option_values: Record<string, string>;
+        quantity: number; line_total_won: number;
+        image: string | null; product_id: string | null;
+      } | null;
+    })[]
   >(
-    "SELECT o.*, i.first_name, i.item_count FROM orders o " +
-    "JOIN LATERAL (SELECT (array_agg(product_name_snapshot ORDER BY id))[1] AS first_name, count(*)::int AS item_count " +
-    "FROM order_items WHERE order_id = o.id) i ON true " +
+    "SELECT o.*, i.first_name, i.item_count, i.first_item FROM orders o " +
+    "JOIN LATERAL (" +
+      "SELECT (array_agg(product_name_snapshot ORDER BY id))[1] AS first_name, count(*)::int AS item_count, " +
+      "(SELECT jsonb_build_object('product_name', fi.product_name_snapshot, 'option_values', fi.option_snapshot_json, " +
+        "'quantity', fi.quantity, 'line_total_won', fi.line_total_won, 'image', p.image_urls ->> 0, 'product_id', v.product_id) " +
+        "FROM order_items fi LEFT JOIN product_variants v ON v.id = fi.variant_id " +
+        "LEFT JOIN products p ON p.id = v.product_id " +
+        "WHERE fi.order_id = o.id ORDER BY fi.id LIMIT 1) AS first_item " +
+      "FROM order_items WHERE order_id = o.id) i ON true " +
     "WHERE o.user_id = $1 ORDER BY o.created_at DESC, o.id LIMIT $2 OFFSET $3",
     [ctx.actorUserId, limit + 1, offset],
   );
@@ -47,18 +64,29 @@ export async function listOrders(
 
   const ids = page.map((r) => r.id);
   const ships = ids.length
-    ? await sql.unsafe<{ order_id: string; status: string }[]>(
-        "SELECT order_id, status FROM shipments WHERE order_id = ANY($1)",
+    ? await sql.unsafe<
+        {
+          order_id: string; status: string;
+          estimated_arrival_at: string | null;
+          events_json: { status: string; occurred_at: string }[] | null;
+        }[]
+      >(
+        // 도착 예정은 서버 저장값만 — null이면 화면에서 미노출(임의 ETA 금지).
+        // delivered_at은 events_json의 마지막 event를 나중에 교차검증한다.
+        "SELECT order_id, status, estimated_arrival_at, events_json FROM shipments WHERE order_id = ANY($1)",
         [ids],
       )
     : [];
   const pays = ids.length
-    ? await sql.unsafe<{ order_id: string; status: string; refund_status: string }[]>(
-        "SELECT order_id, status, refund_status FROM payments WHERE order_id = ANY($1)",
+    ? await sql.unsafe<
+        { order_id: string; status: string; refund_status: string; paid_at: string | null }[]
+      >(
+        // '결제 상세 >' 라벨의 결제일 — 실제 paid_at만 사용한다.
+        "SELECT order_id, status, refund_status, paid_at FROM payments WHERE order_id = ANY($1)",
         [ids],
       )
     : [];
-  const shipBy = new Map(ships.map((s) => [s.order_id, s.status]));
+  const shipBy = new Map(ships.map((s) => [s.order_id, s]));
   const payBy = new Map(pays.map((p) => [p.order_id, p]));
   const cxls = ids.length
     ? await sql.unsafe<{ order_id: string; status: string }[]>(
@@ -76,9 +104,22 @@ export async function listOrders(
     total_won: o.total_won,
     order_status: o.status,
     payment_status: payBy.get(o.id)?.status ?? null,
-    shipping_status: shipBy.get(o.id) ?? null,
+    shipping_status: shipBy.get(o.id)?.status ?? null,
     refund_status: payBy.get(o.id)?.refund_status ?? null,
     cancel_status: cxlBy.get(o.id) ?? null,
+    item_count: o.item_count,
+    first_item: o.first_item ?? null,
+    paid_at: payBy.get(o.id)?.paid_at
+      ? new Date(payBy.get(o.id)!.paid_at!).toISOString()
+      : null,
+    cancelled_at: o.cancelled_at ? new Date(o.cancelled_at).toISOString() : null,
+    shipping_estimated_arrival_at: shipBy.get(o.id)?.estimated_arrival_at
+      ? new Date(shipBy.get(o.id)!.estimated_arrival_at!).toISOString()
+      : null,
+    delivered_at: deliveredAtFromEvents(
+      shipBy.get(o.id)?.status ?? null,
+      shipBy.get(o.id)?.events_json,
+    ),
   }));
   return ok(
     {
