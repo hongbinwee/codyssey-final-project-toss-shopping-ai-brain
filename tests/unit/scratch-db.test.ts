@@ -30,6 +30,9 @@ function fake(handler: Handler) {
   return { connect, queries };
 }
 
+// opts.markerList가 있으면 _scratch_owner 조회가 그 행 목록을 그대로 돌려준다
+// — 복수/0행 마커 상황을 만든다 [PMQA-052].
+
 const dropQueries = (queries: { q: string }[]) =>
   queries.filter((x) => x.q.startsWith("DROP DATABASE"));
 
@@ -44,6 +47,7 @@ function okHandler(
     currentDb?: string;
     currentDbAtCleanup?: string;
     marker?: string | null | "captured";
+    markerList?: { run_id: string }[];
     failOn?: string;
   } = {},
 ) {
@@ -86,6 +90,7 @@ function okHandler(
       return [];
     }
     if (q.includes("SELECT run_id FROM _scratch_owner")) {
+      if (opts.markerList !== undefined) return opts.markerList;
       if (opts.marker === null) return [];
       if (opts.marker === undefined || opts.marker === "captured")
         return [{ run_id: capturedRunId }];
@@ -108,12 +113,38 @@ describe("scratch-db 결정 함수", () => {
     assert.equal(planScratchConnect({ optin: "1", adminUrl: ADMIN }).ok, true);
   });
 
-  test("planScratchConnect: adminUrl에 query(?database= 등)가 있으면 거부", () => {
+  test("planScratchConnect: adminUrl에 query(?database= 등)가 있으면 거부 — reason에 credential 원문 없음", () => {
     const r = planScratchConnect({
       optin: "1",
       adminUrl: ADMIN + "?database=commerce_test",
     });
     assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.reason.includes("commerce:commerce"), false);
+      assert.equal(r.reason.includes("database=commerce_test"), false);
+    }
+  });
+
+  test("planScratchConnect: admin shape — 비로컬·비postgres·포트·경로·fragment 거부, reason에 URL 원문 0", () => {
+    const bad = [
+      "postgres://commerce:secret@example.com:5432/postgres",
+      "postgres://commerce:secret@localhost:5433/postgres",
+      "postgres://commerce:secret@localhost:5432/commerce",
+      "postgres://commerce:secret@localhost:5432/",
+      "postgres://commerce:secret@localhost:5432/postgres#frag",
+      "http://localhost:5432/postgres",
+      "not-a-url",
+    ];
+    for (const u of bad) {
+      const r = planScratchConnect({ optin: "1", adminUrl: u });
+      assert.equal(r.ok, false, u);
+      if (!r.ok) {
+        assert.equal(r.reason.includes("commerce:secret"), false);
+        assert.equal(r.reason.includes(u), false);
+      }
+    }
+    // 정상 호출 계약은 유지된다 — 명시 로컬 admin URL은 통과.
+    assert.equal(planScratchConnect({ optin: "1", adminUrl: ADMIN }).ok, true);
   });
 
   test("planScratchCreate: 이미 존재하는 이름은 거부", () => {
@@ -138,6 +169,7 @@ describe("scratch-db 결정 함수", () => {
       expected: { oid: 1, owner: 1 },
       currentDb: "x",
       marker: "x",
+      markerCount: 1,
       runId: "x",
     };
     assert.equal(planScratchDrop({ ...base, dbName: "commerce", currentDb: "commerce" }).ok, false);
@@ -151,6 +183,7 @@ describe("scratch-db 결정 함수", () => {
       expected: { oid: 100, owner: 10 },
       currentDb: "scratch_0000000000000001",
       marker: "run-1",
+      markerCount: 1,
       runId: "run-1",
     };
     // 전부 일치 → 허용
@@ -164,8 +197,11 @@ describe("scratch-db 결정 함수", () => {
     // 접속 DB 불일치
     assert.equal(planScratchDrop({ ...base, identity: { oid: 100, owner: 10 }, currentDb: "commerce" }).ok, false);
     // 마커 부재·불일치(외부가 runId를 모르면 우회 불가)
-    assert.equal(planScratchDrop({ ...base, identity: { oid: 100, owner: 10 }, marker: null }).ok, false);
+    assert.equal(planScratchDrop({ ...base, identity: { oid: 100, owner: 10 }, marker: null, markerCount: 0 }).ok, false);
     assert.equal(planScratchDrop({ ...base, identity: { oid: 100, owner: 10 }, marker: "attacker-guess" }).ok, false);
+    // marker 행 수 != 1 — 복수 마커는 첫 행과 무관하게 소유권 실패다
+    assert.equal(planScratchDrop({ ...base, identity: { oid: 100, owner: 10 }, marker: null, markerCount: 2 }).ok, false);
+    assert.equal(planScratchDrop({ ...base, identity: { oid: 100, owner: 10 }, markerCount: 2 }).ok, false);
   });
 });
 
@@ -306,5 +342,282 @@ describe("createOwnedScratchDb — DB-free mock 검증", () => {
     // 여전히 원본 값으로 검증해 정상 DROP까지 간다.
     await s.cleanup();
     assert.equal(dropQueries(queries).length, 1);
+  });
+
+  test("cleanup: marker 행이 복수면 첫 행과 무관하게 DROP 0회 [PMQA-052]", async () => {
+    // LIMIT 1 조회라면 첫 행만 보고 통과했을 상황 — 전체 행 수를 본다.
+    const twoRows = [{ run_id: "run-a" }, { run_id: "run-b" }];
+    const { connect, queries } = fake(okHandler({ markerList: twoRows }));
+    const s = await createOwnedScratchDb(ADMIN, { connect });
+    await assert.rejects(() => s.cleanup(), /마커/);
+    assert.equal(dropQueries(queries).length, 0);
+    // 조회된 마커 SELECT에는 LIMIT가 없어야 한다 — 행 수를 모른 채 첫 행만
+    // 보면 복수 마커를 구분할 수 없다.
+    const markerSelect = queries.filter((x) =>
+      x.q.includes("SELECT run_id FROM _scratch_owner"),
+    );
+    assert.equal(markerSelect.length > 0, true);
+    for (const m of markerSelect) assert.equal(/LIMIT/i.test(m.q), false);
+  });
+
+  test("create events: planned→created→identified 순서로 기록된다", async () => {
+    const seen: string[] = [];
+    const { connect } = fake(okHandler());
+    const s = await createOwnedScratchDb(ADMIN, {
+      connect,
+      events: async (e) => {
+        seen.push(e.stage + ":" + e.dbName);
+      },
+    });
+    assert.deepEqual(
+      seen,
+      [
+        "planned:" + s.dbName,
+        "created:" + s.dbName,
+        "identified:" + s.dbName,
+      ],
+    );
+  });
+
+  test("create events: 'planned' 기록 실패 시 CREATE DATABASE는 실행되지 않는다", async () => {
+    const { connect, queries } = fake(okHandler());
+    await assert.rejects(
+      () =>
+        createOwnedScratchDb(ADMIN, {
+          connect,
+          events: async () => {
+            throw new Error("evidence 쓰기 실패");
+          },
+        }),
+      /evidence 쓰기 실패/,
+    );
+    assert.equal(
+      queries.filter((x) => x.q.startsWith("CREATE DATABASE")).length,
+      0,
+    );
+  });
+
+  test("create events: 'created' 기록 실패 시 retain — handle·DROP 없이 throw", async () => {
+    const { connect, queries } = fake(okHandler());
+    let n = 0;
+    await assert.rejects(
+      () =>
+        createOwnedScratchDb(ADMIN, {
+          connect,
+          events: async () => {
+            n++;
+            if (n === 2) throw new Error("created 기록 실패");
+          },
+        }),
+      /created 기록 실패/,
+    );
+    // CREATE는 실행됐지만 핸들이 없다 — cleanup 자체가 등록되지 않아 DROP 0.
+    assert.equal(
+      queries.filter((x) => x.q.startsWith("CREATE DATABASE")).length,
+      1,
+    );
+    assert.equal(dropQueries(queries).length, 0);
+  });
+
+  // ── PMQA-052-C — 각 await 경계의 flag 소실이 다음 mutation 직전에 차단된다 ──
+  // helper는 mutation SQL(CREATE DATABASE·marker CREATE·marker INSERT·DROP)
+  // 직전마다 await 없이 동기 재검증한다 — events/identity/marker/end 각 await
+  // 경계에서 opt-in이 소실돼도 후속 mutation·DROP은 0이어야 한다.
+
+  test("flag 소실 — 'created' 이벤트 await 중 opt-in 소실이면 marker CREATE/INSERT 0 [052-C]", async () => {
+    const { connect, queries } = fake(okHandler());
+    await assert.rejects(
+      () =>
+        createOwnedScratchDb(ADMIN, {
+          connect,
+          events: async (e) => {
+            if (e.stage === "created") delete process.env[SCRATCH_OPTIN_ENV];
+          },
+        }),
+      /opt-in|write/,
+    );
+    assert.equal(queries.filter((x) => x.q.startsWith("CREATE TABLE")).length, 0);
+    assert.equal(queries.filter((x) => x.q.includes("INSERT INTO _scratch_owner")).length, 0);
+  });
+
+  test("flag 소실 — 'identified' 이벤트 await 중 opt-in 소실이면 marker CREATE/INSERT 0 [052-C]", async () => {
+    const { connect, queries } = fake(okHandler());
+    await assert.rejects(
+      () =>
+        createOwnedScratchDb(ADMIN, {
+          connect,
+          events: async (e) => {
+            if (e.stage === "identified") delete process.env[SCRATCH_OPTIN_ENV];
+          },
+        }),
+      /opt-in|write/,
+    );
+    assert.equal(queries.filter((x) => x.q.startsWith("CREATE TABLE")).length, 0);
+    assert.equal(queries.filter((x) => x.q.includes("INSERT INTO _scratch_owner")).length, 0);
+  });
+
+  test("flag 소실 — marker CREATE await 중 opt-in 소실이면 marker INSERT 0 [052-C]", async () => {
+    const base = okHandler();
+    const { connect, queries } = fake((q, p, url) => {
+      const r = base(q, p, url);
+      if (q.startsWith("CREATE TABLE")) delete process.env[SCRATCH_OPTIN_ENV];
+      return r;
+    });
+    await assert.rejects(() => createOwnedScratchDb(ADMIN, { connect }), /opt-in|write/);
+    // CREATE TABLE은 flag가 있을 때 이미 실행됨 — 소실 이후의 INSERT만 0이면 된다.
+    assert.equal(queries.filter((x) => x.q.includes("INSERT INTO _scratch_owner")).length, 0);
+  });
+
+  test("flag 소실 — cleanup identity 조회 await 중 opt-in 소실이면 DROP 0 [052-C]", async () => {
+    const base = okHandler();
+    let idCalls = 0;
+    const { connect, queries } = fake((q, p, url) => {
+      const r = base(q, p, url);
+      if (q.startsWith("SELECT oid, datdba")) {
+        idCalls++;
+        if (idCalls === 2) delete process.env[SCRATCH_OPTIN_ENV]; // cleanup의 identity 조회
+      }
+      return r;
+    });
+    const s = await createOwnedScratchDb(ADMIN, { connect });
+    await assert.rejects(() => s.cleanup(), /opt-in|write/);
+    assert.equal(dropQueries(queries).length, 0);
+  });
+
+  test("flag 소실 — cleanup marker SELECT await 중 opt-in 소실이면 DROP 0 [052-C]", async () => {
+    const base = okHandler();
+    const { connect, queries } = fake((q, p, url) => {
+      const r = base(q, p, url);
+      if (q.includes("SELECT run_id FROM _scratch_owner"))
+        delete process.env[SCRATCH_OPTIN_ENV];
+      return r;
+    });
+    const s = await createOwnedScratchDb(ADMIN, { connect });
+    await assert.rejects(() => s.cleanup(), /opt-in|write/);
+    assert.equal(dropQueries(queries).length, 0);
+  });
+
+  test("flag 소실 — cleanup 내부 연결 end await 중 opt-in 소실이면 DROP 0 [052-C]", async () => {
+    const base = okHandler();
+    const queries: { url: string; q: string }[] = [];
+    let scratchEnds = 0;
+    const connect = (url: string) => ({
+      unsafe: async (q: string, p?: unknown[]) => {
+        queries.push({ url, q });
+        return base(q, p, url);
+      },
+      end: async () => {
+        // scratch 연결 end의 2회차 = cleanup 내부 owned 연결의 end await 경계
+        // (1회차는 create 경로의 owned end).
+        if (url.includes("/scratch_")) {
+          scratchEnds++;
+          if (scratchEnds === 2) delete process.env[SCRATCH_OPTIN_ENV];
+        }
+      },
+    });
+    const s = await createOwnedScratchDb(ADMIN, { connect });
+    await assert.rejects(() => s.cleanup(), /opt-in|write/);
+    assert.equal(dropQueries(queries).length, 0);
+  });
+
+  test("guard hook — 각 mutation 직전 동기 호출·throw 시 후속 mutation 0 [052-C]", async () => {
+    const calls: string[] = [];
+    const { connect, queries } = fake(okHandler());
+    await assert.rejects(
+      () =>
+        createOwnedScratchDb(ADMIN, {
+          connect,
+          guard: () => {
+            calls.push("g");
+            if (calls.length >= 2) throw new Error("guard 거부");
+          },
+        }),
+      /guard 거부/,
+    );
+    // 첫 호출은 CREATE DATABASE 직전(통과·CREATE 1회), 두 번째는 marker
+    // CREATE 직전 — 거부되어 CREATE TABLE·INSERT는 dispatch되지 않는다.
+    assert.equal(queries.filter((x) => x.q.startsWith("CREATE DATABASE")).length, 1);
+    assert.equal(queries.filter((x) => x.q.startsWith("CREATE TABLE")).length, 0);
+    assert.equal(queries.filter((x) => x.q.includes("INSERT INTO _scratch_owner")).length, 0);
+    assert.equal(calls.length >= 2, true);
+  });
+
+  test("guard hook이 thenable을 반환하면 즉시 거부 — async 검사 누락 경로 차단 [052-C]", async () => {
+    const { connect, queries } = fake(okHandler());
+    await assert.rejects(
+      () =>
+        createOwnedScratchDb(ADMIN, {
+          connect,
+          guard: (() => Promise.resolve()) as never,
+        }),
+      /동기|thenable/i,
+    );
+    assert.equal(queries.filter((x) => x.q.startsWith("CREATE DATABASE")).length, 0);
+  });
+
+  test("guard hook — cleanup의 DROP 직전에도 호출된다 [052-C]", async () => {
+    const calls: string[] = [];
+    const { connect, queries } = fake(okHandler());
+    const s = await createOwnedScratchDb(ADMIN, {
+      connect,
+      guard: () => {
+        calls.push("g");
+        // 생성 경로의 3개 mutation 직전 호출(CREATE·marker CREATE·INSERT)은
+        // 통과하고, DROP 직전 호출에서만 거부한다.
+        if (calls.length >= 4) throw new Error("guard 거부");
+      },
+    });
+    await assert.rejects(() => s.cleanup(), /guard 거부/);
+    assert.equal(dropQueries(queries).length, 0);
+    assert.equal(calls.length, 4);
+  });
+
+  test("guard hook이 opt-in을 지우고 정상 return해도 CREATE/DROP 0 [052-C P1]", async () => {
+    // 회귀: 기본 gate → guard 순이면 guard가 flag를 지운 뒤 이미 통과한
+    // 기본 gate를 다시 거치지 않고 SQL이 dispatch된다. guard → 기본 gate
+    // 순이면 flag 소실이 SQL 직전에 걸린다.
+    const { connect, queries } = fake(okHandler());
+    await assert.rejects(
+      () =>
+        createOwnedScratchDb(ADMIN, {
+          connect,
+          guard: () => {
+            delete process.env[SCRATCH_OPTIN_ENV]; // 지우고 정상 return
+          },
+        }),
+      /opt-in|write/,
+    );
+    assert.equal(
+      queries.filter((x) => x.q.startsWith("CREATE DATABASE")).length,
+      0,
+    );
+    assert.equal(queries.filter((x) => x.q.startsWith("CREATE TABLE")).length, 0);
+    assert.equal(
+      queries.filter((x) => x.q.includes("INSERT INTO _scratch_owner")).length,
+      0,
+    );
+    assert.equal(dropQueries(queries).length, 0);
+  });
+
+  test("guard hook이 cleanup 경계에서 opt-in을 지우고 return해도 DROP 0 [052-C P1]", async () => {
+    // 생성 경로의 3개 mutation 직전 호출(CREATE·marker CREATE·INSERT)은
+    // flag를 유지하고, cleanup의 DROP 직전 호출에서만 지우고 정상 return한다 —
+    // cleanup 자체의 connect gate는 통과한 뒤라 writeGate 순서가 유일한 방어다.
+    let calls = 0;
+    const { connect, queries } = fake(okHandler());
+    const s = await createOwnedScratchDb(ADMIN, {
+      connect,
+      guard: () => {
+        calls++;
+        if (calls >= 4) delete process.env[SCRATCH_OPTIN_ENV];
+      },
+    });
+    await assert.rejects(() => s.cleanup(), /opt-in|write/);
+    assert.equal(
+      queries.filter((x) => x.q.startsWith("CREATE DATABASE")).length,
+      1,
+    );
+    assert.equal(dropQueries(queries).length, 0);
+    assert.equal(calls, 4);
   });
 });

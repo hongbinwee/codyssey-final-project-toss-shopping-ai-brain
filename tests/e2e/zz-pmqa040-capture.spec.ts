@@ -8,12 +8,37 @@
 // 결과물: shots/06a/pmqa040/impl_*.png + facts.json — 기존 파일은 덮지 않고
 // 실패 시에도 facts-progress.json으로 증거를 남긴다.
 import { expect, test, type Page } from "@playwright/test";
-import fs from "node:fs";
-import { reserveCaptureOutput } from "../helpers/capture-output.ts";
+import {
+  claimEvidenceFiles,
+  reserveCaptureOutput,
+  type EvidenceWriter,
+} from "../helpers/capture-output.ts";
 
 test.describe.configure({ mode: "serial" });
 
 let OUT = "";
+let evw: EvidenceWriter | null = null;
+
+// planned 산출 slot — login/cart/HTTP 등 consumer 시작 전에 전부 claim한다.
+// 하나라도 기존 파일과 충돌하면 캡처는 시작되지 않는다 [PMQA-054].
+const CAPTURE_SLOTS: readonly string[] = [
+  ...(["dark_844", "light_844", "dark_600", "light_600"] as const).flatMap(
+    (t) => [
+      "impl_checkout_" + t + ".png",
+      "impl_checkout_summary_" + t + ".png",
+      "impl_complete_" + t + ".png",
+    ],
+  ),
+  "facts.json",
+  "facts-progress.json",
+];
+
+async function shotInto(page: Page, name: string) {
+  // Playwright의 path 쓰기는 기존 파일을 덮어쓰므로 쓰지 않는다 —
+  // buffer를 받아 claim된 handle로만 기록한다 [PMQA-054].
+  const buf = await page.screenshot();
+  await evw!.write(name, buf);
+}
 
 async function login(page: Page) {
   await page.goto("/");
@@ -200,6 +225,9 @@ test("PMQA-040 시각 증거 — 주문서·금액패널·완료 4조합 캡처 
   test.setTimeout(120_000);
   // 새 UUID 경로를 배타 예약한다. 실패 시 login/cart HTTP/capture 전에 종료.
   OUT = await reserveCaptureOutput("shots/06a/pmqa040-runs");
+  // planned slot 전체 claim — 기존 산출물과 충돌하면 consumer 전 STOP.
+  evw = await claimEvidenceFiles(OUT, CAPTURE_SLOTS);
+  try {
   try {
     await login(page);
     await clearCartApi(page);
@@ -280,7 +308,7 @@ test("PMQA-040 시각 증거 — 주문서·금액패널·완료 4조합 캡처 
 
       // 1) 주문서 default(접힘) — 실측 + 캡처
       c.checkout = await measureCheckout(page);
-      await page.screenshot({ path: OUT + "impl_checkout_" + tag + ".png" });
+      await shotInto(page, "impl_checkout_" + tag + ".png");
 
       // 2) 금액 패널 펼침 — 총 결제 금액이 카드 밖 독립 섹션인지 실측
       await page.locator(".checkout-card").getByRole("button", { name: /주문 금액 상세/ }).click();
@@ -322,14 +350,14 @@ test("PMQA-040 시각 증거 — 주문서·금액패널·완료 4조합 캡처 
       }
       if (!sm.payNote?.text)
         fail("payNote_" + tag, "모의결제 안내 문구 없음");
-      await page.screenshot({ path: OUT + "impl_checkout_summary_" + tag + ".png" });
+      await shotInto(page, "impl_checkout_summary_" + tag + ".png");
 
       // 3) 결제 완료 — paidOk 주문 GET 재사용(생성 없음)
       await page.goto("/#/orders/" + orderId + "/complete");
       await expect(page.locator(".oc-screen")).toBeVisible({ timeout: 15000 });
       await expect(page.getByRole("heading", { name: "결제했어요" })).toBeVisible();
       c.complete = await measureComplete(page);
-      await page.screenshot({ path: OUT + "impl_complete_" + tag + ".png" });
+      await shotInto(page, "impl_complete_" + tag + ".png");
       if ((c.complete as { check?: boolean }).check !== true) fail("complete_check_" + tag, "체크 아이콘 없음");
 
       facts.combos[tag] = c;
@@ -341,7 +369,7 @@ test("PMQA-040 시각 증거 — 주문서·금액패널·완료 4조합 캡처 
   } finally {
     // 실패해도 여기까지 모은 측정치를 남긴다 — facts.json은 성공 완료 시에만.
     if (!facts.completed) {
-      fs.writeFileSync(OUT + "facts-progress.json", JSON.stringify(facts, null, 2));
+      await evw!.writeJson("facts-progress.json", facts);
       console.log("WROTE", OUT + "facts-progress.json (incomplete run)");
     }
   }
@@ -351,7 +379,13 @@ test("PMQA-040 시각 증거 — 주문서·금액패널·완료 4조합 캡처 
   const endCart = await (await page.context().request.get("/api/cart")).json();
   facts.cartEnd = { items: endCart.data.items.length, version: endCart.data.version };
 
-  fs.writeFileSync(OUT + "facts.json", JSON.stringify(facts, null, 2));
+  await evw!.writeJson("facts.json", facts);
+  } finally {
+    // claim 이후 어떤 경로(실패·progress write 실패·cart 후조회 실패)로
+    // 끝나도 handle을 해제한다 — close 오류는 집계돼 여기서 전파된다
+    // [PMQA-054/Luna QA-3]. 미기록 claim은 그대로 retain.
+    await evw!.close();
+  }
   console.log("WROTE", OUT + "facts.json", "fails:", facts.fails.length);
   expect(facts.fails).toEqual([]);
 });

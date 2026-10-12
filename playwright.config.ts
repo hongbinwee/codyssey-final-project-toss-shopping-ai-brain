@@ -1,4 +1,9 @@
 import { defineConfig } from "@playwright/test";
+import { assertEntryRunnable } from "./tests/helpers/pw-config-gate.ts";
+
+// PMQA-055: 이 config는 globalSetup reseed·실DB 경로 — 지원 미완 입구이므로
+// 설정 평가 단계에서 거부된다(webServer·globalSetup·DB 시작 전).
+assertEntryRunnable("playwright.config.ts");
 
 export default defineConfig({
   testDir: "tests/e2e",

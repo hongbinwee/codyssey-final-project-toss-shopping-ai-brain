@@ -317,3 +317,16 @@ commerce_demo_verify 소실 사고(VERIFICATION_LOG PMQA-040-SEED-SAFETY) 이후
 | e2e 정합 | stale spec을 새 계약으로 갱신 — disabled CTA + DOM click 이벤트 부재 + `/api/agent/turn` 요청 0 + 수동 배송 조회 유지 단정. 부적격 주문(ord-a-ship IN_TRANSIT·ord-a-done DELIVERED)은 CTA 미노출 + 실DTO 목록/상세/eligibility 일치 행렬로 교차 단정 | PM 보충 검증 지시 — 버튼 없음 + 실GET eligibility false |
 | 실행 한계 | ~~실DB readonly22·신규 캡처 미실행~~ → 053-B로 readonly22 실DB PASS(15 real+3 mock+4 capture)·2DB drift 0·QA 7장 완료 [Superseded]. 표준 e2e·Integration·standard 69·eval은 여전히 NOT_RUN — 09 Freeze 전 게이트 해소 필수 | 사고 후 영구 규칙 · PMQA-053-B/C |
 | 052 분리 | unit 259는 미커밋 052 신규 unit 29 포함 수치 — 053 커밋 증거로 인용 금지. 052 4코드는 runtime readiness FAIL(QA 3건 OPEN)로 이번 커밋 제외 | PMQA-053-C 정정 |
+
+## 2026-10-12 · PMQA-054~057 — evidence·입구·runner 계약 + readonly 22 실DB 검증 (사용자 조건부 승인·staged)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| evidence 산출 | 모든 검증 산출물은 사전 claim된 'wx' 배타 파일에만 full-write — 기존 파일 덮어쓰기·재사용·부분 기록 금지, drain+finish 확인 전 다음 진행 금지. async·sync 변형 동일 계약 | PMQA-054 — 증거 손상·덮어쓰기 사고 후 계약 |
+| 입구 gate | 미지원 실행 입구는 설정 평가에서 거부(assertEntryRunnable disposition) — playwright.config·playwright.capture.config·verify·shoot-themes·isolated-smoke는 not-ready, 미등록 entry는 blocked | PMQA-055 — globalSetup reseed·고정명 덮어쓰기 경로 차단 |
+| runner | pmqa054/056 QA runner는 고정 allowlist 커맨드·새 UUID run dir·wx 로그·bounded kill·no-shell — argv[2]는 테이블 키 1개만 | PMQA-054/056 |
+| readonly envelope | audit 실행은 run-owner marker+nonce+부모 예약 pwWorkdir — outputDir는 envelope 하위 playwright child(루트에 두면 runner cleanup이 예약 dir를 삭제) | 057-1 실패·수정 |
+| worker env | assertNoPwOverrides는 검증된 fork worker(numeric TEST_WORKER_INDEX + workerProcessEntry.js + 인자 0)에서만 PLAYWRIGHT_TEST='1' exact-key 예외 — 나머지 prefix deny·argv 검사 무변경 | 057-2 실패·수정 — Playwright 자체 env(coreBundle setPlaywrightTestProcessEnv :8185→:8186, ProcessHost 상속 :1920) false positive |
+| 게이트 | FILE GATE(pin SHA) → probeDb(OID·read-only GUC) → demo_verify 부재 → baseline 단일 RR txn(보호 77·독립 36·rowCounts) → writer/unreadable 0 → before/after 두 DB 13테이블 지문 diff | 048~057 계승 |
+| 052 분리 | 052-C 코드 보정 완료(code-resolved — recheck·지문 74/74 DB-free)와 실PG runtime NOT_RUN을 구분. 사용자 승인 33파일에 052 4코드 포함, mock 증거를 실DB 보장으로 인용 금지 유지 | 사용자 조건부 승인 · PM 정정 |
+| 시점 증거 | unit 399·tsc·build·readonly 22 PASS는 커밋 전 시점 증거 — 커밋 후 readonly 22 재검증은 별도 승인·NOT_RUN. 전체 환경 READY 주장 금지 | PM 지시 |

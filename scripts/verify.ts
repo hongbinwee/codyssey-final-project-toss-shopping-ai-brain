@@ -1,5 +1,9 @@
 // Phase N까지 누적 검증. 모든 단계를 node로 직접 호출해 shell 의존을 제거한다.
 import { spawnSync } from "node:child_process";
+import { assertEntryRunnable } from "../tests/helpers/pw-config-gate.ts";
+
+// PMQA-055: 연쇄 동작(누적 test:e2e 등)은 미보호 — 실행 전 거부한다.
+assertEntryRunnable("scripts/verify.ts");
 
 const STEPS: Record<number, string[][]> = {
   0: [

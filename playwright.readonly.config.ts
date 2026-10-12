@@ -9,11 +9,29 @@
 import { defineConfig } from "@playwright/test";
 import { join } from "node:path";
 import { assertRunAccess } from "./tests/e2e/readonly-guard.ts";
+import { assertEntryRunnable } from "./tests/helpers/pw-config-gate.ts";
+import { assertNoPwOverrides } from "./tests/helpers/evidence-broker.ts";
+
+// PMQA-055/056: 상속 output/reporter override 차단 → entry gate.
+// 부모 runner 형태 "-c playwright.readonly.config.ts"만 허용한다.
+assertNoPwOverrides({
+  env: process.env,
+  argv: process.argv,
+  allowedConfig: "playwright.readonly.config.ts",
+});
+assertEntryRunnable("playwright.readonly.config.ts");
 
 const RUN_ID = process.env.RO_RUN_ID ?? "";
 if (!/^[0-9a-f-]{36}$/.test(RUN_ID))
   throw new Error(
     "playwright.readonly.config: RO_RUN_ID 필수 — readonly-audit.ts 런처로만 실행한다",
+  );
+// PMQA-056 ② — PW output은 evidence 영역 밖의 부모 예약 pw-* workdir다.
+// run-owner marker의 pwWorkdir와 env 정합을 assertRunAccess가 요구한다.
+const PW_WORKDIR = process.env.RO_PW_WORKDIR ?? "";
+if (!PW_WORKDIR)
+  throw new Error(
+    "playwright.readonly.config: RO_PW_WORKDIR 필수 — 부모 예약 workdir 없음",
   );
 // runner 첫 평가는 예약 run + pw-output 부재 + 소유 정합을 요구하고, launcher가
 // RO_WORKER_NONCE env로 묶은 현재 run의 worker 재평가만 통과한다 — 실제
@@ -29,7 +47,12 @@ export default defineConfig({
   timeout: 30_000,
   workers: 1,
   retries: 0,
-  outputDir: "shots/06b/" + RUN_ID + "/pw-output",
+  // PMQA-057-1 — 실제 outputDir은 부모 예약 envelope의 고정 하위 child다.
+  // runner의 fresh-output cleanup이 삭제하는 것은 이 child뿐 — envelope
+  // root(run-pw-*)는 부모 예약 그대로 생존해 webServer/guard의
+  // existsSync 정합이 유지된다. envelope 자체를 outputDir로 쓰면 cleanup이
+  // 부모 예약을 삭제한다.
+  outputDir: join(PW_WORKDIR, "playwright"),
   // baseURL·webServer url은 readonly-guard.ts의 RO_ORIGIN과 반드시 같은 값 —
   // guard가 이 origin 외 모든 요청을 기본 거부한다 [PMQA-048-B0 검수].
   use: { baseURL: "http://localhost:3102" },

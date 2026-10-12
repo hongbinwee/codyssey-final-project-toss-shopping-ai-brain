@@ -4,6 +4,10 @@
 // 동일 안전 경계: test-server.ts 래퍼가 commerce_test를 실측 확인 후에만 listen.
 // reuseExistingServer=false — dev 서버 위에서 돌지 않고 자체 3101을 쓴다.
 import { defineConfig } from "@playwright/test";
+import { assertEntryRunnable } from "./tests/helpers/pw-config-gate.ts";
+
+// PMQA-055: capture 전용 늦은 예약 경로는 이번 지원 미완 — 설정 평가에서 거부.
+assertEntryRunnable("playwright.capture.config.ts");
 
 export default defineConfig({
   testDir: "tests/e2e",

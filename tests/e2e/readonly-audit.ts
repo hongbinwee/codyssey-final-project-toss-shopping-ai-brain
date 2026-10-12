@@ -34,14 +34,18 @@
 // 주입 구조: runAudit(deps)의 모든 외부 효과(파일·DB·spawn·mkdir·write)는
 // 주입 가능하다 — unit 테스트가 부정 시나리오를 DB 없이 실제 orchestrated
 // 경로로 검증한다.
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
-import {
-  mkdirSync, readFileSync, writeFileSync,
-} from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import postgres from "postgres";
+import {
+  assertReadonlyPreflight,
+  planReadonlyRun,
+  type ReadonlyPlan,
+} from "../helpers/readonly-broker.ts";
+import { assertExecPlan } from "../helpers/pw-config-gate.ts";
 import {
   diffSnaps, parseApprovedFacts, parseRoDbUrl, snapDb, stripCartTs,
   verifyLiveArtifacts, RO_DB, RO_DB_OID, RO_DEV_DB, RO_DEV_DB_OID,
@@ -52,6 +56,7 @@ import {
   collectSnap, loadSeedOrderIds, protectedFingerprint, verifyBackupFile,
   RESTRICTED_PRESERVED_ACTIONS,
 } from "../helpers/testdb.ts";
+import { childEnv } from "../../scripts/pmqa054-evidence-run.ts";
 
 const TEST_URL =
   "postgres://commerce:commerce@localhost:5432/commerce_test";
@@ -74,8 +79,18 @@ export type GateResult = {
 };
 
 export type AuditDeps = {
-  mkdirRunDir: (runId: string) => string;
-  put: (dir: string, name: string, obj: unknown) => void;
+  // 부모 예약 + 전체 slot claim + 채널 기동은 이 단계에서 완료된다 — 실패
+  // 시 FILE GATE·DB·spawn은 시작되지 않는다 [PMQA-056].
+  mkdirRunDir: (runId: string) => string | Promise<string>;
+  // 채널 nonce — 부모 broker 소유 run의 인증키다. 미제공(unit deps)이면
+  // 로컬 randomUUID로 대체한다 (기존 계약 유지).
+  runNonce?: (dir: string) => string;
+  // 부모 예약 PW workdir — run-owner.json에 바인딩된다 [PM 056 ②].
+  runWorkdir?: (dir: string) => string;
+  put: (dir: string, name: string, obj: unknown) => void | Promise<void>;
+  // run dir 아래 claim된 산출물 handle의 해제 — 정상·early return·실패 모든
+  // 경로에서 마지막에 1회 호출된다. 미제공(unit deps)이면 no-op.
+  closeEvidence?: (dir: string) => void | Promise<void>;
   verifyBackupFile: () => void;
   readFileBytes: (path: string) => Buffer;
   sha256: (b: Buffer) => string;
@@ -92,9 +107,13 @@ export type AuditDeps = {
   spawnPw: (
     runId: string,
     nonce: string,
-  ) => { status: number | null; error: string | null };
+  ) =>
+    | { status: number | null; error: string | null }
+    | Promise<{ status: number | null; error: string | null }>;
 };
 
+// verdict.pass는 종료 전 측정 필드다 — 최종 PASS는 process exit code뿐이며
+// 파일에 기록된 pass만으로 완료 판정하지 않는다 [PM measurement contract].
 export type AuditVerdict = { pass: boolean; exit: number; reasons: string[] };
 
 // 최종 판정 — 어떤 실패라도 있으면 PASS 없음(순수 함수 — 주입 검증 가능).
@@ -134,7 +153,7 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
   const runId = randomUUID();
   let dir: string;
   try {
-    dir = deps.mkdirRunDir(runId); // EEXIST 등 — 기존 run bytes는 건드리지 않는다
+    dir = await deps.mkdirRunDir(runId); // EEXIST 등 — 기존 run bytes는 건드리지 않는다
   } catch (e) {
     return {
       pass: false,
@@ -142,6 +161,8 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
       reasons: ["run dir 생성 실패 — 기존 evidence 보존: " + e],
     };
   }
+
+  try {
 
   // ── FILE GATE — DB 접속 0단계. 실패 시 파일 오류 evidence만 남긴다.
   const fileErrs: string[] = [];
@@ -168,7 +189,7 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
   }
   if (fileErrs.length) {
     try {
-      deps.put(dir, "audit-fail.json", {
+      await deps.put(dir, "audit-fail.json", {
         runId,
         stage: "file-gate",
         reasons: fileErrs,
@@ -260,7 +281,7 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
       }
     }
     if (proceed)
-      deps.put(dir, "audit-before.json", {
+      await deps.put(dir, "audit-before.json", {
         runId, before, beforeDev, gateOk, gateDetail, databases,
         demoVerifyPresent,
       });
@@ -268,12 +289,18 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
     if (proceed) {
       // 이번 run 소유 증거 — wx 배타 생성으로 launcher만 만들 수 있고, config
       // 재평가는 이 marker + RO_WORKER_NONCE env 정합을 요구한다 [B1F].
-      const nonce = randomUUID();
-      deps.put(dir, "run-owner.json", {
+      // 채널 broker run의 nonce는 부모가 결정한다 — worker 인증키와 marker가
+      // 같은 값이어야 한다 [PMQA-056].
+      const nonce = deps.runNonce?.(dir) ?? randomUUID();
+      const workdir = deps.runWorkdir?.(dir);
+      await deps.put(dir, "run-owner.json", {
         runId, nonce, at: new Date().toISOString(),
+        // PW output은 evidence 영역 밖 부모 예약 workdir — marker에
+        // 바인딩해 config 재평가가 정합을 요구한다 [PM 056 ②].
+        ...(workdir ? { pwWorkdir: workdir } : {}),
       });
       spawned = true;
-      const r = deps.spawnPw(runId, nonce);
+      const r = await deps.spawnPw(runId, nonce);
       pwStatus = r.status;
       pwError = r.error;
     }
@@ -300,7 +327,7 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
       drift, driftDev, errors,
     });
     try {
-      deps.put(dir, "audit-after.json", {
+      await deps.put(dir, "audit-after.json", {
         runId, after, afterDev, drift, driftDev, pwStatus, pwError,
         gateOk, gateReasons, gateDetail, errors, verdict,
       });
@@ -312,6 +339,12 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
     await testConn.end().catch(() => {});
     await devConn.end().catch(() => {});
     return verdict;
+  }
+  } finally {
+    // claim 이후 정상·file-gate early return·DB 단계 모든 경로에서 handle을
+    // 해제한다 — 해제 오류는 삼키지 않고 그대로 던져 실패로 전파된다
+    // [PMQA-054/Luna QA-3]. 미기록 claim은 그대로 retain.
+    await deps.closeEvidence?.(dir);
   }
 }
 
@@ -425,17 +458,57 @@ async function baselineGate(
 }
 
 function realDeps(): AuditDeps {
+  // PMQA-056 — 부모가 run dir + audit/spec 전체 slot을 사전 claim하고
+  // loopback 채널로 worker 제출을 받는다. 기록은 부모 claim handle로만 —
+  // spec은 경로·handle을 모른다. 채널 실패는 broker.abort로 run FAIL.
+  let plan: ReadonlyPlan | null = null;
   return {
-    mkdirRunDir: (runId) => {
-      mkdirSync(join("shots", "06b"), { recursive: true });
-      const dir = join("shots", "06b", runId);
-      mkdirSync(dir); // recursive:false — EEXIST면 이미 점유된 run dir
-      return dir;
+    mkdirRunDir: async (runId) => {
+      // strict 사전 검사 — user CLI·상속 DB·PW override를 DB 접속 전에
+      // 거부한다 [PM 056 수용기준 ③].
+      assertReadonlyPreflight({
+        env: process.env,
+        argv: process.argv.slice(2),
+        allowedDbUrls: [TEST_URL, DEV_URL],
+      });
+      plan = await planReadonlyRun(runId); // 원자 예약 + 전체 claim + 채널
+      return plan.dir;
     },
-    put: (dir, name, obj) =>
-      writeFileSync(join(dir, name), JSON.stringify(obj, null, 2), {
-        flag: "wx",
-      }),
+    runNonce: (dir) => {
+      if (!plan || plan.dir !== dir)
+        throw new Error("plan 없는 dir — runNonce 거부");
+      return plan.nonce;
+    },
+    runWorkdir: (dir) => {
+      if (!plan || plan.dir !== dir)
+        throw new Error("plan 없는 dir — runWorkdir 거부");
+      return plan.workDir;
+    },
+    put: async (dir, name, obj) => {
+      if (!plan || plan.dir !== dir)
+        throw new Error("claim되지 않은 audit 산출물 — put 거부: " + name);
+      await plan.broker.submit({
+        nonce: plan.nonce,
+        slot: name,
+        data: JSON.stringify(obj, null, 2),
+      });
+    },
+    closeEvidence: async () => {
+      if (!plan) return;
+      // 채널 drain → broker close — 누적 오류는 전부 전파한다.
+      const errs: unknown[] = [];
+      try {
+        await plan.channel.close();
+      } catch (e) {
+        errs.push(e);
+      }
+      try {
+        await plan.broker.close();
+      } catch (e) {
+        errs.push(e);
+      }
+      if (errs.length) throw errs[0];
+    },
     verifyBackupFile: () => verifyBackupFile(),
     readFileBytes: (p) => readFileSync(p),
     sha256: (b) => createHash("sha256").update(b).digest("hex"),
@@ -452,13 +525,37 @@ function realDeps(): AuditDeps {
     snapInTxn,
     // Windows npx.cmd EINVAL/ENOENT 이력 — 승인된 동일 Playwright CLI를
     // process.execPath로 직접 실행한다(권한 우회 아님, 경로 고정).
-    spawnPw: (runId, nonce) => {
-      const r = spawnSync(
+    // async spawn — 동기 spawn은 이벤트 루프를 막아 부모 채널 서버가 worker
+    // ACK를 처리하지 못해 데드락된다 [PMQA-056].
+    spawnPw: async (runId, nonce) => {
+      if (!plan) throw new Error("plan 없이 spawnPw — 순서 위반");
+      // ③ strict exec plan — 허용 entry·argv·DB·output만 통과, 나머지는
+      // connect/spawn 전에 거부한다.
+      assertExecPlan({
+        entry: "playwright.readonly.config.ts",
+        argv: ["test", "-c", "playwright.readonly.config.ts"],
+        dbNames: [RO_DB, RO_DEV_DB],
+        // 057-1 — 실제 outputDir은 envelope의 고정 하위 child로 파생된다.
+        // exec plan은 config 파생 계약과 정확히 같은 형태만 통과한다.
+        outputDir: join(plan.workDir, "playwright"),
+      });
+      const child = spawn(
         process.execPath,
         [PW_CLI, "test", "-c", "playwright.readonly.config.ts"],
-        { env: pwChildEnv(runId, nonce), stdio: "inherit" },
+        {
+          env: pwChildEnv(runId, nonce, plan.channel.port, plan.workDir),
+          stdio: "inherit",
+        },
       );
-      return { status: r.status ?? -1, error: r.error ? String(r.error) : null };
+      // spawnfail(error만, exit 없음)도 hang 없이 결과를 돌린다 [PM QA 056].
+      return await new Promise((res) => {
+        child.once("error", (e) =>
+          res({ status: -1, error: String(e) }),
+        );
+        child.once("exit", (code) =>
+          res({ status: code ?? -1, error: null }),
+        );
+      });
     },
   };
 }
@@ -475,13 +572,23 @@ function realDeps(): AuditDeps {
 export function pwChildEnv(
   runId: string,
   nonce: string,
+  channelPort?: number,
+  pwWorkdir?: string,
   base: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
+  // Node preload env(NODE_OPTIONS·NODE_PATH·NODE_INSPECT_RESUME_ON_START)는
+  // 사본에서 제거한다 — --require/--import가 config guard보다 먼저 실행되는
+  // 경로를 닫는다. 부모 env 전역은 수정하지 않는다(pmqa054 childEnv 정책
+  // 재사용 — Windows 혼합 case 키도 제거된다) [PM QA-056 ③].
   const env: NodeJS.ProcessEnv = {
-    ...base,
+    ...childEnv(base),
     RO_RUN_ID: runId,
     RO_WORKER_NONCE: nonce,
   };
+  // worker 제출용 loopback 채널 — 부모만 아는 port다 [PMQA-056].
+  if (channelPort !== undefined) env.RO_CHANNEL_PORT = String(channelPort);
+  // 부모 예약 PW workdir — config outputDir·marker 정합 키다 [PM 056 ②].
+  if (pwWorkdir !== undefined) env.RO_PW_WORKDIR = pwWorkdir;
   delete env.TEST_WORKER_INDEX;
   delete env.TEST_PARALLEL_INDEX;
   for (const k of Object.keys(env)) {
@@ -496,6 +603,11 @@ export function pwChildEnv(
 }
 
 async function main(): Promise<void> {
+  // PMQA-055: standalone launcher는 parent broker 통합 전 — launch/DB 전 거부.
+  const { assertEntryRunnable } = await import(
+    "../helpers/pw-config-gate.ts"
+  );
+  assertEntryRunnable("tests/e2e/readonly-audit.ts");
   const verdict = await runAudit(realDeps());
   for (const r of verdict.reasons) console.error("[ro-audit]", r);
   console.log(

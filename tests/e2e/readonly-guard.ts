@@ -14,9 +14,10 @@
 // eligibility GET은 src/cancellation.ts checkCancelEligibility가
 // loadCancelFacts(sql,·,·)(forUpdate 생략 → 잠금 없는 SELECT)만 호출함을
 // 코드로 확인해 승인 목록에 따라 구체 허용한다.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { APIRequestContext, BrowserContext } from "@playwright/test";
+import { assertPwIsolation } from "../helpers/evidence-broker.ts";
 
 export const RO_BLOCKED = "RO_GUARD_BLOCKED";
 // 이 경로의 유일 허용 origin — playwright.readonly.config의 baseURL·webServer와
@@ -101,8 +102,10 @@ export function assertFreshRunDir(runDir: string): void {
 //     같은 실패 run 재시작은 여기서 거부된다.
 //   · worker 재평가 — pw-output은 살아있는 runner가 방금 만든 정상 산출물로
 //     허용하되, 소유 정합을 전부 요구한다.
-//   · 종료 run — audit-after.json·audit-fail.json이 있는 run은 worker 플래그가
-//     있어도 거부다(완료된 evidence의 재평가 오용 차단).
+//   · 종료 run — 내용이 기록된 audit-after.json·audit-fail.json이 있는 run은
+//     worker 플래그가 있어도 거부다(완료된 evidence의 재평가 오용 차단).
+//     사전 claim으로 만든 0바이트 예약 파일은 '완료'가 아니다 — 예약(reserved)
+//     상태와 완료(written) 상태를 구분한다 [PMQA-054/Luna QA-2].
 //   · 소유 정합(runner·worker 공통) — run dir basename === RO_RUN_ID,
 //     launcher가 wx로 새긴 run-owner.json의 {runId, nonce}가 env와 정확히
 //     일치, audit-before.json을 실제 parse해 runId 일치 + gateOk === true를
@@ -112,15 +115,43 @@ export type RoRunEnv = {
   RO_RUN_ID?: string;
   RO_WORKER_NONCE?: string;
   TEST_WORKER_INDEX?: string;
+  RO_PW_WORKDIR?: string;
 };
 
-export function assertRunAccess(runDir: string, env: RoRunEnv): void {
+// claim 계약상 산출물은 실행 시작에 0바이트 'wx'로 사전 생성되고, 내용은
+// 나중에 1회만 기록된다 — existsSync만으로는 '기록됨'을 판정할 수 없다.
+// 내용이 1바이트라도 있으면 기록된 증거다(부분 기록·손상도 기록으로 간주해
+// fail-closed로 종료 판정에 포함한다) [PMQA-054/Luna QA-2].
+// ENOENT(부재)만 '미기록'이다 — EACCES/EIO 등 접근 오류는 '읽을 수 없는
+// 상태'이지 미기록이 아니므로 던져 gate를 fail-open으로 열지 않는다
+// [Luna QA-C].
+export function evidenceWritten(p: string): boolean {
+  try {
+    return statSync(p).size > 0;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException | undefined)?.code === "ENOENT")
+      return false;
+    throw e;
+  }
+}
+
+// opts.worker — 명시적 worker-side 재평가 강제. TEST_WORKER_INDEX가 없는
+// webServer(readonly-server)처럼 runner가 띄운 소비자도 runner 첫 평가가
+// 아니라 worker-side 검증을 타야 한다 — runner가 정상 생성한 output
+// 파일 때문에 실패하면 안 된다(mode 계약 최소) [PM QA-056 M2].
+export function assertRunAccess(
+  runDir: string,
+  env: RoRunEnv,
+  opts?: { worker?: boolean },
+): void {
   // 값이 있어도 정상 숫자 형태가 아니면 worker로 인정하지 않는다 — 그 경우
   // 더 엄격한 runner 경로를 탄다(fail-closed).
   const wi = env.TEST_WORKER_INDEX;
   const worker =
-    wi !== undefined && wi.length > 0 &&
-    [...wi].every((c) => c >= "0" && c <= "9");
+    opts?.worker === true ||
+    (wi !== undefined &&
+      wi.length > 0 &&
+      [...wi].every((c) => c >= "0" && c <= "9"));
   // runId ↔ dir 이름 정합 — 다른 run의 디렉터리 위에서 실행되는 오용 차단.
   if (env.RO_RUN_ID && basename(runDir) !== env.RO_RUN_ID)
     throw new Error(
@@ -133,15 +164,16 @@ export function assertRunAccess(runDir: string, env: RoRunEnv): void {
       "run dir 부재 — launcher의 원자 예약 없이 직접 실행은 금지: " + runDir,
     );
   // 종료된 run은 어떤 플래그로도 재평가하지 않는다 — 완료·실패 evidence 보존.
+  // 0바이트 예약 claim은 미완료다 — 내용이 기록된 파일만 종료로 판정한다.
   if (
-    existsSync(join(runDir, "audit-after.json")) ||
-    existsSync(join(runDir, "audit-fail.json"))
+    evidenceWritten(join(runDir, "audit-after.json")) ||
+    evidenceWritten(join(runDir, "audit-fail.json"))
   )
     throw new Error(
       "종료된 run(audit-after/audit-fail 존재) — 재평가 금지: " + runDir,
     );
   const markerPath = join(runDir, "run-owner.json");
-  if (!existsSync(markerPath))
+  if (!evidenceWritten(markerPath))
     throw new Error("run-owner marker 부재 — launcher 소유 증거 없음: " + runDir);
   if (!env.RO_WORKER_NONCE)
     throw new Error("RO_WORKER_NONCE 부재 — 이 run의 소유 env가 아니다");
@@ -156,8 +188,32 @@ export function assertRunAccess(runDir: string, env: RoRunEnv): void {
     );
   if (marker.nonce !== env.RO_WORKER_NONCE)
     throw new Error("run-owner nonce 불일치 — 다른 실행의 소유다");
+  // output 소유 정합 — PW output은 evidence 영역 밖의 부모 예약
+  // pw-<runId> workdir다. marker의 pwWorkdir와 env가 정확히 일치해야
+  // 이 run 소유 output이다 [PMQA-056 수용기준 ②].
+  if (!env.RO_PW_WORKDIR)
+    throw new Error("RO_PW_WORKDIR 부재 — output 소유 증거가 아니다");
+  const wd = (marker as { pwWorkdir?: string }).pwWorkdir;
+  if (!wd || wd !== env.RO_PW_WORKDIR)
+    throw new Error("run-owner pwWorkdir 불일치 — 다른 실행의 output이다");
+  if (basename(wd) !== "run-pw-" + env.RO_RUN_ID)
+    throw new Error("pwWorkdir 이름이 run과 불일치: " + wd);
+  if (!existsSync(wd))
+    throw new Error("pwWorkdir 부재 — 부모 예약 output이 없다: " + wd);
+  // canonical/symlink/보호루트 격리 — runner·worker 공통이다. 예약 이후
+  // 외부에서 dir를 junction/보호 경로로 교체한 실행을 차단한다.
+  assertPwIsolation({ workDir: wd, evidenceDirs: [runDir] });
+  if (!worker && readdirSync(wd).length !== 0)
+    // runner 첫 평가 — workdir은 부모가 방금 예약한 신규·빈 디렉터리여야
+    // 한다. 중단 run의 기존 marker/env로 재실행해 PW runner가 기존
+    // workdir 파일을 지우고 덮어쓰는 경로를 차단한다 [PM QA-056 M1].
+    // worker-side 재평가는 runner가 정상 생성한 output 파일을 허용한다.
+    throw new Error(
+      "pwWorkdir 신규·빈 상태 아님 — runner 첫 평가는 부모 예약 빈 " +
+        "workdir만 허용(기존 output 재사용 거부): " + wd,
+    );
   const beforePath = join(runDir, "audit-before.json");
-  if (!existsSync(beforePath))
+  if (!evidenceWritten(beforePath))
     throw new Error(
       "승인 before(audit-before.json) 부재 — gate 미완 run: " + runDir,
     );

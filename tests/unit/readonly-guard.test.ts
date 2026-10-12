@@ -5,10 +5,10 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
-  mkdirSync, mkdtempSync, readFileSync, writeFileSync,
+  mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   diffSnaps, parseApprovedFacts, parseRoDbUrl, preservedActionsPresent,
   snapDb, stripCartTs, verifyLiveArtifacts, RO_DB, RO_DEV_DB,
@@ -17,6 +17,7 @@ import {
 } from "../e2e/readonly-db.ts";
 import {
   assertFreshRunDir, assertRunAccess, roDecision, RO_ORIGIN,
+  evidenceWritten,
 } from "../e2e/readonly-guard.ts";
 
 // ── run dir·캡처 무결성 (no-overwrite) ────────────────────────────
@@ -64,114 +65,248 @@ describe("assertRunAccess — runner/worker 재평가 구분 (B1F)", () => {
     mkdirSync(dir);
     return dir;
   };
+  // RO_PW_WORKDIR 계약 — 부모 예약 run-pw-<runId> dir이 존재하고 marker의
+  // pwWorkdir와 env가 정확히 일치해야 한다 [PMQA-056 ②]. runner 첫 평가는
+  // 신규·빈 workdir만 통과한다 [PM QA-056 M1].
   const owned = (dir: string, runId = RUN_ID, gateOk = true) => {
+    const wd = join(dirname(dir), "run-pw-" + runId);
+    mkdirSync(wd);
     writeFileSync(join(dir, "run-owner.json"),
-      JSON.stringify({ runId, nonce: NONCE }), { flag: "wx" });
+      JSON.stringify({ runId, nonce: NONCE, pwWorkdir: wd }), { flag: "wx" });
     writeFileSync(join(dir, "audit-before.json"),
       JSON.stringify({ runId, gateOk }), { flag: "wx" });
+    return wd;
   };
-  const runnerEnv = { RO_RUN_ID: RUN_ID, RO_WORKER_NONCE: NONCE };
-  const workerEnv = { ...runnerEnv, TEST_WORKER_INDEX: "0" };
+  const runnerEnv = (wd: string) => ({
+    RO_RUN_ID: RUN_ID, RO_WORKER_NONCE: NONCE, RO_PW_WORKDIR: wd,
+  });
+  const workerEnv = (wd: string) => ({
+    ...runnerEnv(wd), TEST_WORKER_INDEX: "0",
+  });
 
   test("runner 첫 평가 — output 없음 + 소유 정합 → 허용", () => {
     const dir = mkRun();
-    owned(dir);
-    assert.doesNotThrow(() => assertRunAccess(dir, runnerEnv));
+    const wd = owned(dir);
+    assert.doesNotThrow(() => assertRunAccess(dir, runnerEnv(wd)));
   });
   test("runner 평가 + 기존 pw-output → 거부 + bytes 불변 (같은 실패 run 재시작)", () => {
     const dir = mkRun();
-    owned(dir);
+    const wd = owned(dir);
     const out = join(dir, "pw-output");
     mkdirSync(out);
     const keep = join(out, "keep.txt");
     writeFileSync(keep, "ORIGINAL");
-    assert.throws(() => assertRunAccess(dir, runnerEnv), /pw-output/);
+    assert.throws(() => assertRunAccess(dir, runnerEnv(wd)), /pw-output/);
     assert.equal(readFileSync(keep, "utf8"), "ORIGINAL");
   });
   test("동일 run worker 재평가 — runner 산출물 있어도 소유 정합이면 허용", () => {
     const dir = mkRun();
-    owned(dir);
+    const wd = owned(dir);
     mkdirSync(join(dir, "pw-output")); // 살아있는 runner가 방금 만든 산출물
-    assert.doesNotThrow(() => assertRunAccess(dir, workerEnv));
+    writeFileSync(join(wd, "artifact.txt"), "RUNNER-OUT");
+    assert.doesNotThrow(() => assertRunAccess(dir, workerEnv(wd)));
   });
   test("worker + nonce env 부재 → 거부", () => {
     const dir = mkRun();
-    owned(dir);
+    const wd = owned(dir);
     assert.throws(() =>
-      assertRunAccess(dir, { RO_RUN_ID: RUN_ID, TEST_WORKER_INDEX: "0" }),
+      assertRunAccess(dir, {
+        RO_RUN_ID: RUN_ID, TEST_WORKER_INDEX: "0", RO_PW_WORKDIR: wd,
+      }),
       /RO_WORKER_NONCE/);
   });
   test("worker + run-owner marker 부재 → 거부", () => {
     const dir = mkRun();
+    const wd = join(dirname(dir), "run-pw-" + RUN_ID);
+    mkdirSync(wd);
     writeFileSync(join(dir, "audit-before.json"),
       JSON.stringify({ runId: RUN_ID, gateOk: true }), { flag: "wx" });
-    assert.throws(() => assertRunAccess(dir, workerEnv), /marker/);
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /marker/);
   });
   test("worker + nonce 불일치 → 거부", () => {
     const dir = mkRun();
-    owned(dir);
+    const wd = owned(dir);
     assert.throws(() =>
-      assertRunAccess(dir, { ...workerEnv, RO_WORKER_NONCE: "other" }),
+      assertRunAccess(dir, { ...workerEnv(wd), RO_WORKER_NONCE: "other" }),
       /nonce/);
   });
   test("worker + 다른 runId marker → 거부", () => {
     const dir = mkRun();
-    owned(dir, OTHER_ID);
-    assert.throws(() => assertRunAccess(dir, workerEnv), /runId/);
+    const wd = owned(dir, OTHER_ID);
+    // marker runId는 OTHER_ID — wd 이름도 run-pw-OTHER_ID와 일치한다.
+    assert.throws(() =>
+      assertRunAccess(dir, { ...workerEnv(wd) }), /runId/);
+  });
+  // ── 057-1 — envelope/child 분리: PW outputDir cleanup은 child만 건드린다 ──
+  // 실제 결함(057-1): 구형 계약 outputDir=envelope 자체 → runner의
+  // fresh-output cleanup이 부모 예약 dir을 삭제해 webServer의
+  // existsSync(wd)가 false로 startup 실패했다. 신형은 outputDir을
+  // envelope/"playwright"로 파생해 cleanup 대상이 child로 한정된다.
+  test("057-1: 선언 outputDir 삭제 모사 — envelope 소유 계약 생존", () => {
+    // config가 선언한 outputDir을 소스에서 파생해 Playwright의
+    // fresh-output cleanup(rm -r 선언 dir)을 재현한다 — 구형 계약이면
+    // 이 테스트는 실제 startup 실패를 그대로 재생한다.
+    const src = readFileSync("playwright.readonly.config.ts", "utf8");
+    const declared = /join\(PW_WORKDIR,\s*"playwright"\)/.test(src)
+      ? "playwright"
+      : null;
+    const dir = mkRun();
+    const wd = owned(dir);
+    const target = declared ? join(wd, declared) : wd; // 구형은 envelope 자체
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "result.json"), "PW-OUT");
+    rmSync(target, { recursive: true, force: true });
+    assert.doesNotThrow(
+      () => assertRunAccess(dir, workerEnv(wd)),
+      "선언 outputDir 삭제 후에도 envelope 소유 계약이 살아 있어야 한다",
+    );
+  });
+  test("057-1: envelope 자체 삭제(legacy/잘못된 cleanup)는 여전히 거부", () => {
+    const dir = mkRun();
+    const wd = owned(dir);
+    rmSync(wd, { recursive: true, force: true });
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /pwWorkdir 부재/);
+  });
+  test("057-1: runner 산출물(child)이 있어도 worker 허용 — 소유 증거 불변", () => {
+    const dir = mkRun();
+    const wd = owned(dir);
+    const marker = join(dir, "run-owner.json");
+    const before = join(dir, "audit-before.json");
+    const m = readFileSync(marker, "utf8");
+    const b = readFileSync(before, "utf8");
+    mkdirSync(join(wd, "playwright"));
+    writeFileSync(join(wd, "playwright", "x"), "OUT");
+    assert.doesNotThrow(() => assertRunAccess(dir, workerEnv(wd)));
+    assert.equal(readFileSync(marker, "utf8"), m);
+    assert.equal(readFileSync(before, "utf8"), b);
   });
   test("worker + 승인 before 부재 → 거부", () => {
     const dir = mkRun();
+    const wd = join(dirname(dir), "run-pw-" + RUN_ID);
+    mkdirSync(wd);
     writeFileSync(join(dir, "run-owner.json"),
-      JSON.stringify({ runId: RUN_ID, nonce: NONCE }), { flag: "wx" });
-    assert.throws(() => assertRunAccess(dir, workerEnv), /audit-before/);
+      JSON.stringify({ runId: RUN_ID, nonce: NONCE, pwWorkdir: wd }),
+      { flag: "wx" });
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /audit-before/);
   });
   test("runner + nonce env 부재 → 거부 (launcher 우회 직접 실행)", () => {
     const dir = mkRun();
-    owned(dir);
+    const wd = owned(dir);
     assert.throws(() =>
-      assertRunAccess(dir, { RO_RUN_ID: RUN_ID }), /RO_WORKER_NONCE/);
+      assertRunAccess(dir, {
+        RO_RUN_ID: RUN_ID, RO_PW_WORKDIR: wd,
+      }), /RO_WORKER_NONCE/);
   });
   test("worker + audit-before runId 불일치 → 거부", () => {
     const dir = mkRun();
+    const wd = join(dirname(dir), "run-pw-" + RUN_ID);
+    mkdirSync(wd);
     writeFileSync(join(dir, "run-owner.json"),
-      JSON.stringify({ runId: RUN_ID, nonce: NONCE }), { flag: "wx" });
+      JSON.stringify({ runId: RUN_ID, nonce: NONCE, pwWorkdir: wd }),
+      { flag: "wx" });
     writeFileSync(join(dir, "audit-before.json"),
       JSON.stringify({ runId: OTHER_ID, gateOk: true }), { flag: "wx" });
-    assert.throws(() => assertRunAccess(dir, workerEnv), /runId/);
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /runId/);
   });
   test("worker + audit-before gateOk != true → 거부", () => {
     const dir = mkRun();
-    owned(dir, RUN_ID, false);
-    assert.throws(() => assertRunAccess(dir, workerEnv), /gateOk/);
+    const wd = owned(dir, RUN_ID, false);
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /gateOk/);
   });
   test("runDir basename이 RO_RUN_ID와 다르면 → 거부", () => {
     const dir = mkRun(OTHER_ID);          // dir 이름은 OTHER_ID
-    owned(dir, OTHER_ID);                  // marker·before는 OTHER_ID와 일치
-    assert.throws(() => assertRunAccess(dir, workerEnv), /basename|불일치/);
+    const wd = owned(dir, OTHER_ID);       // marker·before는 OTHER_ID와 일치
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /basename|불일치/);
   });
   test("종료 run — audit-after 존재 + worker env 전부 일치 → 거부 + bytes 불변", () => {
     const dir = mkRun();
-    owned(dir);
+    const wd = owned(dir);
     mkdirSync(join(dir, "pw-output"));
     const after = join(dir, "audit-after.json");
     writeFileSync(after, "RESULT", { flag: "wx" });
-    assert.throws(() => assertRunAccess(dir, workerEnv), /종료된 run/);
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /종료된 run/);
     assert.equal(readFileSync(after, "utf8"), "RESULT");
   });
   test("실패 run — audit-fail 존재 + runner env → 거부 (output 없어도)", () => {
     const dir = mkRun();
-    owned(dir);
+    const wd = owned(dir);
     writeFileSync(join(dir, "audit-fail.json"), "FAIL", { flag: "wx" });
-    assert.throws(() => assertRunAccess(dir, runnerEnv), /종료된 run/);
+    assert.throws(() => assertRunAccess(dir, runnerEnv(wd)), /종료된 run/);
+  });
+  // ── 사전 claim 예약/완료 상태 분리 [PMQA-054/Luna QA-2] ─────────────
+  // 산출물은 실행 시작에 0바이트 'wx'로 claim된다 — existsSync만으로는
+  // '기록됨'을 판정할 수 없다. 예약 빈 파일은 완료가 아니다.
+  test("예약 claim은 종료가 아니다 — 0바이트 audit-after/fail은 통과", () => {
+    const dir = mkRun();
+    const wd = owned(dir);
+    mkdirSync(join(dir, "pw-output"));
+    writeFileSync(join(dir, "audit-after.json"), "", { flag: "wx" });
+    writeFileSync(join(dir, "audit-fail.json"), "", { flag: "wx" });
+    assert.doesNotThrow(() => assertRunAccess(dir, workerEnv(wd)));
+  });
+  test("0바이트 run-owner marker는 기록 부재와 같다", () => {
+    const dir = mkRun();
+    const wd = join(dirname(dir), "run-pw-" + RUN_ID);
+    mkdirSync(wd);
+    writeFileSync(join(dir, "run-owner.json"), "", { flag: "wx" });
+    writeFileSync(join(dir, "audit-before.json"),
+      JSON.stringify({ runId: RUN_ID, gateOk: true }), { flag: "wx" });
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /marker/);
+  });
+  test("0바이트 audit-before는 기록 부재와 같다", () => {
+    const dir = mkRun();
+    const wd = join(dirname(dir), "run-pw-" + RUN_ID);
+    mkdirSync(wd);
+    writeFileSync(join(dir, "run-owner.json"),
+      JSON.stringify({ runId: RUN_ID, nonce: NONCE, pwWorkdir: wd }),
+      { flag: "wx" });
+    writeFileSync(join(dir, "audit-before.json"), "", { flag: "wx" });
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /audit-before/);
+  });
+  test("부분 기록(비JSON 1바이트라도) audit-after는 종료로 판정 — fail-closed", () => {
+    const dir = mkRun();
+    const wd = owned(dir);
+    writeFileSync(join(dir, "audit-after.json"), "{partial", { flag: "wx" });
+    assert.throws(() => assertRunAccess(dir, workerEnv(wd)), /종료된 run/);
   });
   test("TEST_WORKER_INDEX가 숫자 형태가 아니면 worker로 인정하지 않는다", () => {
     const dir = mkRun();
-    owned(dir);
+    const wd = owned(dir);
     mkdirSync(join(dir, "pw-output"));
     // 'abc'는 worker가 아니다 — runner 경로의 output 거부를 탄다(fail-closed).
     assert.throws(() =>
-      assertRunAccess(dir, { ...runnerEnv, TEST_WORKER_INDEX: "abc" }),
+      assertRunAccess(dir, { ...runnerEnv(wd), TEST_WORKER_INDEX: "abc" }),
       /pw-output/);
+  });
+});
+
+// ── evidenceWritten — 예약/완료 구분 + fail-closed 오류 경로 [Luna QA-C] ─
+describe("evidenceWritten — claim 예약/완료 상태 판정", () => {
+  test("ENOENT(부재)·0바이트 claim은 미기록, 내용 있으면 기록", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ew-"));
+    try {
+      assert.equal(evidenceWritten(join(dir, "none.json")), false);
+      writeFileSync(join(dir, "claim.json"), "");
+      assert.equal(evidenceWritten(join(dir, "claim.json")), false);
+      writeFileSync(join(dir, "done.json"), "{");
+      assert.equal(evidenceWritten(join(dir, "done.json")), true);
+      // 중첩 부재 경로도 ENOENT → false.
+      assert.equal(
+        evidenceWritten(join(dir, "no-dir", "x.json")),
+        false,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  test("ENOENT 외 오류는 '미기록'이 아니다 — 던져 fail-open을 막는다", () => {
+    // NUL 바이트를 포함한 경로는 EINVAL 계열 — ENOENT가 아니므로 거부로
+    // 전파된다(조용히 false를 돌려 gate를 열지 않는다).
+    assert.throws(
+      () => evidenceWritten("bad\0path.json"),
+      (e: unknown) =>
+        !(e && typeof e === "object" && (e as { code?: string }).code === "ENOENT"),
+    );
   });
 });
 

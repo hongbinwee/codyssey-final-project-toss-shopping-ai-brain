@@ -1,8 +1,10 @@
 // eval/cases/<split>/*.json을 실행한다.
 // mode=stub: 케이스의 script를 재생해 runtime/Tool 경계 평가.
 // mode=live: 실제 LLM 호출. 키 없으면 BLOCKED.
-import { readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { ensureTestDb, cleanUserData } from "../tests/helpers/testdb.ts";
+import { claimEvidenceFilesSync } from "../tests/helpers/capture-output.ts";
 import { runAgentTurn, resetHistory, ungroundedCitations } from "../src/agent.ts";
 import { liveProvider, scriptedProvider, type ChatResponse, type Provider } from "../src/llm.ts";
 import { getCart } from "../src/cart.ts";
@@ -54,6 +56,14 @@ const dir = "eval/cases/" + split;
 const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
 const results: { case_id: string; pass: boolean; failures: string[] }[] = [];
 
+// 결과 산출물 사전 claim — DB 작업(ensureTestDb/cleanUserData·agent 실행)
+// 전에 'wx' 배타 생성한다. 고정명 덮어쓰기는 없고 run-unique 이름만 쓴다 —
+// 기존 eval 결과 파일은 절대 건드리지 않는다 [PMQA-054].
+const resultName =
+  split + "-" + mode + "-run-" + randomUUID() + ".json";
+const evw = claimEvidenceFilesSync("eval/results", [resultName]);
+
+try {
 await ensureTestDb(Number(arg("phase", "4")));
 
 for (const f of files) {
@@ -141,11 +151,19 @@ for (const f of files) {
   }
 }
 
-mkdirSync("eval/results", { recursive: true });
-writeFileSync(
-  "eval/results/" + split + "-" + mode + ".json",
-  JSON.stringify({ mode, split, provider: mode, at: new Date().toISOString(), results }, null, 2),
-);
+  evw.writeJson(resultName, {
+    mode,
+    split,
+    provider: mode,
+    at: new Date().toISOString(),
+    results,
+  });
+} finally {
+  // claim 이후 ensureTestDb·agent 실행·결과 write 중 어디서 실패해도 handle을
+  // 해제한다 — 결과 write 경로만 감싸면 DB/agent 실패 시 close가 누락된다
+  // [PMQA-054/PM 보완]. 해제 오류도 그대로 전파된다.
+  evw.close();
+}
 for (const r of results)
   console.log((r.pass ? "PASS" : "FAIL") + " " + r.case_id + (r.failures.length ? " — " + r.failures.join("; ") : ""));
 const failed = results.filter((r) => !r.pass).length;

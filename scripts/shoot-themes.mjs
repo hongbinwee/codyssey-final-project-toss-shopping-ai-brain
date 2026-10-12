@@ -1,4 +1,7 @@
 import { chromium } from "@playwright/test";
+import { assertEntryRunnable } from "../tests/helpers/pw-config-gate.ts";
+// PMQA-055: 고정명 덮어쓰기 경로 — 보호 전환 전 launch를 차단한다.
+assertEntryRunnable("scripts/shoot-themes.mjs");
 // Light/Dark 검증 스크린샷 — 출력은 playwright가 비우지 않는 shots/compare/.
 const b = await chromium.launch();
 for (const scheme of ["light", "dark"]) {

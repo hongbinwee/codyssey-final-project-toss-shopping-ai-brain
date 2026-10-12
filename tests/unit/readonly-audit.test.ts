@@ -299,7 +299,7 @@ describe("runAudit — run-owner nonce 바인딩 (B1F)", () => {
 
 describe("pwChildEnv — child env 정합 (B1F)", () => {
   test("RO_RUN_ID·RO_WORKER_NONCE 바인딩 + 상속 worker 지표 제거", () => {
-    const env = pwChildEnv("run-1", "n-1", {
+    const env = pwChildEnv("run-1", "n-1", undefined, undefined, {
       TEST_WORKER_INDEX: "0",
       TEST_PARALLEL_INDEX: "0",
       KEEP: "yes",
@@ -312,7 +312,7 @@ describe("pwChildEnv — child env 정합 (B1F)", () => {
     assert.equal("TEST_PARALLEL_INDEX" in env, false);
   });
   test("상속된 출력 경로 override 제거 — 외부 기존 파일 덮어쓰기 차단 (Luna B1F)", () => {
-    const env = pwChildEnv("run-1", "n-1", {
+    const env = pwChildEnv("run-1", "n-1", undefined, undefined, {
       PLAYWRIGHT_LAST_RUN_OUTPUT_FILE: "C:/outside/evidence.json",
       PLAYWRIGHT_JUNIT_OUTPUT_FILE: "C:/outside/junit.xml",
       PLAYWRIGHT_BLOB_OUTPUT_DIR: "C:/outside/blob",

@@ -2,6 +2,19 @@
 
 > 표기 규칙: Phase 0~5의 '완료'는 **로컬 구현 + 로컬 검증**(unit·integration·e2e·stub eval·holdout·Docker 빌드) 기준이다. 실제 LLM live eval·외부 배포·실사용자 테스트는 미완료이며 프로젝트 로드맵 12~13에서 수행한다(PROJECT_CONTEXT.md §현재 프로젝트 방향).
 
+## 최신 — PMQA-054~057 QA·테스트 안전 인프라 배치 (2026-10-12, 사용자 조건부 승인·정확 33파일 explicit staged·PM staged diff 검수 대기·commit 금지)
+
+- **범위(사용자 조건부 승인 — 정확 33파일)**: 최종 qa-verdict snapshot 23 코드(052 4파일 포함) + legacy 6(playwright.config.ts·playwright.capture.config.ts·scripts/eval.ts·scripts/verify.ts·scripts/shoot-themes.mjs·tests/e2e/zz-pmqa040-capture.spec.ts) + 공통 문서 4(PROJECT_CONTEXT.md·본 문서·IMPLEMENTATION_DECISIONS.md·VERIFICATION_LOG.md). tmp_*·shots·backup·Reference 자동 stage 0.
+- **054**: evidence 산출 계약 — capture-output claim/wx/1회기록/drain + sync 변형, pmqa054-evidence-run(고정 커맨드·childEnv·bounded kill), eval.ts 결과 사전 claim+try/finally close, zz-pmqa040 CAPTURE_SLOTS 사전 claim+buffer write.
+- **055**: 입구 gate — pw-config-gate assertEntryRunnable로 playwright.config·playwright.capture.config·verify·shoot-themes의 미지원 실행을 설정 평가에서 거부 + ipc-channel·orchestrate-055·evidence-broker·readonly-broker·ipc-worker-055.
+- **056**: pmqa056-qa-run — 새 UUID run dir wx 로그·고정 allowlist 커맨드·argv/env guard·no-shell.
+- **057**: readonly 22 실DB 실행 — 057-1(outputDir cleanup 충돌)·057-2(PLAYWRIGHT_TEST false positive) 두 실패 수정 후 최종 PASS: outer run-007d80a5 → audit 3f35c9b5 → pw run-pw-3f35c9b5, 22/22(15 real+3 mock+4 capture)·두 DB 13테이블 drift 0·캡처 16. qa-verdict 기록 run-21f10d77. 상세 §VERIFICATION_LOG.
+- **052 분리 유지 — code-resolved vs runtime NOT_RUN**: 052 4코드(isolated-smoke·isolated-smoke.test·scratch-db·scratch-db.test)는 052-C 코드 보정이 반영됐다(mutation 직전 동기 recheck·owner relation 지문·precleanup/afterDROP 지문 — 보정 전 21 FAIL→후 74/74·전체 283/283·tsc/build 0 근거는 pmqa054-evidence-run TRANSCRIPT). **code-resolved이나 실PG runtime 실행은 여전히 미승인·NOT_RUN** — mock 계약 증거를 실DB 보장으로 인용 금지. 구식 문서의 '독립 QA 3건 OPEN' 기록은 052-C로 Superseded.
+- **시점 증거 명시**: unit focused 255/255·full 399/399·tsc·build·readonly 22 PASS는 **커밋 전 시점의 기존 증거** — 본 커밋 이후 readonly 22 재검증은 별도 승인·NOT_RUN.
+- **사고 기록(PM 인용)**: 증거손상 사고의 정확한 경로는 `shots/pmqa052c/run-78dbbc2f-1b8a-41ae-8bfd-00dd1ab52b8f/`의 `unit-2files.log`·`unit-full.log`·`README.md`. README는 transcript-only 후보(원본 SHA 없음)·원위치 복원 없음. 054 qa-verdict의 originalLogBytes 최종 독립결론: **"조회 범위 내 미확보 — 복구 불가 단정 아님(외부 백업 전수 조회 아님)"**. 054 `recovery-and-cause.json`과 최종 qa-verdict(run-21f10d77)가 한계 정정 기록.
+- **승인 유지**: 06A·06B Visual 승인 유지. 다음 조건: PM staged diff 검수 → 별도 commit 지시 → Main commit + PM FF push·원격 SHA 확인 → 06C 별도 승인.
+- **NOT_RUN 유지**: standard 69·Integration·DELIVERED actual UI 캡처(09 Freeze 필수)·scratch/mutations·eval live·브라우저 수동 확인. 전체 환경 READY 주장 금지.
+
 ## 최신 06B — PMQA-053 주문 화면 제한적 수정 (2026-10-12, PMQA-053-E: 분리 커밋 2fa4549 + PM Push 검증 완료·06B scoped 기술 PASS·최종 Visual 사용자 질문 제출/응답 대기·06C 금지·09 active)
 
 - **범위(PM 승인 PMQA-06B-ACTIONS-053)**: 주문 목록·상세 CTA 두 건의 제한적 수정 — MJ053-1 취소 CTA 서버 canonical 정책화, MJ053-2 AI 문의 CTA '준비 중' 비활성화. Brain·LLM·agent Backend 미수정. DB·seed·migration·helper/setup 변경 0.

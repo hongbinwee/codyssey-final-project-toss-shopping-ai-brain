@@ -12,12 +12,19 @@
 import {
   test as base, expect, request as pwRequest, type Page,
 } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { installRoGuard, roApi, RO_ORIGIN } from "./readonly-guard.ts";
+import {
+  connectWorkerClient,
+  type ChannelWorkerClient,
+} from "../helpers/ipc-channel.ts";
 
-const RUN = process.env.RO_RUN_ID ?? "unmanaged";
-const SHOT_DIR = join("shots", "06b", RUN, "captures");
+// PMQA-056 — parent broker sole-writer 통합. spec(worker)은 파일 경로·
+// handle을 모른다 — {nonce, slot, data}만 loopback 채널로 보내고 실제
+// 기록은 부모가 쥔 claim handle로만 일어난다. claim 목록은 부모의
+// readonly-broker.ts CAPTURE_SLOTS가 정본이다(중복 유지 금지).
+// RO_CHANNEL_PORT·RO_WORKER_NONCE가 없는 직접 실행은 지원하지 않는다 —
+// unmanaged fallback은 제거됐다 [승인 범위 ②].
+
 
 // context 생성 직후·첫 goto 이전에 가드를 설치한다 — allowlist 없는 요청 경로는
 // 이 fixture 밖에 존재하지 않는다. baseURL을 RO_ORIGIN으로 고정해 상대 경로
@@ -34,6 +41,25 @@ const test = base.extend({
   },
 });
 
+// 확장 test 선언 이후에 hook을 등록한다 — 선언 전 호출은 TDZ ReferenceError로
+// 모듈 로드가 실패한다 [Luna 054 QA-1]. 채널 연결은 이 spec의 fixture/
+// browser/HTTP 전에, 해제는 성공·실패·중간 종료 모두에서다(afterAll).
+// parent ACK를 기다리므로 write 오류·거부가 worker에 그대로 reject된다.
+let w: ChannelWorkerClient | null = null;
+test.beforeAll(async () => {
+  const nonce = process.env.RO_WORKER_NONCE;
+  const port = Number(process.env.RO_CHANNEL_PORT);
+  if (!nonce || !Number.isInteger(port) || port <= 0)
+    throw new Error(
+      "RO_WORKER_NONCE/RO_CHANNEL_PORT 필수 — parent broker 통합 외 " +
+        "직접 실행은 지원하지 않는다",
+    );
+  w = await connectWorkerClient({ nonce, port });
+});
+test.afterAll(async () => {
+  await w?.close();
+});
+
 async function login(page: Page, code = "e2e-a") {
   await page.goto("/");
   await page.getByPlaceholder("접근 코드").fill(code);
@@ -47,11 +73,11 @@ async function openOrders(page: Page) {
 }
 
 async function shot(page: Page, name: string) {
-  mkdirSync(SHOT_DIR, { recursive: true });
   // 버퍼로 받아 wx(no-overwrite)로 쓴다 — 같은 run 내 이름 중복도 실패다
   // [PM B0 최종 검수].
   const buf = await page.screenshot();
-  writeFileSync(join(SHOT_DIR, name + ".png"), buf, { flag: "wx" });
+  // buffer를 채널로 부모에 전송 — 부모 claim handle이 기록하고 ACK를 돌린다.
+  await w!.submit(name + ".png", buf);
 }
 
 // 배송 포커스 실측 [PMQA-048-C 증거 정정] — goto + heading visible만으로는
@@ -108,11 +134,9 @@ async function shipFocus(page: Page): Promise<ShipFocus> {
 // 측정값 wx 기록 + 완전 노출 단정 — 실패하면 PNG를 쓰지 않고 원인 그대로 보고한다.
 async function expectShipFocus(page: Page, tag: string): Promise<ShipFocus> {
   const m = await shipFocus(page);
-  mkdirSync(SHOT_DIR, { recursive: true });
-  writeFileSync(
-    join(SHOT_DIR, "shipping-focus-" + tag + ".json"),
+  await w!.submit(
+    "shipping-focus-" + tag + ".json",
     JSON.stringify({ tag, ...m, at: new Date().toISOString() }, null, 2),
-    { flag: "wx" },
   );
   expect(
     m.done,
@@ -709,9 +733,8 @@ test.describe("[capture] 390×844 dark/light — 실서버 캡처", () => {
   });
 
   test("캡처 노트 — Ref 비교 계획·알려진 차이 기록", async () => {
-    mkdirSync(SHOT_DIR, { recursive: true });
-    writeFileSync(
-      join(SHOT_DIR, "capture-notes.md"),
+    await w!.submit(
+      "capture-notes.md",
       [
         "# 06B 주문 화면 캡처 — Ref 비교 계획 (PMQA-048)",
         "",
@@ -730,7 +753,6 @@ test.describe("[capture] 390×844 dark/light — 실서버 캡처", () => {
         "- OS/폰트 렌더링·상품 이미지·금액은 데모 데이터라 원본과 다르다",
         "- 영수증·포인트·송장·주소 변경·구매 확정은 의도적 미구현",
       ].join("\n"),
-      { flag: "wx" },
     );
   });
 });
