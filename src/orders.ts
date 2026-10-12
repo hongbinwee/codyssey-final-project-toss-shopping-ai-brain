@@ -9,6 +9,7 @@ import {
 } from "./contracts.ts";
 import type { RequestContext } from "./session.ts";
 import { deliveredAtFromEvents } from "./order-display.ts";
+import { evaluateCancelFacts } from "./cancel-policy.ts";
 
 type OrderRow = {
   id: string; user_id: string; status: "CONFIRMED" | "CANCELLED";
@@ -79,10 +80,14 @@ export async function listOrders(
     : [];
   const pays = ids.length
     ? await sql.unsafe<
-        { order_id: string; status: string; refund_status: string; paid_at: string | null }[]
+        {
+          order_id: string; status: string; refund_status: string;
+          paid_amount_won: number; paid_at: string | null;
+        }[]
       >(
         // '결제 상세 >' 라벨의 결제일 — 실제 paid_at만 사용한다.
-        "SELECT order_id, status, refund_status, paid_at FROM payments WHERE order_id = ANY($1)",
+        // paid_amount_won은 취소 정책의 결제액 일치 검증용 — 같은 batch 조회에 합친다(N+1 금지).
+        "SELECT order_id, status, refund_status, paid_amount_won, paid_at FROM payments WHERE order_id = ANY($1)",
         [ids],
       )
     : [];
@@ -120,6 +125,20 @@ export async function listOrders(
       shipBy.get(o.id)?.status ?? null,
       shipBy.get(o.id)?.events_json,
     ),
+    // 서버 canonical 취소 정책 — 목록 CTA가 재판정하지 않도록 서버가 계산해 준다.
+    cancel_eligible: evaluateCancelFacts({
+      order_status: o.status,
+      order_total_won: o.total_won,
+      payment: payBy.get(o.id)
+        ? {
+            status: payBy.get(o.id)!.status,
+            refund_status: payBy.get(o.id)!.refund_status,
+            paid_amount_won: payBy.get(o.id)!.paid_amount_won,
+          }
+        : null,
+      has_cancel_request: cxlBy.has(o.id),
+      shipment_status: shipBy.get(o.id)?.status ?? null,
+    }).eligible,
   }));
   return ok(
     {
@@ -235,6 +254,20 @@ export async function getOrder(
             completed_at: cxl.completed_at ? new Date(cxl.completed_at).toISOString() : null,
           }
         : null,
+      // 상세 CTA도 같은 서버 정책을 소비한다 — UI 재판정 금지 [PMQA-06B-053].
+      cancel_eligible: evaluateCancelFacts({
+        order_status: o.status,
+        order_total_won: o.total_won,
+        payment: pay
+          ? {
+              status: pay.status,
+              refund_status: pay.refund_status,
+              paid_amount_won: pay.paid_amount_won,
+            }
+          : null,
+        has_cancel_request: !!cxl,
+        shipment_status: ship?.status ?? null,
+      }).eligible,
     },
     trace_id,
   );

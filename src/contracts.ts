@@ -210,6 +210,9 @@ export interface OrderView {
     id: string; status: string; reason_code: string;
     refund_amount_won: number; requested_at: string; completed_at: string | null;
   } | null;
+  // 서버 canonical 취소 정책(cancel-policy.ts evaluateCancelFacts) 결과 —
+  // 상세 CTA는 이 값만 소비한다. 서버가 항상 계산해 required다 [PMQA-06B-053].
+  cancel_eligible: boolean;
 }
 
 export interface OrderListFirstItem {
@@ -240,6 +243,8 @@ export interface OrderListItem {
   cancelled_at?: string | null;            // 취소 완료 상태일 — 주문 취소 시에만
   shipping_estimated_arrival_at?: string | null; // 도착 예정 — null이면 미노출(임의 ETA 금지)
   delivered_at?: string | null;            // 마지막 배송 event가 실제 DELIVERED일 때만 설정
+  // 서버 canonical 취소 정책 결과 — 없음/불명은 UI에서 fail closed(비노출) [PMQA-06B-053].
+  cancel_eligible?: boolean;
 }
 
 export interface ShippingStatusResult {

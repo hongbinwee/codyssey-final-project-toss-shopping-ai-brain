@@ -71,9 +71,13 @@ test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
   await expect(card.getByText("상품준비중")).toBeVisible();
 });
 
-test("cs panel: created order -> shipping status explanation (stub)", async ({
+test("주문 상세 AI 문의 CTA는 '준비 중' 비활성 — 클릭·/api/agent/turn 요청 없음 [PMQA-06B-053]", async ({
   page,
 }) => {
+  const agentCalls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/agent/turn")) agentCalls.push(r.url());
+  });
   await login(page);
   await page.getByRole("button", { name: "내 쇼핑" }).click();
   // 이전 테스트가 만든 같은 id의 주문을 연다 — 같은 상품명의 다른 주문과 섞이지 않는다.
@@ -81,10 +85,18 @@ test("cs panel: created order -> shipping status explanation (stub)", async ({
   await page.locator(".order-card[data-order-id='" + oid + "']").getByText("결제 상세").click();
   await expect(page.getByRole("heading", { name: "주문 상세 내역" })).toBeVisible();
 
-  await page.getByRole("button", { name: "AI에게 이 주문 물어보기" }).click();
-  await expect(page.getByText("AI 고객센터")).toBeVisible();
-  await page.getByPlaceholder("조건이나 요청을 입력하세요").fill("내 주문 배송 상태 알려줘");
-  await page.getByRole("button", { name: "보내기" }).click();
-  // stub CS: list_orders -> get_shipping_status -> 실제 상태 요약
-  await expect(page.getByText(/배송 준비 중/).last()).toBeVisible({ timeout: 15000 });
+  // CS Brain 미구축 — 주문 화면의 문의 진입은 비활성 상태로만 노출한다 [MJ053-2].
+  // 카드의 ghost 버튼과 동명이므로 하단 primary CTA로 한정한다.
+  const cta = page.locator(".bottom-bar").getByRole("button", { name: "AI 주문 문의 · 준비 중" });
+  await expect(cta).toBeVisible();
+  await expect(cta).toBeDisabled();
+  // DOM click + 실제 키보드 입력을 각각 시도한다 — disabled 버튼은 포커스·활성화가
+  // 불가해 이벤트가 발생하지 않는다(dispatchEvent만으로 키보드 검증이라 쓰지 않는다).
+  await cta.dispatchEvent("click");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  await expect(page.locator(".agent-panel")).toHaveCount(0);
+  expect(agentCalls).toHaveLength(0);
+  // CS 대신 수동 배송 조회 경로는 그대로다 — 상세 '배송 상태' 섹션.
+  await expect(page.getByRole("heading", { name: "배송 상태" })).toBeVisible();
 });

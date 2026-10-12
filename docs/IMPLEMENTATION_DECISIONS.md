@@ -288,3 +288,32 @@ commerce_demo_verify 소실 사고(VERIFICATION_LOG PMQA-040-SEED-SAFETY) 이후
 | 잔여 한계 | 실PG 원자 롤백·격리 launcher·격리 Integration은 여전히 미구현·NOT_RUN — mock 계약 검증은 실DB 롤백 보증이 아니며 실DB 검증은 별도 승인 | 정직 표기 원칙 |
 | 추출 정합성 | HEAD 리터럴 비교는 ON CONFLICT·params를 보장 못 함 → baseline 65161f5 원본 base for-loop의 stub 실행 transcript를 case별 count·sha256으로 test에 inline 고정해 ordered SQL 전체+모든 params 대조(git·외부 golden 비의존, one-off tmp generator만 사용) | PMQA-051-A QA 지적 |
 | 검증 한계 | Golden은 transcript의 count·sha256 비교 — JSON.stringify가 null/undefined·비유한수를 동일 직렬화하므로 현재 fixture/SQL/params 값 검증이며 모든 형변조 검출 보증 아님 → 09 전 후속 | Luna MINOR-Q051 |
+
+## 2026-10-12 · PMQA-052 — 격리 DB smoke runner DB-free 구현 (실DB 실행은 미승인)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 범위 | 코드 4파일(신규 `scripts/isolated-smoke.ts`·`tests/unit/isolated-smoke.test.ts`, 수정 `tests/helpers/scratch-db.ts`·`tests/unit/scratch-db.test.ts`) + 문서 3파일만. package.json·base-seed·readonly-db·testdb·config·src·migration·seed 파일 변경 0. runtime PG/DB/HTTP/Docker/Integration/E2E/eval 실행 0 | PMQA-052 승인 범위 — mock 계약 증거와 실DB 보증을 구분 |
+| FILE gate | 고정 3 pin(043 backup·047 facts·048 audit-after)만이 승인 baseline — `deps.pins` 주입 경로 제거 + `"pins" in deps` 즉시 거부 + PINS/ARTIFACT_FILES deep freeze. 048 audit는 runId=`711d95bb-8f6a-46f6-a1e5-134a4dd109b9` 정확 일치·13테이블 n finite int≥0·h md5형식 검증 | MJ052-5 — 호출자가 다른 SHA/경로 baseline을 주입하는 경로 차단 |
+| env 재검증 | source(deps.env)와 global(process.env) 둘 다 planSmokeEnv+adminUrl 초기값 불변을 ① 초기 gate 직후 ② planned 기록 await 후 CREATE 직전 ③ 각 prepare/fault 직전 ④ cleanup 직전에 재검증. 소실 시 STOP·DROP 0·readonly 사후 감사만 허용. source/global env에는 쓰지 않고 복원도 하지 않음 | MJ052-2 — 초기 gate 통과 후 flag 소실해도 하드코딩 childEnv로 권한이 복원되던 결함 해소 |
+| childEnv | 호출 시점의 현재 source에서 flag 값만 복사 + ISOLATED_* 계약은 실측 contract에서만 — 권한 복원 없음 | MJ052-2 |
+| 생애주기 | scratchState 4상태 구분 — notAttempted(planned 기록 실패 등 CREATE 미실행)/creationOutcomeUnknown(CREATE 요청 후 응답·기록 실패 → candidateDbName, 추정 삭제·재생성 0)/createdKnown(created 관측 또는 handle 보유 → retainedDb 확정)/dropped(dropCompleted — 후속 오류도 'retained' 거짓 표기 금지) | MJ052-3 — 'planned 이름을 retained로 보고'하는 거짓 상태 제거 |
+| 오류 표면 | 자체 SmokeError만 detail(안전 식별자: stage·테이블명·pin key·지문 요약). 외부 오류(PG 원문·connect·readFile·writeJson·helper throw)는 name/message/stack/detail/query/params 원문 0 + 고정 category 'EXTERNAL' | MJ052-4 — URL regex만 지우던 방식으로는 URL 없는 PG 원문의 secret/params가 새던 결함 해소 |
+| fault-1 롤백 검증 | 기준은 CREATE 직후 owner-only 최초 baseline — after-fault는 pg_class+namespace public의 table/view/sequence/index 등 전체 relkind를 baseline과 exact 비교(pg_tables의 table만 보던 범위 확장) | MJ052 정합 — '실행 증거에 전체 user relation이 없다' 지적 |
+| fault-2 probe | canonical payments INSERT 실행 완료 후 같은 txn q로 products probe INSERT+exists=true 관측 await → sentinel 동일 객체만 예상 오류. 미관측은 sentinel 아닌 별개 오류 — 흡수 금지 | MJ052-1 — orig 함수 직접 호출 + 동일 txn probe 관측 요구 |
+| scratch-db 보완 | markerCount 파라미터로 정확히 1행 요구(LIMIT 1로 복수 마커 구분 불가 결함)·planScratchConnect query-거부 reason의 URL 원문 제거+admin 형태 검증·ScratchEvent export(planned 기록 await 후 CREATE·created/identified 기록 실패 시 retain+STOP) | PMQA-052 승인 범위 내 — cleanup 소유권 오판 결함 |
+| fault 주입 경로 | runner가 client.begin 콜백의 txn q.unsafe만 래핑 — root client.unsafe로 write/probe 불가. readMigration/seedRead hook 방식은 PM이 거부 | PM 지시 |
+| 잔여 | runSmoke의 실DB 실행(실PG scratch CREATE·prepare·fault·DROP 실증)은 여전히 미승인 — unit/mock 증거를 실DB 보장으로 인용 금지. 실행 승인·명령·경로는 PM 게이트 | 구현 준비 ≠ 실행 승인 |
+
+## 2026-10-12 · PMQA-053 — 주문 화면 제한적 수정 (취소 CTA 서버 정책화 + AI 문의 '준비 중')
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 취소 정책 단일 Source | `CancelFacts`/`evaluateCancelFacts`/`REASON_TEXT`를 신규 `src/cancel-policy.ts`(DB import 0의 pure 모듈)로 추출. `cancellation.ts`는 재export로 기존 import 경로·API 호환 유지 | `orders.ts`가 `cancellation.ts`를 import하면 순환 참조(cancellation→orders.getOrder) — pure 추출이 정석 |
+| DTO 계약 | `OrderView.cancel_eligible: boolean`(required — 서버가 항상 계산), `OrderListItem.cancel_eligible?: boolean`(06B additive optional 패턴). 목록·상세·eligibility endpoint가 같은 판정 | MJ053-1 — 서버 canonical 정책을 목록/상세 CTA에 반영 |
+| 목록 결제 batch | 기존 payments batch 조회에 `paid_amount_won`만 추가 — 신규 쿼리·N+1 없음 | PM 지시 — 결제액 일치 검증은 기존 batch로 |
+| UI CTA | `canRequestCancel`은 `o.cancel_eligible === true`만 소비 — bool 없음/불명은 fail closed로 숨김. OrderDetail도 같은 필드 소비. 부적격 주문은 '취소하기' CTA 자체 미노출(서버 실행 재검사는 유지) | 과거 'CONFIRMED + !cancel_status' UI 재판정은 서버 정책(배송·결제·환불·금액 일치)과 달라 폐기 |
+| AI 문의 CTA | OrderCard·OrderDetail의 '문의하기'/'AI에게 이 주문 물어보기'를 `disabled` 'AI 주문 문의 · 준비 중' + `title` 안내로 교체. `onAsk`/`onAskAgent` prop과 app.tsx의 `setAgentOpen("cs")` wiring 제거 — 주문 화면에서 CS 패널 진입 경로 차단. AgentPanel·brain Backend 코드는 보존 | CS Brain 미구축 — stub이 list_orders 첫 주문만 조회해 문의 대상을 오인할 수 있다. 가짜 목적지·더미 답변 금지 [MJ053-2] |
+| e2e 정합 | stale spec을 새 계약으로 갱신 — disabled CTA + DOM click 이벤트 부재 + `/api/agent/turn` 요청 0 + 수동 배송 조회 유지 단정. 부적격 주문(ord-a-ship IN_TRANSIT·ord-a-done DELIVERED)은 CTA 미노출 + 실DTO 목록/상세/eligibility 일치 행렬로 교차 단정 | PM 보충 검증 지시 — 버튼 없음 + 실GET eligibility false |
+| 실행 한계 | ~~실DB readonly22·신규 캡처 미실행~~ → 053-B로 readonly22 실DB PASS(15 real+3 mock+4 capture)·2DB drift 0·QA 7장 완료 [Superseded]. 표준 e2e·Integration·standard 69·eval은 여전히 NOT_RUN — 09 Freeze 전 게이트 해소 필수 | 사고 후 영구 규칙 · PMQA-053-B/C |
+| 052 분리 | unit 259는 미커밋 052 신규 unit 29 포함 수치 — 053 커밋 증거로 인용 금지. 052 4코드는 runtime readiness FAIL(QA 3건 OPEN)로 이번 커밋 제외 | PMQA-053-C 정정 |

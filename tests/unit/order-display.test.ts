@@ -95,10 +95,15 @@ describe("deliveredAtFromEvents", () => {
 });
 
 describe("CTA 규칙", () => {
-  test("취소하기는 확정 주문 + 취소 요청 없을 때만", () => {
-    assert.equal(canRequestCancel({ ...base }), true);
-    assert.equal(canRequestCancel({ ...base, cancel_status: "REQUESTED" }), false);
-    assert.equal(canRequestCancel({ ...base, order_status: "CANCELLED" }), false);
+  test("취소하기는 서버 cancel_eligible===true일 때만 — fail closed [PMQA-06B-053]", () => {
+    // 서버 canonical 정책 결과만 소비한다 — UI는 재판정하지 않는다.
+    assert.equal(canRequestCancel({ ...base, cancel_eligible: true }), true);
+    // bool 없음/불명·false는 전부 숨긴다 — CONFIRMED+취소요청 없음만으로 열지 않는다
+    // (배송 IN_TRANSIT·결제 없음·금액 불일치 등 서버 정책이 거부하는 상태를 UI가 모른다).
+    assert.equal(canRequestCancel({ ...base }), false);
+    assert.equal(canRequestCancel({ ...base, cancel_eligible: false }), false);
+    assert.equal(canRequestCancel({ ...base, cancel_eligible: null }), false);
+    // 정책 행렬 자체(PREPARING만 eligible 등)는 tests/unit/cancellation-policy.test.ts가 단정한다.
   });
   test("배송 조회 칩은 진행·완료 배송에만", () => {
     assert.equal(showShipChip({ ...base, shipping_status: "IN_TRANSIT" }), true);

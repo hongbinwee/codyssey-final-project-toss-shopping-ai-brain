@@ -40,26 +40,38 @@ test("order without shipment shows NO_INFORMATION on W06", async ({ page }) => {
   await expect(page.getByText("배송 정보가 아직 등록되지 않았어요")).toBeVisible();
 });
 
-test("delivered order is cancel-ineligible in A02", async ({ page }) => {
+test("delivered order hides cancel CTA — 서버 정책 부적격은 CTA 미노출 [PMQA-06B-053]", async ({ page }) => {
   await login(page, "e2e-a");
   await page.getByRole("button", { name: "내 쇼핑" }).click();
-  await page.getByText("코드뷰 모니터 C").first().click(); // ord-a-done (DELIVERED)
+  // 같은 상품명의 다른 신규 주문과 섞이지 않도록 정확한 data-order-id로 진입한다.
+  await page.locator('.order-card[data-order-id="ord-a-done"] .order-item-body').click();
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
-  await page.getByRole("button", { name: "취소하기" }).click();
-  await expect(page.getByText("지금은 이 주문을 취소할 수 없어요")).toBeVisible();
-  await expect(page.getByText("이미 출고된 주문은 취소할 수 없어요")).toBeVisible();
-  await expect(page.getByRole("button", { name: "이 주문 취소 요청" })).toHaveCount(0);
+  // ALREADY_SHIPPED → 서버 cancel_eligible=false — CTA 자체가 렌더되지 않는다.
+  // 시트 내 부적격 안내는 자격 API·정책 단위 테스트(cancellation-policy.test.ts)가 단정한다.
+  await expect(page.getByRole("button", { name: "취소하기" })).toHaveCount(0);
 });
 
-test("cs panel explains NO_INFORMATION order (stub)", async ({ page }) => {
+test("주문 상세 AI 문의 CTA는 '준비 중' 비활성 — CS 진입 차단 [PMQA-06B-053]", async ({ page }) => {
+  const agentCalls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/agent/turn")) agentCalls.push(r.url());
+  });
   await login(page, "e2e-b");
   await page.getByRole("button", { name: "내 쇼핑" }).click();
-  await page.getByText("코드뷰 모니터 B").first().click();
-  await page.getByRole("button", { name: "AI에게 이 주문 물어보기" }).click();
-  const panel = page.locator(".agent-panel");
-  await expect(panel.getByText("AI 고객센터")).toBeVisible();
-  await page.getByPlaceholder("조건이나 요청을 입력하세요").fill("배송 언제 와?");
-  await page.getByRole("button", { name: "보내기" }).click();
-  // stub CS: list_orders -> get_shipping_status -> NO_INFORMATION을 있는 그대로 설명
-  await expect(panel.getByText(/배송 정보가 아직 등록되지 않았어요/)).toBeVisible({ timeout: 15000 });
+  // 같은 상품명의 다른 주문과 섞이지 않도록 정확한 data-order-id로 진입한다.
+  await page.locator('.order-card[data-order-id="ord-b-none"] .order-item-body').click();
+  // CS Brain 미구축 — 클릭 가능한 문의 CTA를 약속하지 않고 비활성으로 둔다 [MJ053-2].
+  const cta = page.locator(".bottom-bar").getByRole("button", { name: "AI 주문 문의 · 준비 중" });
+  await expect(cta).toBeVisible();
+  await expect(cta).toBeDisabled();
+  // DOM click + 실제 키보드 입력을 각각 시도 — disabled 버튼은 이벤트를 발생시키지
+  // 않는다(dispatchEvent만으로 키보드 검증이라 쓰지 않는다).
+  await cta.dispatchEvent("click");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  await expect(page.locator(".agent-panel")).toHaveCount(0);
+  expect(agentCalls).toHaveLength(0);
+  // 수동 배송 조회는 유지 — 배송 정보 없음은 정직하게 표시한다.
+  await expect(page.getByRole("heading", { name: "배송 상태" })).toBeVisible();
+  await expect(page.getByText("배송 정보가 아직 등록되지 않았어요")).toBeVisible();
 });

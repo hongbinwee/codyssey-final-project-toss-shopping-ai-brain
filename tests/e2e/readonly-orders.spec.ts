@@ -155,10 +155,34 @@ test.describe("[real] 06B 목록·상세 — 실데이터", () => {
     await expect(ship.locator(".order-ship-chip")).toBeVisible();
     await expect(page.locator('.order-card[data-order-id="ord-a-pre"] .order-card-head')).toContainText("상품준비중");
     await expect(page.locator('.order-card[data-order-id="ord-a-done"] .order-card-head')).toContainText("배송 완료");
-    // CTA는 지원 경로만 — 결제 상세 링크와 취소하기/문의하기
+    // CTA는 지원 경로만 — 결제 상세 링크. 취소하기는 서버 canonical 정책 결과만 소비:
+    // ord-a-ship(IN_TRANSIT→ALREADY_SHIPPED)은 미노출, ord-a-pre(PREPARING)만 노출 [PMQA-06B-053].
     await expect(ship.getByRole("button", { name: /결제 상세/ })).toBeVisible();
-    await expect(ship.getByRole("button", { name: "취소하기" })).toBeVisible();
-    await expect(ship.getByRole("button", { name: "문의하기" })).toBeVisible();
+    await expect(ship.getByRole("button", { name: "취소하기" })).toHaveCount(0);
+    await expect(
+      page.locator('.order-card[data-order-id="ord-a-pre"]').getByRole("button", { name: "취소하기" }),
+    ).toBeVisible();
+    // CS Brain 미구축 — 문의 CTA는 '준비 중' 비활성으로만 노출한다 [MJ053-2].
+    const askBtn = ship.getByRole("button", { name: "AI 주문 문의 · 준비 중" });
+    await expect(askBtn).toBeVisible();
+    await expect(askBtn).toBeDisabled();
+    await expect(askBtn).toHaveAttribute("title", "AI 주문 문의 기능은 아직 준비 중이에요");
+    // 키보드 실측 — disabled CTA는 포커스되지 않는다(프로그램적 focus 시도 + Tab 순회).
+    await askBtn.focus();
+    await expect(askBtn).not.toBeFocused();
+    const agentCalls: string[] = [];
+    page.on("request", (r) => { if (r.url().includes("/api/agent/turn")) agentCalls.push(r.url()); });
+    for (let i = 0; i < 20; i++) {
+      await page.keyboard.press("Tab");
+      await expect(askBtn).not.toBeFocused();
+    }
+    // 합성 click은 이벤트 전달 시도일 뿐 — 활성화 불가는 위 focus/Tab 실측이 단정한다.
+    // 실제 키보드 Enter/Space도 어떤 패널·agent 요청도 만들지 않는다.
+    await askBtn.dispatchEvent("click");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    await expect(page.locator(".agent-panel")).toHaveCount(0);
+    expect(agentCalls).toHaveLength(0);
   });
 
   test("주문 상세 — 스냅샷 행·결제 정보·배송 상태·CTA (ord-a-ship)", async ({ page }) => {
@@ -169,8 +193,29 @@ test.describe("[real] 06B 목록·상세 — 실데이터", () => {
     await expect(page.getByText("코드뷰 모니터 B")).toBeVisible();
     await expect(page.locator(".pay-row.total")).toContainText("152,000원");
     await expect(page.getByText("모의 결제 152,000원")).toBeVisible();   // '일시불' 문구 없음
-    await expect(page.getByRole("button", { name: "취소하기" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "문의하기" })).toBeVisible();
+    // IN_TRANSIT → 서버 cancel_eligible=false — 취소 CTA 미노출 [PMQA-06B-053].
+    await expect(page.getByRole("button", { name: "취소하기" })).toHaveCount(0);
+    // CS Brain 미구축 — 카드·하단 문의 CTA 모두 비활성 '준비 중' [MJ053-2].
+    const askBtns = page.getByRole("button", { name: "AI 주문 문의 · 준비 중" });
+    await expect(askBtns).toHaveCount(2);
+    for (const b of await askBtns.all()) await expect(b).toBeDisabled();
+    await expect(askBtns.first()).toHaveAttribute("title", "AI 주문 문의 기능은 아직 준비 중이에요");
+    // 키보드 실측 — disabled CTA는 포커스되지 않는다(focus() 시도 + Tab 순회 모두).
+    await askBtns.first().focus();
+    await expect(askBtns.first()).not.toBeFocused();
+    const agentCalls: string[] = [];
+    page.on("request", (r) => { if (r.url().includes("/api/agent/turn")) agentCalls.push(r.url()); });
+    for (let i = 0; i < 20; i++) {
+      await page.keyboard.press("Tab");
+      await expect(askBtns.first()).not.toBeFocused();
+      await expect(askBtns.nth(1)).not.toBeFocused();
+    }
+    // 합성 click은 이벤트 전달 시도일 뿐 — 활성화 불가는 위 focus/Tab 실측이 단정한다.
+    await askBtns.first().dispatchEvent("click");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    await expect(page.locator(".agent-panel")).toHaveCount(0);
+    expect(agentCalls).toHaveLength(0);
   });
 
   test("배송 조회 칩 → 상세 배송 섹션 앵커", async ({ page }) => {
@@ -190,6 +235,31 @@ test.describe("[real] 06B 목록·상세 — 실데이터", () => {
     await page.locator('.order-card[data-order-id="ord-b-none"] .order-item-body').click();
     await expect(page.getByRole("heading", { name: "주문 상세 내역" })).toBeVisible();
     await expect(page.getByText("배송 정보가 아직 등록되지 않았어요")).toBeVisible();
+    // 배송 레코드 없음 → SHIPPING_UNVERIFIED → 서버 정책 부적격 — CTA 미노출 +
+    // 실GET eligibility 일치 [PMQA-06B-053].
+    await expect(page.getByRole("button", { name: "취소하기" })).toHaveCount(0);
+    const api = roApi(page.context().request);
+    const elig = await api.get("/api/orders/ord-b-none/cancel/eligibility");
+    const eligData = (elig.json as {
+      data?: { eligible?: boolean; reasons?: { code: string }[] };
+    })?.data;
+    expect(eligData?.eligible, "ord-b-none eligibility").toBe(false);
+    expect(
+      (eligData?.reasons ?? []).some((r) => r.code === "SHIPPING_UNVERIFIED"),
+      "ord-b-none reasons에 SHIPPING_UNVERIFIED",
+    ).toBe(true);
+    // 목록·상세 DTO도 같은 판정이다.
+    const listB = await api.get("/api/orders?limit=50");
+    const rowB = (
+      (listB.json as { data?: { orders?: Record<string, unknown>[] } })
+        ?.data?.orders ?? []
+    ).find((o) => o.id === "ord-b-none");
+    expect(rowB?.cancel_eligible, "ord-b-none 목록 DTO").toBe(false);
+    const detailB = await api.get("/api/orders/ord-b-none");
+    expect(
+      (detailB.json as { data?: { cancel_eligible?: boolean } })?.data?.cancel_eligible,
+      "ord-b-none 상세 DTO",
+    ).toBe(false);
   });
 
   test("타인 주문 접근 — owner scope NOT_FOUND", async ({ page }) => {
@@ -198,14 +268,66 @@ test.describe("[real] 06B 목록·상세 — 실데이터", () => {
     await expect(page.getByText("주문을 찾을 수 없어요")).toBeVisible();
   });
 
-  test("취소 시트 — 부적격 서버 판정 (ord-a-ship IN_TRANSIT)", async ({ page }) => {
+  test("취소 CTA — 부적격은 버튼 없음 + 실DTO·eligibility 일치 행렬 (ord-a-ship IN_TRANSIT) [PMQA-06B-053]", async ({ page }) => {
     await login(page);
     await openOrders(page);
     await page.locator('.order-card[data-order-id="ord-a-ship"] .order-item-body').click();
-    await page.getByRole("button", { name: "취소하기" }).click();
-    await expect(page.getByText("지금은 이 주문을 취소할 수 없어요")).toBeVisible();
-    await expect(page.getByText("이미 출고된 주문은 취소할 수 없어요")).toBeVisible();
-    await expect(page.getByRole("button", { name: "이 주문 취소 요청" })).toHaveCount(0);
+    // 서버 canonical 정책이 cancel_eligible=false면 시트 진입 CTA 자체가 없다 —
+    // 'CTA 노출 → 시트 내 거절' UX를 같은 정책의 fail closed 미노출로 바꿨다.
+    await expect(page.getByRole("button", { name: "취소하기" })).toHaveCount(0);
+    // 실DTO 목록·상세·eligibility endpoint가 같은 판정인지 교차 단정한다.
+    const api = roApi(page.context().request);
+    const list = await api.get("/api/orders?limit=50");
+    const row = (
+      (list.json as { data?: { orders?: Record<string, unknown>[] } })
+        ?.data?.orders ?? []
+    ).find((o) => o.id === "ord-a-ship");
+    expect(row?.cancel_eligible, "목록 DTO cancel_eligible").toBe(false);
+    const detail = await api.get("/api/orders/ord-a-ship");
+    expect(
+      (detail.json as { data?: { cancel_eligible?: boolean } })?.data?.cancel_eligible,
+      "상세 DTO cancel_eligible",
+    ).toBe(false);
+    const elig = await api.get("/api/orders/ord-a-ship/cancel/eligibility");
+    const eligData = (elig.json as {
+      data?: { eligible?: boolean; reasons?: { code: string }[] };
+    })?.data;
+    expect(eligData?.eligible, "eligibility endpoint eligible").toBe(false);
+    expect(
+      (eligData?.reasons ?? []).some((r) => r.code === "ALREADY_SHIPPED"),
+      "eligibility reasons에 ALREADY_SHIPPED",
+    ).toBe(true);
+    // 같은 행렬을 실데이터가 있는 나머지 상태로 확장한다 — PREPARING은 true.
+    const rows = (list.json as { data?: { orders?: Record<string, unknown>[] } })
+      ?.data?.orders ?? [];
+    const matrix: { id: string; eligible: boolean; reason?: string }[] = [
+      { id: "ord-a-done", eligible: false, reason: "ALREADY_SHIPPED" }, // DELIVERED
+      { id: "ord-a-pre", eligible: true },                            // PREPARING 정상
+    ];
+    for (const m of matrix) {
+      const r0 = rows.find((o) => o.id === m.id);
+      expect(r0?.cancel_eligible, m.id + " 목록 DTO").toBe(m.eligible);
+      const d = await api.get("/api/orders/" + m.id);
+      expect(
+        (d.json as { data?: { cancel_eligible?: boolean } })?.data?.cancel_eligible,
+        m.id + " 상세 DTO",
+      ).toBe(m.eligible);
+      const e = await api.get("/api/orders/" + m.id + "/cancel/eligibility");
+      const ed = (e.json as {
+        data?: { eligible?: boolean; reasons?: { code: string }[] };
+      })?.data;
+      expect(ed?.eligible, m.id + " eligibility").toBe(m.eligible);
+      if (m.reason)
+        expect(
+          (ed?.reasons ?? []).some((r) => r.code === m.reason),
+          m.id + " reasons에 " + m.reason,
+        ).toBe(true);
+      if (m.eligible)
+        expect(ed?.reasons ?? [], m.id + " reasons empty").toHaveLength(0);
+    }
+    // 실데이터가 없는 부적격 경로(payment 없음·refund PENDING/REFUNDED·paid≠total 등)는
+    // canonical 정책 단위 tests/unit/cancellation-policy.test.ts가 행렬로 단정한다 —
+    // 이 spec은 실데이터가 있는 상태(IN_TRANSIT·noShipment·REQUESTED·PREPARING)만 커버한다.
   });
 
   test("취소 시트 — 자격 경로에서 견적 GET은 가드 차단 (ord-a-pre)", async ({ page }) => {
@@ -236,6 +358,35 @@ test.describe("[real] 06B 목록·상세 — 실데이터", () => {
     );
     await expect(head).toContainText("취소요청");
     await expect(head).not.toContainText("취소완료");
+    // 이미 취소 요청 접수 — CANCEL_ALREADY_REQUESTED → CTA 미노출 + 실GET 일치 [PMQA-06B-053].
+    const reqCard = page.locator(
+      '.order-card[data-order-id="' + (hit!.order.id as string) + '"]',
+    );
+    await expect(reqCard.getByRole("button", { name: "취소하기" })).toHaveCount(0);
+    const api2 = roApi(page.context().request);
+    const elig2 = await api2.get(
+      "/api/orders/" + (hit!.order.id as string) + "/cancel/eligibility",
+    );
+    const eligData2 = (elig2.json as {
+      data?: { eligible?: boolean; reasons?: { code: string }[] };
+    })?.data;
+    expect(eligData2?.eligible, "REQUESTED eligibility").toBe(false);
+    expect(
+      (eligData2?.reasons ?? []).some((r) => r.code === "CANCEL_ALREADY_REQUESTED"),
+      "REQUESTED reasons에 CANCEL_ALREADY_REQUESTED",
+    ).toBe(true);
+    // 목록·상세 DTO도 같은 판정이다.
+    const listR = await api2.get("/api/orders?limit=50");
+    const rowR = (
+      (listR.json as { data?: { orders?: Record<string, unknown>[] } })
+        ?.data?.orders ?? []
+    ).find((o) => o.id === (hit!.order.id as string));
+    expect(rowR?.cancel_eligible, "REQUESTED 목록 DTO").toBe(false);
+    const detailR = await api2.get("/api/orders/" + (hit!.order.id as string));
+    expect(
+      (detailR.json as { data?: { cancel_eligible?: boolean } })?.data?.cancel_eligible,
+      "REQUESTED 상세 DTO",
+    ).toBe(false);
   });
 
   test("다품목 주문 — '외 N건' + 주문 총액 별도 행", async ({ page }) => {

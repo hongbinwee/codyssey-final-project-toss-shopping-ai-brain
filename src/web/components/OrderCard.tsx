@@ -32,7 +32,6 @@ export function OrderCard({
   totalWon,
   deliveryLine,
   onCancel,
-  onAsk,
   onItemClick,
   refundLabel,
   orderId,
@@ -51,7 +50,6 @@ export function OrderCard({
   totalWon?: number;            // 다품목일 때만 '외 N건'과 별도로 보여주는 주문 총액
   deliveryLine?: string | null; // "무료배송"/"배송비 N원" — null이면 미표시
   onCancel?: () => void;        // 제공 시에만 '취소하기' 버튼
-  onAsk: () => void;            // '문의하기' — 기존 AI ask 경로
   onItemClick?: (it: OrderCardItem) => void; // 없으면 onOpenDetail로 대체
   refundLabel?: string | null;   // 서버 refund_status 라벨 — 실데이터 있을 때만 별도 표시
 }) {
@@ -153,8 +151,14 @@ export function OrderCard({
             취소하기
           </button>
         )}
-        <button className="btn ghost oc-btn" onClick={onAsk}>
-          문의하기
+        {/* CS Brain 미구축 — 클릭 가능한 문의 CTA를 약속하지 않고 준비 중 상태로
+            둔다. 가짜 목적지·더미 답변 금지 [PMQA-06B-053 MJ053-2] */}
+        <button
+          className="btn ghost oc-btn"
+          disabled
+          title="AI 주문 문의 기능은 아직 준비 중이에요"
+        >
+          AI 주문 문의 · 준비 중
         </button>
       </div>
     </article>

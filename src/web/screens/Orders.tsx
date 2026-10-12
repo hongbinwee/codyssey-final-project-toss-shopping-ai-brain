@@ -21,12 +21,10 @@ type OrdersPage = {
 export function Orders({
   onOpenOrder,
   onOpenShop,
-  onAskAgent,
   onOpenShipping,
 }: {
   onOpenOrder: (orderId: string) => void;
   onOpenShop: () => void;
-  onAskAgent: (orderId: string) => void;
   onOpenShipping: (orderId: string) => void;
 }) {
   const [res, setRes] = useState<ApiResult<OrdersPage> | null>(null);
@@ -136,7 +134,6 @@ export function Orders({
                 extraItemCount={fi && (o.item_count ?? 0) > 1 ? (o.item_count ?? 0) - 1 : 0}
                 totalWon={o.total_won}
                 onCancel={canRequestCancel(o) ? () => setCancelFor({ id: o.id, summary: o.item_summary }) : undefined}
-                onAsk={() => onAskAgent(o.id)}
               />
             );
           })}

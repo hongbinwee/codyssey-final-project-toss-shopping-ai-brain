@@ -9,6 +9,7 @@ export type OrderStatusInput = {
   cancel_status: string | null;               // REQUESTED | COMPLETED | null
   shipping_status: string | null;             // PREPARING | IN_TRANSIT | DELIVERED | CANCELLED | null
   payment_status: string | null;              // PAID | null
+  cancel_eligible?: boolean | null;           // 서버 canonical 정책 결과 — 없음/불명은 fail closed [PMQA-06B-053]
 };
 
 export type CardHead = { label: string; tone: "normal" | "muted" };
@@ -77,9 +78,11 @@ export function showShipChip(o: OrderStatusInput): boolean {
   return o.shipping_status === "IN_TRANSIT" || o.shipping_status === "DELIVERED";
 }
 
-// '취소하기' 버튼 — 확정 주문 + 아직 취소 요청이 없을 때만 [Observed Ref079/090].
+// '취소하기' 버튼 — 서버 canonical 정책(cancel-policy.ts)이 계산한 cancel_eligible만
+// 본다. 과거 'CONFIRMED + 취소요청 없음' UI 재판정은 서버 정책(배송·결제·환불·금액
+// 일치)과 달라 폐기했다 — bool 없음/불명은 fail closed로 숨긴다 [PMQA-06B-053 MJ053-1].
 export function canRequestCancel(o: OrderStatusInput): boolean {
-  return o.order_status === "CONFIRMED" && !o.cancel_status;
+  return o.cancel_eligible === true;
 }
 
 // delivered_at 유도 — 서버 listOrders 전용. 마지막 event의 실제 status가

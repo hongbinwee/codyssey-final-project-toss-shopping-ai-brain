@@ -33,13 +33,11 @@ export function OrderDetail({
   orderId,
   focus,
   onBack,
-  onAskAgent,
   onOpenProduct,
 }: {
   orderId: string;
   focus?: "shipping"; // 목록 '배송 조회' 칩 진입 — 실제 배송 섹션으로 스크롤
   onBack: () => void;
-  onAskAgent: (orderId: string) => void;
   onOpenProduct: (productId: string) => void; // 상품 행 → 실제 상품 링크(지원 경로)
 }) {
   const [res, setRes] = useState<ApiResult<OrderView> | null>(null);
@@ -147,11 +145,9 @@ export function OrderDetail({
           o.shipping_fee_won === 0 ? "무료배송" : "배송비 " + fmtWon(o.shipping_fee_won)
         }
         onCancel={
-          o.status === "CONFIRMED" && !o.cancel_request
-            ? () => setCancelOpen(true)
-            : undefined
+          // 서버 canonical cancel_eligible만 소비 — UI 재판정 금지 [PMQA-06B-053].
+          o.cancel_eligible === true ? () => setCancelOpen(true) : undefined
         }
-        onAsk={() => onAskAgent(o.id)}
       />
 
       <div className="checkout-band" />
@@ -249,8 +245,14 @@ export function OrderDetail({
 
       <div className="bottom-bar">
         <button className="btn ghost" onClick={onBack}>목록</button>
-        <button className="btn primary" onClick={() => onAskAgent(o.id)}>
-          AI에게 이 주문 물어보기
+        {/* CS Brain 미구축 — 실제 문의로 연결되지 않는 primary CTA를 열지 않고
+            준비 중 상태로 둔다 [PMQA-06B-053 MJ053-2] */}
+        <button
+          className="btn primary"
+          disabled
+          title="AI 주문 문의 기능은 아직 준비 중이에요"
+        >
+          AI 주문 문의 · 준비 중
         </button>
       </div>
 

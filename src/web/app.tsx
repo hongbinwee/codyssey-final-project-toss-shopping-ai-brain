@@ -378,12 +378,6 @@ function App() {
           <Orders
             onOpenOrder={(id) => goto({ name: "order", id })}
             onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
-            // 목록 '문의하기'는 대상 주문 상세로 이동한 뒤 기존 CS 패널을 연다 —
-            // id를 버리고 열면 문의 대상이 다른 주문이 될 수 있다 [PM048 검수].
-            onAskAgent={(id) => {
-              goto({ name: "order", id });
-              setAgentOpen("cs");
-            }}
             onOpenShipping={(id) => goto({ name: "order", id, focus: "shipping" })}
           />
         )}
@@ -392,7 +386,6 @@ function App() {
             orderId={route.id}
             focus={route.focus}
             onBack={() => goto({ name: "orders" })}
-            onAskAgent={() => setAgentOpen("cs")}
             onOpenProduct={(id) => goto({ name: "product", id })}
           />
         )}
