@@ -1,12 +1,15 @@
 # Implementation Decisions
 
-## 최신 체크포인트 정정 — 2026-10-14
+## 현재 팀 공유 결정 — 2026-10-15
 
-> 이 블록이 과거 승인 대기·검증 표기보다 현재 상태에 우선한다. 과거 기록은 당시 이력으로 보존한다.
+> 이 블록은 아래 과거 결정보다 우선한다. 구현/운영 인증정보는 문서나 로그에 남기지 않는다.
 
-- 현재 작업은 `checkpoint/commerce-20261014`의 WIP다. PMQA-070의 최신 승인과 PMQA-079의 한정된 실행 승인 범위에서 진행 중이며, 이는 전체 회귀·Freeze 승인으로 확대 해석하지 않는다.
-- 최신 고정 Suite는 E2E 52 PASS / 5 FAIL / 16 NOT_RUN이고 Integration은 NOT_RUN이다. check/build는 이번 checkpoint에서 exit 0, 전체 unit은 **IN_PROGRESS/미완료**이며 PASS로 계산하지 않는다.
-- 찜 변경과 migration 004는 현재 코드 체크포인트에 포함되지만 이 작업 중 DB migration은 실행하지 않았다. 09 Commerce Environment Freeze 목표는 유지되며 미완료다.
+- 현재 목표는 현실적인 구매자 Commerce Environment를 다듬는 것이다. RAG·시스템 프롬프트 팀 공유는 WIP 맥락이며 Brain 통합이나 Commerce Freeze 완료가 아니다. AI stub/scaffolding과 화면의 `준비중` 상태를 유지한다.
+- `checkpoint/commerce-20261014`의 `74effc7`은 원격 반영됐고 `main`은 `75f2eef`로 보존됐다(PM 확인). 이 handoff의 commit/push/main 갱신은 사용자 묶음 승인 전 금지한다.
+- 최신 고정 Suite는 E2E 52 PASS / 5 FAIL / 16 NOT_RUN, Integration NOT_RUN, Preview OFF다. check/build PASS이며 전체 unit은 15분 timeout으로 **INCOMPLETE/TIMEOUT**이다. 네 E2E spec 수정은 미커밋이고 실제 E2E 재실행 전이다.
+- 개발자는 자신의 새 loopback 로컬 DB/volume과 개인 `.secrets/pg-password`를 사용한다. 앱과 새 Compose DB의 role은 같은 비밀 파일을 참조해야 한다. 기존 volume에서 그 파일만 바꿔도 PostgreSQL role 암호는 바뀌지 않는다. 보호 DB와 보존 scratch는 재사용하거나 초기화하지 않는다.
+- 전체 Commerce schema는 migration phase 6(`001`–`004`), product/cart만은 phase 1이다. Base fixture seed는 새 개발 DB 최초 적재용이며 재실행은 재고/version 및 시드 주문·취소·환불 상태를 초기화할 수 있다.
+- Amazon 등 외부 catalog는 기존 deterministic fixture 및 Demo namespace와 분리한 source/ID namespace와 독립 적재 계획을 먼저 제안한다. 현재 importer 구현이나 외부 데이터 수집은 없다.
 
 2026-10-05 · Phase 0 환경 확정. IMPLEMENTATION_PLAN.md가 위임한 스택 선택을 여기에 기록한다.
 
@@ -39,7 +42,7 @@
 
 - Node v24.15.0, npm 11.12.1, Docker 29.7.2 확인됨. bun은 경로 버그로 사용하지 않는다.
 - 로컬 PostgreSQL 미설치 -> compose.yaml의 postgres:17-alpine 컨테이너 사용.
-- 2026-10-06: 개발 DB는 Docker `codyssey_final-db-1` (localhost:5432, commerce/commerce)로 고정. `.env`의 `DATABASE_URL`이 이를 가리킨다. `DATABASE_URL`이 없을 때만 `embedded-postgres`가 `.pgdata/`(5433)에 fallback으로 뜬다. 샌드박스에서 실행된 프로세스는 localhost TCP가 차단되므로 DB·서버·브라우저를 여는 명령은 승인된 실행으로 돌린다.
+- 2026-10-06 개발환경 메모는 **Superseded**다. 과거 공용 DB/auth 표기와 embedded PostgreSQL fallback 안내는 현재 실행 지침이 아니며, 인증 문자열은 재기록하지 않는다. 현재 `src/config.ts`/`src/devdb.ts`는 명시적 `DATABASE_URL`을 요구하고 embedded fallback을 비활성화한다. 로컬 설정은 `.env.example`과 개인 `.secrets/pg-password`를 기준으로 한다.
 - LLM API 키·모델 미확정. `.env.example`에 이름만 정의. Phase 1 live 평가는 키 확보 시 진행하고, 없으면 해당 항목을 BLOCKED로 표기한다.
 - 실제 리뷰 데이터 출처 미확보. Phase 1은 합성 seed로 시작하고 `source_kind=SYNTHETIC`을 유지한다.
 - 실행 명령은 `npm run ...` (또는 `node ...`). `bun run`은 이 경로에서 동작하지 않는다.

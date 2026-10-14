@@ -1,73 +1,37 @@
-# AI Commerce P0
+# AI Commerce Environment
 
-토스쇼핑과 유사한 흐름의 테스트용 커머스 환경 + Shopping/CS Brain Agent. P0 범위는 [CORE_TASK_SCOPE.md](CORE_TASK_SCOPE.md), 실행 계획은 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+구매자용 Commerce Environment를 먼저 완성하고, 이후 Shopping Brain / CS Agent를 결합하는 프로젝트입니다. 이 문서는 RAG·시스템 프롬프트 팀을 위한 **WIP 맥락 공유**이며 Brain 통합이나 Commerce Freeze 완료를 뜻하지 않습니다. AI stub/scaffolding과 화면의 `준비중` 상태를 유지합니다. 현재 범위는 [CORE_TASK_SCOPE.md](CORE_TASK_SCOPE.md), 최상위 방향은 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)를 참고하세요.
 
-> 현재 최상위 방향·로드맵(Commerce Environment 선행 → Brain)은 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) §현재 프로젝트 방향 참조.
+## 개발자별 로컬 실행 체크리스트
 
-## 무엇을 하는 프로젝트인가
+요구 환경: Node.js 24+, npm, Docker.
 
-실제 쇼핑 흐름(검색→상세→옵션→장바구니→주문서→모의 결제→주문/배송→취소) 위에서 동작하는 두 개의 AI Agent를 검증하는 환경이다.
+1. `.env.example`을 `.env`로 복사합니다.
+2. 개인별 새 임의 비밀번호를 `.secrets/pg-password`에 저장하고 파일 접근을 본인 계정으로 제한합니다. 비밀 값을 출력·공유·커밋하지 마세요. Compose PostgreSQL role과 앱은 같은 파일을 사용합니다. 기존 DB volume은 파일 교체만으로 role 암호가 바뀌지 않습니다.
+3. 본인이 소유한 새 loopback 로컬 DB와 Compose volume만 사용합니다. 금지 대상은 **현재 오케스트레이션 호스트/volume의 보호 DB와 보존 scratch**입니다. 팀원이 별도 호스트와 새 volume에 만든 DB가 같은 이름 `commerce`를 쓰는 것은 별개입니다. scratch 2/2는 현재 오케스트레이션 환경의 할당 상태이지 팀 전체 상한이 아닙니다. 같은 호스트에서 `5432`가 이미 사용 중이면 기존 프로세스/DB를 재사용·종료하거나 자격을 바꾸지 말고 준비를 멈춰 별도 로컬 환경을 조율하세요.
+4. 새 개발 DB에서 아래 명령을 최초 한 번 실행합니다.
 
-- **Shopping Brain (A01)**: 상품 검색/비교/리뷰 근거 조회와 장바구니 조작을 Tool Calling으로 수행
-- **CS Brain (A02 맥락)**: 주문 식별·배송 조회·취소 자격/견적 설명을 수행. 취소 실행은 사용자가 UI에서 최종 확인한 뒤에만 가능
+```powershell
+docker compose -p codyssey-yourname up -d
+npm ci
+npm run db:migrate -- --phase=6
+npm run db:seed -- --phase=4
+npm run dev
+```
 
-결제·배송 전환·환불은 모두 **모의 처리**다(실제 PG/물류 연동 없음). AI 답변 영역에는 "AI 생성 답변" 표시가 있다.
+Full Commerce는 migration phase 6(`001`–`004`), 상품·카트만의 schema 범위는 phase 1입니다. Base fixture seed는 개발 DB 최초 적재용입니다. 재실행하면 상품 재고/version과 시드 주문·취소·결제/환불 상태가 초기값으로 되돌아갈 수 있습니다. 선택적 `db:seed:demo`도 본인의 새 개발 DB임을 먼저 확인하세요. 앱 주소는 `http://localhost:3000`이며 접근 코드는 로컬 `.env`에서 관리합니다.
 
-LLM은 조건 해석·근거 비교·설명을 담당하고, 재고/가격/소유권/취소 가능 여부/환불액은 전부 서버가 결정한다. 쓰기 작업은 멱등 키와 버전 검사로 중복·경합을 방지한다.
+현재 `npm run verify`와 legacy Playwright 진입점은 `NOT_READY` fail-closed guard로 실행이 제한됩니다. 우회하거나 전체 PASS 경로로 안내하지 말고 최신 판정은 [VERIFICATION_LOG.md](docs/VERIFICATION_LOG.md)를 확인하세요.
 
-## 실행
+## 기존 구조와 팀 handoff
 
-요구: Node 24+, Docker(Postgres용).
+- `src/catalog.ts`, `src/cart.ts`, `src/checkout.ts`, `src/orders.ts`, `src/cancellation.ts`가 Commerce 데이터·정책의 서버 정본입니다. 화면과 Agent Tool은 같은 Backend 규칙을 사용합니다.
+- Product–Variant–Review ID/FK 연결을 보존합니다. 가격은 정수 KRW, 평점은 1–5이며 Review는 `source_kind`와 `source_ref`로 REAL/SYNTHETIC 및 출처를 구분합니다. 근거 없는 실리뷰를 만들지 않습니다.
+- 세션에서 검증한 actor만 신뢰합니다. `GET /api/cart`는 카트를 upsert할 수 있고, 변경 요청은 예상 cart/variant version과 idempotency key를 사용합니다.
+- 기본 경로는 `POST /api/session`(세션 쿠키 발급) → `GET /api/products` → `GET /api/products/:id`(variants 포함) / `GET /api/products/:id/reviews` → `GET /api/cart` → `POST /api/cart/items`, `PATCH`·`DELETE /api/cart/items/:cart_item_id`입니다.
+- RAG 문서는 Commerce `product_id`, 선택된 `variant_id`, 근거 `review_id`의 원본 매핑을 유지합니다. Vector DB는 검색용이며 Commerce ID와 관계의 정본을 대체하지 않습니다.
+- 기존 deterministic fixture `p-a/p-b/p-c`와 Demo namespace를 Amazon 등 외부 데이터와 분리합니다. 외부 데이터는 이용 권한 확인 후 새 namespace와 독립 적재 계획으로 다루며 importer는 아직 없습니다. 직접 scraping하거나 기존 seed를 덮어쓰지 마세요.
 
-    docker compose up -d
-    npm install
-    npm run db:migrate -- --phase=4
-    npm run db:seed -- --phase=4
-    npm run db:seed:demo   # (선택) 데모 카탈로그만 적재 — dev DB 전용 독립 모드. base 시드(p-a~c/users/시나리오)는 먼저 위 명령으로 넣어야 한다. --demo는 기존 데이터를 건드리지 않는다
-    npm run dev
+## 현재 WIP
 
-http://localhost:3000
-
-`.env`의 `TEST_USER_CODES`가 "접근 코드=사용자" 매핑이다(코드는 서버 비밀 설정, 클라이언트/로그에 목록을 노출하지 않는다).
-
-`LLM_API_KEY`를 설정하면 실제 OpenAI 호환 chat completions + tool calling으로 동작한다. 미설정 시 조회만 하는 로컬 stub provider로 동작하며, stub 결과는 live 평가로 보고하지 않는다.
-
-## 검증
-
-    npm run verify -- --phase=5
-
-typecheck + build + unit + integration + e2e(전체 스펙) + dev eval + holdout eval(케이스당 3회).
-
-개별 실행:
-
-    npm run eval -- --mode=stub --split=dev                  # 개발 케이스 16개
-    npm run eval -- --mode=stub --split=holdout --repeat=3   # holdout 6개 ×3
-    npm run eval -- --mode=live --split=dev                  # 실제 LLM 평가 (LLM_API_KEY 필요)
-
-## 배포
-
-`Dockerfile`이 실행 이미지를 만든다. Postgres는 외부에서 준비하고 `DATABASE_URL`·`SESSION_SECRET`·`TEST_USER_CODES`·(선택)`LLM_*` 환경 변수를 전달한다.
-
-    docker build -t ai-commerce-p0 .
-    docker run -p 3000:3000 -e DATABASE_URL=... -e SESSION_SECRET=... ai-commerce-p0
-
-배포 후 `db:migrate`/`db:seed`를 대상 DB에 1회 적용한다.
-
-## 구조
-
-- `src/server.ts` — node:http: API + 웹 정적 서빙, /health, 시작 시 esbuild로 웹 번들
-- `src/db.ts` — postgres.js + 트랜잭션 헬퍼
-- `src/session.ts` — HMAC 세션·RequestContext (actor는 세션에서만)
-- `src/agent.ts` — Shopping/CS Brain 공용 runtime + Tool registry(13개, brain별 노출 분리)
-- `src/cart.ts` `src/checkout.ts` `src/orders.ts` `src/cancellation.ts` — 화면 API와 Agent Tool이 공유하는 커머스 로직
-- `src/actions.ts` — 멱등 실행(action_requests): 같은 actor+kind+key는 결과 재생
-- `src/contracts.ts` — ToolResult 공통 응답 봉투
-- `src/web/` — React SPA (esbuild 번들)
-- `scripts/` — migrate / seed / verify / build-web / eval / simulate(내부 배송·취소·환불 전환)
-- `tests/` — unit·integration(node --test) / e2e(Playwright) / eval 케이스(dev·holdout)
-
-## 한계
-
-- 장기 개인화, 이미지 검색, 반품/교환, 쿠폰/포인트, 실제 PG·배송사 연동은 P0 범위 밖이다.
-- 리뷰 시드는 합성 데이터다(`source_kind=SYNTHETIC`). 실제 리뷰 표본 검증은 미완료다.
-- 배포 실행과 실사용자 5명 테스트는 Phase 5 진행 항목이다(`docs/USER_TEST_REPORT.md`).
+Checkpoint `checkpoint/commerce-20261014`의 `74effc7`은 원격 반영됐고 `main`은 `75f2eef`로 보존됐습니다(PM 확인). Core UI·검증은 미완료입니다: check/build PASS, 전체 unit 15분 timeout(INCOMPLETE), E2E 52 PASS / 5 FAIL / 16 NOT_RUN, Integration NOT_RUN, Preview OFF. 네 E2E spec은 로컬 수정됐지만 실제 E2E 재실행은 없습니다. 이 네 파일 수정은 이번 5파일 공유 커밋에 포함되지 않습니다. 06-C Visual 승인과 Commerce Freeze가 남아 있습니다. 자세한 현재 상태는 [IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md)를 참고하세요.

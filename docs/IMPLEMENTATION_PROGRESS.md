@@ -2,18 +2,21 @@
 
 > 표기 규칙: Phase 0~5의 '완료'는 **로컬 구현 + 로컬 검증**(unit·integration·e2e·stub eval·holdout·Docker 빌드) 기준이다. 실제 LLM live eval·외부 배포·실사용자 테스트는 미완료이며 프로젝트 로드맵 12~13에서 수행한다(PROJECT_CONTEXT.md §현재 프로젝트 방향).
 
-## 최신 상태 — Commerce WIP 체크포인트 · Suite E2E 일부 실패 · Preview off · Visual 미완료 (2026-10-14)
+## 최신 상태 — Commerce WIP 팀 공유 · Suite 일부 실패 · Preview off · Visual 미완료 (2026-10-15)
 
-- **체크포인트**: `main` HEAD `75f2eefb284b62e4e01150923b17f60086948bc6`에서 `checkpoint/commerce-20261014`를 생성했다. 검토된 135개 파일을 명시 manifest로 staging했으며, PM의 staged review를 기다린다. 커밋·push 및 기능 완료·통합 PASS는 선언하지 않는다.
+- **현재 목표**: RAG·시스템 프롬프트 팀에 Commerce 맥락을 공유하는 WIP다. Brain 통합이나 Commerce Freeze 완료를 뜻하지 않는다. AI stub/scaffolding 및 `준비중` 상태를 유지한다.
+- **체크포인트**: `main`은 `75f2eefb284b62e4e01150923b17f60086948bc6`로 보존됐고 `checkpoint/commerce-20261014`의 `74effc798ab387dc7395dd79dd10fe90e8bdcecb`(135 files)은 PM 확인 기준 원격 반영 완료다. 이번 handoff는 다섯 문서/설정 경로만 준비 중이며 네 E2E spec 변경은 unstaged로 보존한다. Commit·Push·main 갱신은 사용자 묶음 승인 전 하지 않는다.
 - **최신 고정 Suite**: `shots/isolated-suite/run-4a9d070d-80ef-44c9-84d3-00fad1cd0a74/` — E2E 73개 중 **52 PASS / 5 FAIL / 16 NOT_RUN**, Integration **NOT_RUN**(E2E 실패로 미도달). E2E 실패 5건은 `e2e.stdout.log`에 기록돼 있다.
 - **Preview / scratch**: Preview 서버는 현재 **OFF**. Preview DB와 Suite 실패 DB는 보존돼 있고 scratch 누계 **2/2**다. 새 DB·재시드·migration 재실행 없음.
 - **Visual 승인 범위**: 과거 명시 승인된 04-C/04-E/05/06-A/06-B 화면은 당시 승인 상태를 유지한다. 이후 변경된 Product Card·구매 화면의 영향 범위만 최신본 재확인이 필요하며 기존 승인을 일괄 취소한 것이 아니다. 06-C 최종 확인은 보류 중이고 전체 구매 여정 Visual QA는 아직 승인되지 않았다.
-- **로드맵 목표**: 09 Commerce Environment Freeze는 유지 중인 목표이며 미완료다. 현재 06이 진행 중이다.
+- **로드맵 목표**: 09 Commerce Environment Freeze는 유지 중인 목표이며 미완료다. 현재 구매자 UI 흐름 통합과 06-C Visual 확인이 남아 있다.
 - **Credential 상태**: 파일 기반 새 자격 연결 확인 이력은 유지한다. 기존 암호만을 대상으로 한 거부 확인은 **NOT_RUN**이며 실제 비밀번호는 문서·로그에 기록하지 않는다.
 - **기존 증거 보존 범위**: PM이 PM073 baseline의 기존 보호 산출물 1,499개를 비교해 content SHA drift 0·missing 0을 확인했다. 이는 해당 보호 baseline만의 대조이며 현재 코드·문서 변경을 포함한 전체 workspace 지문이 아니다.
 - **보안 보정**: 고정 세션 서명 fallback을 제거(개발은 프로세스 임의키, production은 SESSION_SECRET 필수)하고, DATABASE_URL 부재 시 hardcoded-credential embedded DB 자동 기동을 거부한다. demo-seed의 query override 테스트 URI는 TEST_DB_URL에서 구성하며 과거 로그 URL 비밀번호는 가렸다. 관련 DB-free auth/startup 5개 케이스는 unit 로그에서 PASS다.
-- **이번 checkpoint DB-free 검증**: PMQA-056 고정 runner의 check와 build는 각각 exit 0. 전체 unit은 runner가 종료되지 않아 **IN_PROGRESS/미완료**이며 PASS로 보고하지 않는다. runner의 기존 bounded timeout을 유지한다.
-- **독립 staged 검수**: PM은 135 staged blob에서 제외 경로 0, canonical secret/token/private-key 일치 0, 상대 import 누락 0, worktree-index drift 0을 확인했다. `git diff --cached --check`는 신규 파일 EOF 빈 줄 5곳만 보고했으며 이번에는 파일을 수정하지 않았다.
+- **이번 checkpoint DB-free 검증**: PMQA-056 고정 runner의 check와 build는 각각 exit 0. 전체 unit `run-c89ac7b1-4a0d-46f8-a298-517c5f0a4f39`는 15분 bounded timeout으로 종료됐고 `status: null`, `command timeout (bounded kill, wait=closed)`, native exit 1이다. **INCOMPLETE/TIMEOUT**이며 PASS가 아니다.
+- **E2E 후속 보정**: 보존 로그의 5개 실패는 세 가지 stale UI 계약(주문 미니카드/전체목록, AI 접근성 이름, 장바구니 안내문)으로 정적 확인했다. 네 개 spec을 현재 UI 흐름·문구에 맞춰 보정했고, 각 spec의 테스트 수는 2/5/7/34로 유지됐으며 새 skip-only 테스트는 추가하지 않았다. MyShop의 h3와 Orders의 h2를 구분하는 대기 조건은 두 곳이다. DB-free typecheck `run-e6f0e117-14a5-43bf-8132-1f33c1ac9231`는 exit 0이다. 허용된 targeted DB-free diagnostics 중 IPC/lifecycle은 7/7 PASS; channel/readonly-plan 그룹은 부분 출력에서 11건 중 3 PASS·8 FAIL 표식이 있었고 제한 시간 안에 종료되지 않아 해당 PTY를 중단했다. 종료되지 않은 원인은 미확정이다. 이 단계에서는 브라우저/E2E를 다시 실행하지 않았다.
+- **진입점 제한**: `npm run verify`와 legacy Playwright entry는 `NOT_READY` fail-closed guard가 적용되어 있다. 이를 우회하거나 전체 PASS 명령으로 취급하지 않는다. 고정 Suite 결과와 수동으로 확인된 spec 수정은 별개다.
+- **독립 staged 검수(이전 checkpoint)**: PM은 135개 checkpoint blob에서 제외 경로 0, canonical secret/token/private-key 일치 0, 상대 import 누락 0, worktree-index drift 0을 확인했다. 이는 현재 다섯 문서 수정에 대한 검수가 아니다.
 
 ## [Historical snapshot] PMQA-079 인증·Loopback·보호 게이트 및 Preview lifecycle QA (2026-10-14)
 
