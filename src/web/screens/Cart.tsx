@@ -8,28 +8,31 @@ import {
   apiSafe, fmtWon, newActionKey, AMBIGUOUS_CODES, type ApiResult,
 } from "../api.ts";
 import type { CartItemView, CartView } from "../../contracts.ts";
-import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
+import { ErrorState, Loading } from "../components/CommerceState.tsx";
 import { PRODUCT_META, productImg } from "../display-meta.ts";
-import { IcChevronDown, IcClose } from "../icons.tsx";
+import { IcBagFill, IcChevronDown, IcClose } from "../icons.tsx";
 import {
   listCartPending, putPending, removePending, lookupAction,
   type PendingWrite,
 } from "../pending.ts";
+import { createReadGate, guardedRead } from "../read-gate.ts";
 
 export function Cart({
   cart,
   onCartLoaded,
-  onOpenShop,
   onCheckout,
   onOpenProduct,
-  onOpenOrders,
+  onOpenRecent,
+  onOpenWish,
 }: {
   cart: CartView | null;
   onCartLoaded: (v: CartView) => void;
-  onOpenShop: () => void;
-  onCheckout: () => void;
+  // null = 전체 선택(legacy 전체 카트 견적), 배열 = 선택 cart_item_id 부분 주문
+  // [PMQA-067 — Ref073 부분선택 → 주문서].
+  onCheckout: (selectedIds: string[] | null) => void;
   onOpenProduct: (id: string) => void;
-  onOpenOrders: () => void;
+  onOpenRecent: () => void;
+  onOpenWish: () => void;
 }) {
   const [res, setRes] = useState<ApiResult<CartView> | null>(
     cart ? { ok: true, data: cart } : null,
@@ -45,7 +48,9 @@ export function Cart({
   const knownIds = useRef(cart?.items.map((i) => i.cart_item_id) ?? []);
   // 마운트 GET이 늦게 도착해 그 사이 확정된 쓰기(v2)를 과거(v1)로 덮는 레이스 방지.
   // 쓰기가 새 상태를 적용할 때 seq를 올려 진행 중인 read를 무효화한다.
-  const readSeq = useRef(0);
+  // [MAJOR069-07 해소] 여기에 언마운트 무효화(kill)를 더한다 — 상세 이동 후
+  // 돌아온 구 GET이 부모 카트를 과거 snapshot으로 덮지 못한다 [PMQA-072].
+  const readGate = useRef(createReadGate());
   // 결제 예상 금액 패널 — Ref126은 펼침이 기본 노출 상태다 [Observed cart/126].
   // 접기·펼치기는 표시 상태만 바꾼다 — 카트 쓰기나 선택을 변경하지 않는다.
   const [quoteOpen, setQuoteOpen] = useState(true);
@@ -71,16 +76,27 @@ export function Cart({
     return () => removeEventListener("pending-writes", on);
   }, []);
 
+  // 모든 카트 조회(마운트·재시도·쓰기 후 재확인)는 guardedRead 한 경로다 —
+  // 세대 무효화(새 조회·확정 쓰기)와 언마운트 kill()이 적용(setRes·onCartLoaded)을
+  // 함께 차단한다 [PMQA-072].
+  // 적용 권한이 loading 해제 책임을 인계한다 — 실제로 적용되는 최신 응답만
+  // setLoading을 건드리고, stale·kill 응답은 적용 권한이 없어 loading도 건드리지
+  // 못한다 [PMQA-072 REWORK — MAJOR072-01].
   async function reload() {
-    const my = ++readSeq.current;
-    const r = await apiSafe<CartView>("/api/cart");
-    if (readSeq.current !== my) return r; // 늦은 stale read — 적용하지 않는다
-    setRes(r);
-    if (r.ok) onCartLoaded(r.data);
-    return r;
+    return guardedRead(
+      readGate.current,
+      () => apiSafe<CartView>("/api/cart"),
+      (r) => {
+        setRes(r);
+        if (r.ok) onCartLoaded(r.data);
+        setLoading(false); // 적용된 최신 응답이 loading 종료를 인계한다 [MAJOR072-01]
+      },
+    );
   }
   useEffect(() => {
-    reload().then(() => setLoading(false));
+    const g = readGate.current;
+    reload(); // 적용되는 최신 응답이 loading을 해제한다 — gen은 내부 배정
+    return () => g.kill(); // 언마운트 — 진행 중 조회의 적용을 차단한다 [MAJOR069-07]
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -138,10 +154,11 @@ export function Cart({
         setNotice("이미 처리된 요청을 최신 장바구니에 반영했어요.");
         return { status: "ok", cart: latest.data };
       }
-      readSeq.current++; // 진행 중이던 read보다 이 쓰기 결과가 최신이다
+      readGate.current.invalidate(); // 진행 중이던 read보다 이 쓰기 결과가 최신이다
       const v = { ok: true as const, data: r.data.cart };
       setRes(v);
       onCartLoaded(r.data.cart);
+      setLoading(false); // 살아있는 화면에 확정 쓰기가 적용되면 진행 중 loading 종료 [MAJOR072-01]
       setNotice(null);
       return { status: "ok", cart: r.data.cart };
     }
@@ -334,7 +351,7 @@ export function Cart({
           text="카트를 불러오지 못했어요"
           onRetry={() => {
             setLoading(true);
-            reload().then(() => setLoading(false));
+            reload(); // 적용되는 최신 응답이 loading을 해제 — stale gen은 권한 없음
           }}
         />
       </>
@@ -346,7 +363,15 @@ export function Cart({
   const selectedItemsTotal = c.items
     .filter((i) => selected.has(i.cart_item_id))
     .reduce((sum, item) => sum + item.unit_price_won * item.quantity, 0);
-  const canSubmit = c.can_checkout && allSelected && !locked;
+  // 선택 부분집합 기준 주문 가능 여부 — 미선택 항목은 주문 대상이 아니다.
+  // 배송비는 서버와 같은 규칙(선택 상품이 있으면 FLAT)으로만 추정한다 —
+  // 실제 금액은 서버 견적이 확정한다.
+  const selectedPurchasable = c.items
+    .filter((i) => selected.has(i.cart_item_id))
+    .every((i) => i.purchasable);
+  const selectedShipping = selectedCount > 0 ? c.shipping_fee_won : 0;
+  const selectedTotal = selectedItemsTotal + selectedShipping;
+  const canSubmit = someSelected && selectedPurchasable && !locked;
 
   return (
     <div className="screen cart-screen" ref={screenRef}>
@@ -378,20 +403,28 @@ export function Cart({
           </div>
         </div>
       )}
-      <div className="cart-tabs" aria-label="장바구니 메뉴">
-        <button className="on" aria-current="page">장바구니 {c.items.length}</button>
-        <button onClick={onOpenShop}>계속 쇼핑</button>
-        <button onClick={onOpenOrders}>내 주문</button>
+      {/* Ref45 공유 3탭 — 장바구니(count)/최근 본/찜. 찜은 SET_WISHLIST
+          실구현(recent?tab=wish)으로 연결한다 [PMQA-070] */}
+      <div className="cart-tabs" role="tablist" aria-label="장바구니 메뉴">
+        <button role="tab" className="on" aria-current="page" aria-selected="true">
+          장바구니 {c.items.length}
+        </button>
+        <button role="tab" aria-selected="false" onClick={onOpenRecent}>
+          최근 본
+        </button>
+        <button role="tab" aria-selected="false" onClick={onOpenWish}>
+          찜
+        </button>
       </div>
       {c.items.length === 0 ? (
-        <Empty
-          text="장바구니가 비어 있어요"
-          action={
-            <button className="btn primary" onClick={onOpenShop}>
-              쇼핑하러 가기
-            </button>
-          }
-        />
+        // Ref099 — 카드 없는 열린 빈 상태: muted 아이콘 + 굵은 제목 + 보조 문구.
+        // 별도 CTA 버튼은 두지 않는다 [Observed]. '가장 싸게' 같은 실데이터 없는
+        // 주장 문구는 쓰지 않는다 [PMQA-075 F24].
+        <div className="cart-empty">
+          <IcBagFill size={38} className="cart-empty-ic" />
+          <div className="cart-empty-title">장바구니가 비었어요</div>
+          <div className="cart-empty-sub">마음에 드는 상품을 담아보세요</div>
+        </div>
       ) : (
         <>
           <div className="cart-selection">
@@ -517,9 +550,6 @@ export function Cart({
           </ul>
           <div className="bottom-bar" ref={barRef}>
             <div className="cart-summary">
-              <div className="cart-summary-count">
-                선택 {selectedCount}건 · 선택 상품 합계 {fmtWon(selectedItemsTotal)}
-              </div>
               <button
                 type="button"
                 className="cart-summary-total cart-quote-toggle"
@@ -533,10 +563,10 @@ export function Cart({
                 onClick={() => setQuoteOpen((v) => !v)}
               >
                 <span className="cart-quote-label">
-                  총 {c.items.length}건 결제 예상 금액
+                  선택 {selectedCount}건 결제 예상 금액
                 </span>
                 <span className="cart-quote-amount">
-                  <b>{fmtWon(c.total_won)}</b>
+                  <b>{fmtWon(selectedTotal)}</b>
                   <IcChevronDown size={15} />
                 </span>
               </button>
@@ -547,31 +577,39 @@ export function Cart({
               >
                 <div className="cart-quote-row">
                   <span className="muted">상품 금액</span>
-                  <span>{fmtWon(c.items_total_won)}</span>
+                  <span>{fmtWon(selectedItemsTotal)}</span>
                 </div>
                 <div className="cart-quote-row">
                   <span className="muted">배송비</span>
-                  <span>{fmtWon(c.shipping_fee_won)}</span>
+                  <span>{fmtWon(selectedShipping)}</span>
                 </div>
               </div>
             </div>
             <div className="cart-checkout-action">
-              {selectedCount < c.items.length && pendings.length === 0 && (
-                <div className="muted sm">전체 상품을 선택해야 주문할 수 있어요</div>
+              {selectedCount === 0 && pendings.length === 0 && (
+                <div className="muted sm">주문할 상품을 선택해 주세요</div>
               )}
-              {!c.can_checkout && pendings.length === 0 && (
-                <div className="muted sm">주문 불가 항목을 삭제해 주세요</div>
+              {selectedCount > 0 && !selectedPurchasable && pendings.length === 0 && (
+                <div className="muted sm">선택한 상품 중 주문할 수 없는 항목이 있어요</div>
               )}
               {pendings.length > 0 && (
                 <div className="muted sm">이전 요청 결과를 먼저 확인해 주세요</div>
               )}
               <button
                 className="btn primary"
-                aria-label={c.items.length + "건 · " + fmtWon(c.total_won) + " 주문하기"}
+                aria-label={selectedCount + "건 · " + fmtWon(selectedTotal) + " 주문하기"}
                 disabled={!canSubmit}
-                onClick={onCheckout}
+                onClick={() =>
+                  onCheckout(
+                    allSelected
+                      ? null
+                      : [...selected].filter((id) =>
+                          c.items.some((i) => i.cart_item_id === id),
+                        ),
+                  )
+                }
               >
-                {c.items.length}건 · {fmtWon(c.total_won)} 주문하기
+                {selectedCount}건 · {fmtWon(selectedTotal)} 주문하기
               </button>
             </div>
           </div>

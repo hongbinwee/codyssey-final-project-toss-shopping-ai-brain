@@ -3,8 +3,10 @@ import test from "node:test";
 import type { ProductSummary } from "../../src/contracts.ts";
 import {
   PRODUCT_SIGNALS,
+  cardMinPriceOf,
   fmtViewerCount,
   lowest30dFor,
+  minPriceOf,
   type PriceObservation,
 } from "../../src/web/display-meta.ts";
 
@@ -60,6 +62,29 @@ test("signals keep explicit source and source_name for every metric", () => {
 test("empty variant list yields no signal", () => {
   const p = { product_id: "p-d-ear-lite", matched_variants: [] } as unknown as ProductSummary;
   assert.equal(lowest30dFor(p), null);
+});
+
+// F03 — 카드 표시·찜 스냅샷 전용 nullable 헬퍼. 빈 matched_variants는
+// null을 돌려 카드가 '가격 정보 없음'으로 떨어지고 찜 스냅샷에
+// Infinity가 새지 않게 한다. 전역 minPriceOf 계약은 그대로다.
+test("cardMinPriceOf returns null for empty variants and min otherwise", () => {
+  const empty = {
+    product_id: "p-t-empty",
+    matched_variants: [],
+  } as unknown as ProductSummary;
+  assert.equal(cardMinPriceOf(empty), null);
+
+  const p = {
+    product_id: "p-t-min",
+    matched_variants: [
+      { variant_id: "v1", unit_price_won: 12000 },
+      { variant_id: "v2", unit_price_won: 9000 },
+    ],
+  } as unknown as ProductSummary;
+  assert.equal(cardMinPriceOf(p), 9000);
+
+  // 전역 계약 보존 — 기존 호출부는 빈 배열에서도 여전히 Infinity를 받는다
+  assert.equal(minPriceOf(empty), Infinity);
 });
 
 // 최저가 variant에 이력이 없으면 보수적으로 숨긴다(다른 variant의 최저가를

@@ -55,6 +55,16 @@ export const IcStar = ({ size = 13, className }: P) => (
 export const IcUser = (p: P) => (
   <Svg {...p}><circle cx="12" cy="8" r="3.6" /><path d="M5 20.2c1.4-3.8 4-5.7 7-5.7s5.6 1.9 7 5.7" /></Svg>
 );
+// 찜 하트 — 범용 라인 아이콘(토스 고유 아이콘 복제 아님) [PMQA-070].
+export const IcHeart = (p: P) => (
+  <Svg {...p}><path d="M12 20.2C6.9 15.9 3.6 12.4 3.6 8.8 3.6 6.1 5.8 4.2 8.3 4.2c1.5 0 2.8.7 3.7 1.9.9-1.2 2.2-1.9 3.7-1.9 2.5 0 4.7 1.9 4.7 4.6 0 3.6-3.3 7.1-8.4 11.4Z" /></Svg>
+);
+// 채움 하트 — 저장 확정 상태만 표시한다(낙관적 채움 금지).
+export const IcHeartFill = ({ size = 22, className }: P) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
+    <path d="M12 20.2C6.9 15.9 3.6 12.4 3.6 8.8 3.6 6.1 5.8 4.2 8.3 4.2c1.5 0 2.8.7 3.7 1.9.9-1.2 2.2-1.9 3.7-1.9 2.5 0 4.7 1.9 4.7 4.6 0 3.6-3.3 7.1-8.4 11.4Z" />
+  </svg>
+);
 export const IcChevronRight = (p: P) => <Svg {...p}><polyline points="9 5.5 16.5 12 9 18.5" /></Svg>;
 export const IcGrid = (p: P) => (
   <Svg {...p}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></Svg>
@@ -81,6 +91,11 @@ export const IcShirt = (p: P) => (
 // 04-D 하단 네비 '전체' 탭 — 범용 메뉴 라인 아이콘 [Project]
 export const IcMenu = (p: P) => (
   <Svg {...p}><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></Svg>
+);
+
+// 검색 결과 '필터' 칩 아이콘 — 슬라이더형 범용 라인 아이콘 [Project]
+export const IcFilter = (p: P) => (
+  <Svg {...p}><line x1="4" y1="8" x2="20" y2="8" /><line x1="4" y1="16" x2="20" y2="16" /><circle cx="9.5" cy="8" r="2.2" /><circle cx="14.5" cy="16" r="2.2" /></Svg>
 );
 
 // 04-D 선택된 '쇼핑' 탭 채움 아이콘 — Reference의 filled bag 상태 대응 [Observed→Project].

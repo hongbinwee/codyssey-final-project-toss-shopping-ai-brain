@@ -1,39 +1,91 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { apiSafe } from "./api.ts";
-import type { CartView } from "../contracts.ts";
+import type { CartView, CheckoutTarget } from "../contracts.ts";
 import { bindPendingUser } from "./pending.ts";
+import { visibleCart, type OwnedCart } from "./cart-scope.ts";
 import { Shopping } from "./screens/Shopping.tsx";
 import { Search } from "./screens/Search.tsx";
 import { Product } from "./screens/Product.tsx";
+import { Reviews } from "./screens/Reviews.tsx";
 import { Cart } from "./screens/Cart.tsx";
 import { Checkout } from "./screens/Checkout.tsx";
 import { OrderComplete } from "./screens/OrderComplete.tsx";
 import { Orders } from "./screens/Orders.tsx";
 import { OrderDetail } from "./screens/OrderDetail.tsx";
+import { Recent } from "./screens/Recent.tsx";
+import { MyShop } from "./screens/MyShop.tsx";
 import { AgentPanel, type AgentReply } from "./components/AgentPanel.tsx";
 import type { AgentBrain } from "./api.ts";
-import { IcBack, IcBagFill, IcCart, IcHome, IcMenu, IcReceipt, IcSearch, IcSparkle, IcTag, IcUser } from "./icons.tsx";
+import { IcBack, IcBagFill, IcCart, IcChevronDown, IcHome, IcMenu, IcReceipt, IcSearch, IcSparkle, IcTag, IcUser } from "./icons.tsx";
+import { CONTENT_TABS, groupLabel, groupOf } from "./display-meta.ts";
 
 type Route =
   | { name: "shop"; category: string; sub: string }
   | { name: "search"; query: string }
   | { name: "product"; id: string }
+  | { name: "reviews"; id: string }
   | { name: "cart" }
-  | { name: "checkout" }
+  // target 없음 = 전체 카트(legacy), INVALID = 파싱 실패(견적 미발급) [PMQA-067]
+  | { name: "checkout"; target?: CheckoutTarget | { kind: "INVALID" } }
   | { name: "orders" }
   | { name: "order"; id: string; focus?: "shipping" }
-  | { name: "orderComplete"; id: string };
+  | { name: "orderComplete"; id: string }
+  // tab='wish'는 준비중 찜 표면의 단일 진입 — Cart/MyShop의 찜 진입도
+  // 이 경로로 모아 준비중 상태가 두 곳에 갈리지 않게 한다 [C/069]
+  | { name: "recent"; tab?: "wish" }
+  | { name: "myshop" };
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#/, "");
   const [path, qs] = h.split("?");
   const params = new URLSearchParams(qs ?? "");
   if (path === "/search") return { name: "search", query: params.get("q") ?? "" };
+  // '/p/:id/reviews'는 '/p/' 접두 매칭보다 먼저 파싱한다 [F07 전체 리뷰].
+  if (path.startsWith("/p/") && path.endsWith("/reviews"))
+    return { name: "reviews", id: decodeURIComponent(path.slice(3, -8)) };
   if (path.startsWith("/p/")) return { name: "product", id: decodeURIComponent(path.slice(3)) };
   if (path === "/cart") return { name: "cart" };
-  if (path === "/checkout") return { name: "checkout" };
+  if (path === "/checkout") {
+    // 구매 대상 파라미터 — src=sel(선택 주문)·src=direct(바로 구매) [PMQA-067].
+    const src = params.get("src");
+    if (src === "sel") {
+      const ids = (params.get("items") ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return {
+        name: "checkout",
+        target: ids.length ? { kind: "CART_SELECTED", cart_item_ids: ids } : { kind: "INVALID" },
+      };
+    }
+    if (src === "direct") {
+      const v = params.get("v") ?? "";
+      const qty = Number(params.get("q"));
+      if (v && Number.isInteger(qty) && qty > 0)
+        return {
+          name: "checkout",
+          target: {
+            kind: "DIRECT",
+            variant_id: v,
+            quantity: qty,
+            product_id: params.get("p") ?? undefined,
+          },
+        };
+      return { name: "checkout", target: { kind: "INVALID" } };
+    }
+    // src 없음 = 명시적 전체 카트(legacy). 알 수 없는 src는 INVALID — 잘못된
+    // 대상을 전체 카트로 대체하지 않는다.
+    if (src) return { name: "checkout", target: { kind: "INVALID" } };
+    return { name: "checkout" };
+  }
   if (path === "/orders") return { name: "orders" };
+  if (path === "/recent")
+    return {
+      name: "recent",
+      tab: params.get("tab") === "wish" ? "wish" : undefined,
+    };
+  if (path === "/myshop") return { name: "myshop" };
   // '/orders/:id/complete'는 '/orders/' 접두 매칭보다 먼저 파싱한다.
   if (path.startsWith("/orders/") && path.endsWith("/complete"))
     return { name: "orderComplete", id: decodeURIComponent(path.slice(8, -9)) };
@@ -61,9 +113,20 @@ const markCurrent = (internal: boolean) =>
 const toHash = (r: Route) =>
   r.name === "search" ? "#/search" + (r.query ? "?q=" + encodeURIComponent(r.query) : "")
   : r.name === "product" ? "#/p/" + encodeURIComponent(r.id)
+  : r.name === "reviews" ? "#/p/" + encodeURIComponent(r.id) + "/reviews"
   : r.name === "cart" ? "#/cart"
-  : r.name === "checkout" ? "#/checkout"
+  : r.name === "checkout"
+    ? "#/checkout" +
+      (r.target?.kind === "CART_SELECTED"
+        ? "?src=sel&items=" + encodeURIComponent(r.target.cart_item_ids.join(","))
+        : r.target?.kind === "DIRECT"
+          ? "?src=direct&v=" + encodeURIComponent(r.target.variant_id) +
+            "&q=" + r.target.quantity +
+            (r.target.product_id ? "&p=" + encodeURIComponent(r.target.product_id) : "")
+          : r.target?.kind === "INVALID" ? "?src=invalid" : "")
   : r.name === "orders" ? "#/orders"
+  : r.name === "recent" ? "#/recent" + (r.tab === "wish" ? "?tab=wish" : "")
+  : r.name === "myshop" ? "#/myshop"
   : r.name === "orderComplete" ? "#/orders/" + encodeURIComponent(r.id) + "/complete"
   : r.name === "order" ? "#/orders/" + encodeURIComponent(r.id) + (r.focus === "shipping" ? "/shipping" : "")
   : "#/" + (r.category
@@ -121,7 +184,7 @@ function Login({ onLogin }: { onLogin: (id: string, name: string) => void }) {
 // 자체 고정 CTA(.bottom-bar)가 있어 겹치지 않게 한다.
 const NAV_ROUTES = new Set(["shop"]);
 // 뒤로가기 바를 붙이는 푸시 화면
-const BACK_ROUTES = new Set(["cart", "checkout", "orders", "order", "orderComplete"]);
+const BACK_ROUTES = new Set(["cart", "checkout", "orders", "order", "orderComplete", "recent", "myshop"]);
 
 // 내부 이동 이력이 없을 때 뒤로가기 fallback 목적지 [Project]
 const BACK_PARENT: Record<string, Route> = {
@@ -131,6 +194,9 @@ const BACK_PARENT: Record<string, Route> = {
   orders: { name: "shop", category: "", sub: "" },
   order: { name: "orders" },
   orderComplete: { name: "shop", category: "", sub: "" },
+  // 최근본은 내 쇼핑에서 진입한다 — 직접 해시 진입의 뒤로가기 fallback [C/069]
+  recent: { name: "myshop" },
+  myshop: { name: "shop", category: "", sub: "" },
 };
 
 function App() {
@@ -144,7 +210,7 @@ function App() {
     shopping: [],
     cs: [],
   });
-  const [cart, setCart] = useState<CartView | null>(null);
+  const [cartState, setCartState] = useState<OwnedCart | null>(null);
   const [search, setSearch] = useState("");
   // 쇼핑 홈 스크롤 시 검색 필드가 사라지고 플로팅 아이콘만 남는다 [Observed home/02]
   const [miniTop, setMiniTop] = useState(false);
@@ -213,43 +279,89 @@ function App() {
     bindPendingUser(userId);
   }, [userId]);
 
+  // 카트는 actor 소유 상태다 [069 MAJOR-2/069-06 정정] — 스냅샷을
+  // {owner, view}로 보관하고 렌더 시점 owner 필터로만 자식·배지에 노출해
+  // 첫 렌더에도 이전 actor 카트가 새지 않는다. userIdRef는 effect가 아니라
+  // 렌더에서 즉시 갱신해 늦은 callback의 owner 비교가 현재 actor를 본다.
+  const userIdRef = useRef<string | null>(userId);
+  userIdRef.current = userId;
   const cartReadSeq = useRef(0);
   const refreshCart = useCallback(() => {
-    // read 레이스 가드 — 자식이 쓰기 결과를 먼저 적용한 뒤 늦게 도착한 이전
-    // GET이 배지·합계를 과거 상태로 덮지 않는다.
+    const owner = userIdRef.current;
     const my = ++cartReadSeq.current;
     apiSafe<CartView>("/api/cart").then(
-      (r) => r.ok && cartReadSeq.current === my && setCart(r.data),
+      (r) =>
+        r.ok &&
+        cartReadSeq.current === my &&
+        userIdRef.current === owner &&
+        setCartState({ owner, v: r.data }),
     );
   }, []);
-  // 자식 화면이 직접 확정한 최신 CartView 적용 — 진행 중인 read를 무효화한다.
-  const applyCart = useCallback((v: CartView) => {
+  // 자식 화면이 직접 확정한 최신 CartView 적용 — owner는 호출 시점의 actor.
+  const applyCart = useCallback((v: CartView, owner: string | null) => {
+    if (userIdRef.current !== owner) return; // 다른 계정 세대의 결과 차단
     cartReadSeq.current++;
-    setCart(v);
+    setCartState({ owner, v });
   }, []);
-  useEffect(() => { if (user) refreshCart(); }, [user, refreshCart]);
+  useEffect(() => {
+    cartReadSeq.current++; // 진행 중 이전 actor read 무효화
+    setCartState(null);    // 이전 actor 카트 스냅샷 제거(첫 렌더는 owner 필터가 차단)
+    if (userId) refreshCart();
+  }, [userId, refreshCart]);
+
+  // 렌더 시점 owner 필터 — 스냅샷의 owner가 현재 actor와 다르면 어떤
+  // 자식·배지에도 이전 계정 카트를 노출하지 않는다 [069-06].
+  const cart = visibleCart(cartState, userId);
 
   if (!checked) return null;
   if (!user) return <Login onLogin={(id, name) => { setUserId(id); setUser(name); }} />;
 
   const pageContext = {
     screen: route.name,
-    product_id: route.name === "product" ? route.id : undefined,
+    product_id: route.name === "product" || route.name === "reviews" ? route.id : undefined,
     order_id: route.name === "order" ? route.id : undefined,
   };
   const cartCount = cart?.items.length ?? 0;
   const showNav = NAV_ROUTES.has(route.name);
   // 쇼핑/검색 화면은 Toss 기준 좁은 좌우 여백을 쓴다 [Observed ~10px]
   const shopPad = route.name === "shop" || route.name === "search";
+  // 리스트 뷰(그룹/서브카테고리)는 글로벌 검색 헤더 대신 전용 헤더를 쓴다
+  // [Observed 100 / F31]. Shopping의 view 판정과 같은 조건을 미러한다.
+  const shopList =
+    route.name === "shop" &&
+    !!route.category &&
+    route.category !== "sale" &&
+    route.category !== "season" &&
+    route.category !== "category" &&
+    (!!route.sub || !CONTENT_TABS.has(groupOf(route.category)));
   const goBack = () => {
     const st = history.state as { internal?: number } | null;
     if (st?.internal) history.back();
-    else gotoReplace(BACK_PARENT[route.name]);
+    else {
+      // 전체 리뷰는 내부 이력이 없을 때 같은 상품 상세로 되돌린다 [F07].
+      // 바로 구매 주문서는 출발 상품 상세로 되돌린다 — 카트를 거치지 않는
+      // DIRECT 흐름이므로 cart fallback이 아니다 [PMQA-067].
+      const parent =
+        route.name === "reviews"
+          ? { name: "product" as const, id: route.id }
+          : route.name === "checkout" &&
+              route.target?.kind === "DIRECT" &&
+              route.target.product_id
+            ? { name: "product" as const, id: route.target.product_id }
+            // 리스트 뷰 직접 진입 fallback — 서브는 그룹 리스트/홈으로,
+            // 그룹 최상위는 카테고리 브라우저로 올라간다 [Project]
+            : route.name === "shop"
+              ? route.sub
+                ? { name: "shop" as const, category: route.category, sub: "" }
+                : { name: "shop" as const, category: "category", sub: "" }
+            : BACK_PARENT[route.name];
+      gotoReplace(parent);
+    }
   };
 
   return (
     <div className={"shell" + (showNav ? " has-nav" : "") + (shopPad ? " shop-pad" : "")}>
-      {route.name === "shop" && (
+      {route.name === "shop" && !shopList && (
         <header className={"top" + (miniTop ? " mini" : "")}>
           <form
             className="search-field"
@@ -268,7 +380,7 @@ function App() {
           <button
             className="icon-btn"
             aria-label="내 쇼핑"
-            onClick={() => goto({ name: "orders" })}
+            onClick={() => goto({ name: "myshop" })}
           >
             <IcUser size={23} />
           </button>
@@ -282,7 +394,39 @@ function App() {
           </button>
         </header>
       )}
-      {route.name === "shop" && miniTop && (
+      {/* 리스트 뷰 전용 헤더 — ← · 그룹명▾ · 검색 · 장바구니 [Observed 100].
+          그룹명 chevron의 실제 동작은 미관측이라 카테고리 브라우저 진입으로 둔다 [Project] */}
+      {route.name === "shop" && shopList && (
+        <header className="list-head">
+          <button className="icon-btn" aria-label="뒤로가기" onClick={goBack}>
+            <IcBack size={24} />
+          </button>
+          <button
+            className="list-title"
+            onClick={() => goto({ name: "shop", category: "category", sub: "" })}
+          >
+            {groupLabel(groupOf(route.category))}
+            <IcChevronDown size={16} />
+          </button>
+          <span className="list-spacer" />
+          <button
+            className="icon-btn"
+            aria-label="검색"
+            onClick={() => goto({ name: "search", query: "" })}
+          >
+            <IcSearch size={23} />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="장바구니"
+            onClick={() => goto({ name: "cart" })}
+          >
+            <IcCart size={23} />
+            {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+          </button>
+        </header>
+      )}
+      {route.name === "shop" && miniTop && !shopList && (
         <div className="float-nav">
           <button
             className="float-btn"
@@ -322,6 +466,8 @@ function App() {
             onOpenProduct={(id) => goto({ name: "product", id })}
             onOpenOrders={() => goto({ name: "orders" })}
             onOpenCart={() => goto({ name: "cart" })}
+            userId={userId}
+            onOpenWish={() => goto({ name: "recent", tab: "wish" })}
           />
         )}
         {route.name === "search" && (
@@ -332,31 +478,62 @@ function App() {
             onOpenProduct={(id) => goto({ name: "product", id })}
             cartCount={cartCount}
             onOpenCart={() => goto({ name: "cart" })}
+            userId={userId}
+            onOpenWish={() => goto({ name: "recent", tab: "wish" })}
           />
         )}
         {route.name === "product" && (
           <Product
-            key={route.id}
+            // 계정 전환 시 재마운트 — 진행 중 detail 응답·최근본 기록이
+            // 이전 actor 세대로 남지 않게 cleanup이 세대를 무효화한다 [C/069]
+            key={userId + ":" + route.id}
             productId={route.id}
+            userId={userId}
             onBack={goBack}
             onOpenSearch={() => goto({ name: "search", query: "" })}
             onOpenCart={() => goto({ name: "cart" })}
-            onCartChanged={applyCart}
+            onOpenReviews={() => goto({ name: "reviews", id: route.id })}
+            onCartChanged={(v) => applyCart(v, userId)}
             cartCount={cartCount}
+            onOpenWish={() => goto({ name: "recent", tab: "wish" })}
+            onBuyNow={(t) =>
+              goto({
+                name: "checkout",
+                target: {
+                  kind: "DIRECT",
+                  variant_id: t.variant_id,
+                  quantity: t.quantity,
+                  product_id: route.name === "product" ? route.id : undefined,
+                },
+              })
+            }
           />
+        )}
+        {route.name === "reviews" && (
+          <Reviews key={route.id} productId={route.id} onBack={goBack} />
         )}
         {route.name === "cart" && (
           <Cart
+            // actor별 재마운트 — 진행 중 카트 작업·선택 상태가 다른 계정에
+            // 남지 않게 한다 [069 MAJOR-2 정정].
+            key={userId}
             cart={cart}
-            onCartLoaded={applyCart}
-            onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
-            onCheckout={() => goto({ name: "checkout" })}
+            onCartLoaded={(v) => applyCart(v, userId)}
+            onCheckout={(ids) =>
+              goto(
+                ids
+                  ? { name: "checkout", target: { kind: "CART_SELECTED", cart_item_ids: ids } }
+                  : { name: "checkout" },
+              )
+            }
             onOpenProduct={(id) => goto({ name: "product", id })}
-            onOpenOrders={() => goto({ name: "orders" })}
+            onOpenRecent={() => goto({ name: "recent" })}
+            onOpenWish={() => goto({ name: "recent", tab: "wish" })}
           />
         )}
         {route.name === "checkout" && (
           <Checkout
+            target={route.target}
             onOpenComplete={(id) => {
               // 결제 확정으로 서버 카트가 비워졌다 — 성공·pending 복구·재시도가
               // 공유하는 완료 진입점에서 읽기 갱신(seq 가드)해 홈 복귀 시
@@ -376,6 +553,7 @@ function App() {
         )}
         {route.name === "orders" && (
           <Orders
+            key={userId}
             onOpenOrder={(id) => goto({ name: "order", id })}
             onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
             onOpenShipping={(id) => goto({ name: "order", id, focus: "shipping" })}
@@ -387,6 +565,36 @@ function App() {
             focus={route.focus}
             onBack={() => goto({ name: "orders" })}
             onOpenProduct={(id) => goto({ name: "product", id })}
+          />
+        )}
+        {route.name === "recent" && (
+          <Recent
+            key={userId}
+            userId={userId}
+            // 탭은 route 소유 상태 — 선택과 URL이 항상 일치한다 [069 MAJOR-1].
+            tab={route.tab === "wish" ? "wish" : "recent"}
+            onSelectTab={(t) =>
+              gotoReplace({
+                name: "recent",
+                tab: t === "wish" ? "wish" : undefined,
+              })
+            }
+            cartCount={cartCount}
+            onOpenCart={() => goto({ name: "cart" })}
+            onOpenProduct={(id) => goto({ name: "product", id })}
+            onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
+          />
+        )}
+        {route.name === "myshop" && (
+          <MyShop
+            key={userId}
+            userId={userId}
+            onOpenRecent={() => goto({ name: "recent" })}
+            onOpenWish={() => goto({ name: "recent", tab: "wish" })}
+            onOpenOrders={() => goto({ name: "orders" })}
+            onOpenOrder={(id) => goto({ name: "order", id })}
+            onOpenProduct={(id) => goto({ name: "product", id })}
+            onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
           />
         )}
       </main>
@@ -416,8 +624,14 @@ function App() {
             {/* 선택 상태는 채움 아이콘 — Reference의 filled bag [Observed→Project] */}
             {route.name === "shop" ? <IcBagFill size={22} /> : <IcCart size={22} />}쇼핑
           </button>
-          <button className="nav-item" onClick={() => setAgentOpen("shopping")}>
-            <IcSparkle size={22} />AI
+          {/* F22 — Brain 미배포. 진입점은 '준비중'으로 명시하고 열지 않는다.
+              패널 send도 agent-gate fail-closed라 우회 실행이 없다 [C/069] */}
+          <button
+            className="nav-item"
+            disabled
+            title="AI 쇼핑 도우미는 아직 준비 중이에요"
+          >
+            <IcSparkle size={22} />AI<span className="nav-soon">준비중</span>
           </button>
           <button
             ref={allBtnRef}
@@ -441,16 +655,18 @@ function App() {
             <div className="sheet-grabber" />
             {(
               [
-                { icon: IcReceipt, label: "내 쇼핑", run: () => goto({ name: "orders" }) },
+                { icon: IcReceipt, label: "내 쇼핑", run: () => goto({ name: "myshop" }) },
                 { icon: IcCart, label: "장바구니", run: () => goto({ name: "cart" }) },
                 { icon: IcSearch, label: "검색", run: () => goto({ name: "search", query: "" }) },
-                { icon: IcSparkle, label: "AI 쇼핑 도우미", run: () => setAgentOpen("shopping") },
+                { icon: IcSparkle, label: "AI 쇼핑 도우미", run: () => setAgentOpen("shopping"), soon: true },
               ] as const
             ).map((m) => (
               <button
                 key={m.label}
                 className="menu-item"
                 role="menuitem"
+                disabled={"soon" in m && m.soon}
+                title={"soon" in m && m.soon ? "AI 쇼핑 도우미는 아직 준비 중이에요" : undefined}
                 onClick={() => {
                   setMenuOpen(false);
                   m.run();
@@ -458,6 +674,9 @@ function App() {
               >
                 <m.icon size={20} />
                 {m.label}
+                {"soon" in m && m.soon && (
+                  <span className="menu-soon">준비중</span>
+                )}
               </button>
             ))}
           </div>

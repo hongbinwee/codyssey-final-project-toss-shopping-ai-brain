@@ -1,11 +1,24 @@
 import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { ensureTestDb, TEST_DB_URL } from "../helpers/testdb.ts";
+import {
+  ensureTestDb,
+  isolatedContractFromEnv,
+  TEST_DB_URL,
+} from "../helpers/testdb.ts";
+import { buildIsolatedChildEnv } from "../helpers/isolated-db.ts";
 import { sql } from "../../src/db.ts";
 
 const PORT = 3997;
 let proc: ChildProcess | undefined;
+
+function serverEnv(extra: Record<string, string>) {
+  if (!isolatedContractFromEnv())
+    return { ...process.env, DATABASE_URL: TEST_DB_URL, ...extra };
+  const child = buildIsolatedChildEnv(process.env);
+  if (!child.ok) throw new Error("isolated server env 거부: " + child.reason);
+  return { ...child.env, ...extra };
+}
 
 async function waitUp() {
   for (let i = 0; i < 80; i++) {
@@ -23,12 +36,10 @@ describe("session api", () => {
   test("code -> cookie -> scoped cart; spoofed actor ignored", async () => {
     await ensureTestDb(1);
     proc = spawn("node", ["src/server.ts"], {
-      env: {
-        ...process.env,
+      env: serverEnv({
         PORT: String(PORT),
-        DATABASE_URL: TEST_DB_URL,
         TEST_USER_CODES: "it-a=u-a,it-b=u-b",
-      },
+      }),
       stdio: "ignore",
     });
     await waitUp();

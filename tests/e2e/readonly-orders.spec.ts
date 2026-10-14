@@ -219,9 +219,10 @@ test.describe("[real] 06B 목록·상세 — 실데이터", () => {
     await expect(page.getByText("모의 결제 152,000원")).toBeVisible();   // '일시불' 문구 없음
     // IN_TRANSIT → 서버 cancel_eligible=false — 취소 CTA 미노출 [PMQA-06B-053].
     await expect(page.getByRole("button", { name: "취소하기" })).toHaveCount(0);
-    // CS Brain 미구축 — 카드·하단 문의 CTA 모두 비활성 '준비 중' [MJ053-2].
+    // CS Brain 미구축 — 문의 CTA는 카드 내 비활성 '준비 중' 하나만 노출한다.
+    // 하단 고정바의 중복 AI CTA는 제거됐다 [PMQA-075 F14 · Ref080/084].
     const askBtns = page.getByRole("button", { name: "AI 주문 문의 · 준비 중" });
-    await expect(askBtns).toHaveCount(2);
+    await expect(askBtns).toHaveCount(1);
     for (const b of await askBtns.all()) await expect(b).toBeDisabled();
     await expect(askBtns.first()).toHaveAttribute("title", "AI 주문 문의 기능은 아직 준비 중이에요");
     // 키보드 실측 — disabled CTA는 포커스되지 않는다(focus() 시도 + Tab 순회 모두).
@@ -232,7 +233,6 @@ test.describe("[real] 06B 목록·상세 — 실데이터", () => {
     for (let i = 0; i < 20; i++) {
       await page.keyboard.press("Tab");
       await expect(askBtns.first()).not.toBeFocused();
-      await expect(askBtns.nth(1)).not.toBeFocused();
     }
     // 합성 click은 이벤트 전달 시도일 뿐 — 활성화 불가는 위 focus/Tab 실측이 단정한다.
     await askBtns.first().dispatchEvent("click");
@@ -361,7 +361,9 @@ test.describe("[real] 06B 목록·상세 — 실데이터", () => {
     await openOrders(page);
     await page.locator('.order-card[data-order-id="ord-a-pre"] .order-item-body').click();
     await page.getByRole("button", { name: "취소하기" }).click();
-    await expect(page.getByText("전체 상품이 취소돼요")).toBeVisible();
+    // 시트는 자격→사유 form 단계로 진입한다 — '전체 상품이 취소돼요'는 최종
+    // confirm 단계 문구라 form 직후엔 없다. 현재 form의 heading으로 진입을 단정한다 [PM060].
+    await expect(page.getByRole("heading", { name: "취소하는 이유는 무엇인가요?" })).toBeVisible();
     // 사유 선택 → cancel/quote GET은 allowlist 밖 — 서버 도달 전 차단이 관측된다
     await page.getByText("단순 변심이에요").click();
     await expect.poll(() => blocked.some((u) => u.includes("/cancel/quote"))).toBe(true);

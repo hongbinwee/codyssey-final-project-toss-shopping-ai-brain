@@ -1,9 +1,15 @@
 import { defineConfig } from "@playwright/test";
+import "./src/config.ts";
 import { assertEntryRunnable } from "./tests/helpers/pw-config-gate.ts";
+import { databaseUrlForName } from "./src/db-url.ts";
 
 // PMQA-055: 이 config는 globalSetup reseed·실DB 경로 — 지원 미완 입구이므로
 // 설정 평가 단계에서 거부된다(webServer·globalSetup·DB 시작 전).
 assertEntryRunnable("playwright.config.ts");
+
+const baseDatabaseUrl = process.env.DATABASE_URL;
+if (!baseDatabaseUrl) throw new Error("DATABASE_URL is required");
+const testDatabaseUrl = databaseUrlForName("commerce_test", baseDatabaseUrl);
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -25,7 +31,7 @@ export default defineConfig({
     env: {
       ...process.env,
       PORT: "3101",
-      DATABASE_URL: "postgres://commerce:commerce@localhost:5432/commerce_test",
+      DATABASE_URL: testDatabaseUrl,
       TEST_USER_CODES: "e2e-a=u-a,e2e-b=u-b,e2e-c=u-c,e2e-d=u-d",
       LLM_PROVIDER: "stub",
       CI: "1",

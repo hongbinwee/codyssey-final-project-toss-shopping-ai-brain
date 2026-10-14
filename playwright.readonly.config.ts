@@ -7,10 +7,12 @@
 // listen한다. 실행 산출물은 RO_RUN_ID 전용 디렉터리에만 쓴다 — 이 파일을
 // RO_RUN_ID 없이 직접 실행하면 기존 evidence 덮어쓰기 방지로 시작부터 거부한다.
 import { defineConfig } from "@playwright/test";
+import "./src/config.ts";
 import { join } from "node:path";
 import { assertRunAccess } from "./tests/e2e/readonly-guard.ts";
 import { assertEntryRunnable } from "./tests/helpers/pw-config-gate.ts";
 import { assertNoPwOverrides } from "./tests/helpers/evidence-broker.ts";
+import { databaseUrlForName } from "./src/db-url.ts";
 
 // PMQA-055/056: 상속 output/reporter override 차단 → entry gate.
 // 부모 runner 형태 "-c playwright.readonly.config.ts"만 허용한다.
@@ -20,6 +22,10 @@ assertNoPwOverrides({
   allowedConfig: "playwright.readonly.config.ts",
 });
 assertEntryRunnable("playwright.readonly.config.ts");
+
+const baseDatabaseUrl = process.env.DATABASE_URL;
+if (!baseDatabaseUrl) throw new Error("DATABASE_URL is required");
+const testDatabaseUrl = databaseUrlForName("commerce_test", baseDatabaseUrl);
 
 const RUN_ID = process.env.RO_RUN_ID ?? "";
 if (!/^[0-9a-f-]{36}$/.test(RUN_ID))
@@ -62,7 +68,7 @@ export default defineConfig({
     env: {
       ...process.env,
       PORT: "3102",
-      DATABASE_URL: "postgres://commerce:commerce@localhost:5432/commerce_test",
+      DATABASE_URL: testDatabaseUrl,
       TEST_USER_CODES: "e2e-a=u-a,e2e-b=u-b,e2e-c=u-c,e2e-d=u-d",
       // 명시적 stub — live provider 기동·외부 LLM 전송 없음.
       LLM_PROVIDER: "stub",

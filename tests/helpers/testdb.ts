@@ -19,27 +19,60 @@
 //   읽지 못하면 seed 주문 보호가 없어지므로 DELETE 0건으로 throw한다.
 import { spawnSync } from "node:child_process";
 import postgres from "postgres";
+import "../../src/config.ts";
+import { databaseUrlForName } from "../../src/db-url.ts";
 import { connectDb, sql } from "../../src/db.ts";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { requiredMigrations } from "../../scripts/migrations-manifest.ts";
+import {
+  isolatedEnvTouched,
+  planIsolatedConnect,
+  verifyOwnedExec,
+  verifyOwnedTransaction,
+  type IsolatedContract,
+} from "./isolated-db.ts";
+import { prepareIsolatedDb } from "./isolated-prepare.ts";
 
 export const TEST_DB = "commerce_test";
-export const TEST_DB_URL =
-  "postgres://commerce:commerce@localhost:5432/" + TEST_DB;
+export const TEST_DB_URL = process.env.DATABASE_URL
+  ? databaseUrlForName(TEST_DB, process.env.DATABASE_URL)
+  : "";
+
+function configuredTestDbUrl(): string {
+  if (!process.env.DATABASE_URL)
+    throw new Error("DATABASE_URL is required; no test database fallback is allowed");
+  return databaseUrlForName(TEST_DB, process.env.DATABASE_URL);
+}
 
 type Exec = {
   unsafe: <T = Record<string, unknown>[]>(
     q: string,
     p?: unknown[],
   ) => Promise<T>;
+  begin?: <T>(fn: (q: Exec) => Promise<T>) => Promise<T>;
 };
+
+// 격리 관련 env가 조금이라도 보이면 legacy commerce_test fallback을 막는다.
+// 전체 contract와 같은 DATABASE_URL만 허용하며, 접속 후 같은 풀에서
+// verifyOwnedExec가 name/OID/owner/marker를 다시 측정한다.
+export function isolatedContractFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): IsolatedContract | null {
+  if (!isolatedEnvTouched(env)) return null;
+  const plan = planIsolatedConnect(env);
+  if (!plan.ok) throw new Error("isolated test DB 거부: " + plan.reason);
+  if (env.DATABASE_URL !== undefined && env.DATABASE_URL !== plan.contract.dbUrl)
+    throw new Error("isolated test DB 거부: DATABASE_URL이 contract와 다름");
+  return plan.contract;
+}
 
 // query가 있는 DATABASE_URL은 시작 전 거부한다 — ?database= 우회나
 // 옵션이 조용히 무시되는 혼동을 둘 다 막는다.
 export function assertSafeDbUrl(url: string): void {
   if (url.includes("?"))
     throw new Error(
-      "DATABASE_URL query 금지 — ?database= 우회/무시 혼동 방지: " + url,
+      "DATABASE_URL query 금지 — ?database= 우회/무시 혼동 방지",
     );
 }
 
@@ -79,22 +112,10 @@ export async function assertExecTargetsTestDb(exec: Exec): Promise<void> {
     );
 }
 
-// scripts/migrate.ts의 PHASE_MIGRATIONS와 같은 내용 — 스크립트는 top-level
-// 부작용이라 import할 수 없어 명시적으로 복제한다. migration 추가 시 함께 갱신.
-const PHASE_MIGRATIONS: Record<number, string[]> = {
-  0: [],
-  1: ["001_catalog_cart_actions.sql"],
-  2: [],
-  3: ["002_orders_payments_shipments.sql"],
-  4: ["003_cancel_requests.sql"],
-  5: [],
-};
-
-function requiredMigrations(phase: number): string[] {
-  return Object.entries(PHASE_MIGRATIONS)
-    .filter(([p]) => Number(p) <= phase)
-    .flatMap(([, files]) => files);
-}
+// phase→migration 매핑의 정본은 scripts/migrations-manifest.ts다 —
+// top-level DB 부작용이 없는 순수 모듈이라 직접 재사용한다. 복제본은
+// phase6(004_wishlist_items.sql)이 빠져 setupTestDb(6)가 004 미적용 DB를
+// schemaSatisfied로 오인해 seed까지 진행할 수 있었다 [PMQA-070 독립 검수].
 
 // _migrations에 필요 파일이 디스크 sha256과 일치한 채 있으면 migrate 불요.
 // 테이블 부재·행 부족·sha 불일치는 false → migrate가 fail closed로 판단한다.
@@ -148,12 +169,26 @@ function defaultLoadSeedIds(): string[] {
 }
 
 export async function setupTestDb(phase = 1) {
+  const isolated = isolatedContractFromEnv();
+  if (isolated) {
+    if (!Number.isSafeInteger(phase) || phase < 1 || phase > 6)
+      throw new Error("isolated test DB 거부: phase는 1~6만 허용");
+    // 격리 suite는 매 integration file 진입 시 base fixture를 다시 고정한다.
+    // phase 6만 004 wishlist를 포함하고, phase 1~5 호출은 canonical phase 4.
+    await prepareIsolatedDb(
+      process.env,
+      {},
+      { phase: phase === 6 ? 6 : 4 },
+    );
+    return;
+  }
   // 1) 대상 실측 — commerce_test가 아니면 이후 어떤 write도 없다.
   //    CREATE DATABASE/catchall 없음: 없는 DB면 connect 자체가 실패한다.
-  await assertUrlTargetsTestDb(TEST_DB_URL);
+  const testDbUrl = configuredTestDbUrl();
+  await assertUrlTargetsTestDb(testDbUrl);
   // 2) 필요 스키마 사전 조회 — 이미 충족이면 migrate를 실행하지 않는다.
   //    확인은 commerce_test를 가리키는 같은 URL의 연결에서 한다.
-  const check = postgres(TEST_DB_URL, { max: 1 });
+  const check = postgres(testDbUrl, { max: 1 });
   let migrateNeeded: boolean;
   try {
     const [r] = await check.unsafe<{ d: string }[]>(
@@ -176,22 +211,34 @@ export async function setupTestDb(phase = 1) {
   const steps: string[][] = [["scripts/seed.ts", "--phase=" + phase]];
   for (const s of steps) {
     const r = spawnSync("node", s, {
-      env: { ...process.env, DATABASE_URL: TEST_DB_URL },
+      env: { ...process.env, DATABASE_URL: testDbUrl },
       stdio: "pipe",
     });
     if (r.status !== 0)
-      throw new Error("setup failed: " + s.join(" ") + "\n" + r.stderr);
+      throw new Error("setup failed: " + s.join(" ") + " (exit " + r.status + ")");
   }
 }
 
 export async function ensureTestDb(phase = 1) {
+  const isolated = isolatedContractFromEnv();
   await setupTestDb(phase);
   // 같은 워커에서 suite마다 다시 호출될 때 이전 pool을 닫지 않으면
   // connectDb가 전역 sql을 덮어쓰면서 첫 pool이 누수되고 워커가 종료되지 못한다.
   if (sql) await sql.end();
-  connectDb(TEST_DB_URL);
-  // 새 풀의 실제 대상도 확인 — 이후 어떤 테스트 write도 이 검증 뒤다.
-  await assertExecTargetsTestDb(sql as unknown as Exec);
+  connectDb(isolated?.dbUrl ?? configuredTestDbUrl());
+  // 새 풀의 대상도 같은 connection에서 확인 — 이후 어떤 test write도 이 검증 뒤다.
+  if (isolated) {
+    const owned = await verifyOwnedTransaction(
+      sql as unknown as Parameters<typeof verifyOwnedTransaction>[0],
+      isolated,
+    );
+    if (!owned.ok) {
+      await sql.end();
+      throw new Error("isolated test DB 소유권 거부: " + owned.reason);
+    }
+  } else {
+    await assertExecTargetsTestDb(sql as unknown as Exec);
+  }
 }
 
 // 테스트가 만든 사용자 데이터만 비운다. seed 카탈로그와 seed 주문(ord-*)은 그대로 둔다.
@@ -205,12 +252,27 @@ export async function cleanUserData(
   exec: Exec = sql as unknown as Exec,
   loadIds: () => string[] = defaultLoadSeedIds,
 ) {
-  // 실제 접속 DB가 commerce_test인지 이 연결에서 다시 확인한다 — 대상이
-  // 다르면 어떤 DELETE/UPDATE도 실행하지 않는다.
-  await assertExecTargetsTestDb(exec);
-  // seed 주문 보호 집합 — 로드 실패·빈 배열·깨진 id·중복은 전부 여기서
-  // throw해 DELETE 0건으로 끝낸다(주입 loadIds 결과도 동일 검증).
   const seedIds = assertSeedIds(loadIds());
+  const isolated = isolatedContractFromEnv();
+  if (isolated) {
+    // pool의 검증 SELECT와 후속 DELETE가 다른 physical connection으로
+    // 분리되지 않도록, 동일 transaction executor에서 소유권 확인과 cleanup을
+    // 연속 실행한다. transaction 미지원 executor는 fail closed다.
+    if (!exec.begin)
+      throw new Error("isolated cleanup 거부: same-connection transaction 필요");
+    await exec.begin(async (q) => {
+      const owned = await verifyOwnedExec(q, isolated);
+      if (!owned.ok)
+        throw new Error("isolated cleanup 소유권 거부: " + owned.reason);
+      await cleanupUserDataWrites(q, seedIds);
+    });
+  } else {
+    await assertExecTargetsTestDb(exec);
+    await cleanupUserDataWrites(exec, seedIds);
+  }
+}
+
+async function cleanupUserDataWrites(exec: Exec, seedIds: string[]) {
   const uids = ["u-a", "u-b", "u-c", "u-d"];
   // cancel_requests가 action_requests/orders를 FK로 참조하므로 먼저 지운다.
   // seed 주문(ord-*)에 붙은 테스트 취소 요청도 함께 지워 다음 테스트의 자격 판정을 보존한다.
@@ -1499,7 +1561,8 @@ async function restrictedResetTxn(
 // broad upsert·전체 비-seed 삭제를 대체하는 승인 한정 경로다.
 export async function setupRestrictedE2EDb(): Promise<void> {
   // 대상 실측 — commerce_test가 아니면 어떤 write도 없다.
-  await assertUrlTargetsTestDb(TEST_DB_URL);
+  const testDbUrl = configuredTestDbUrl();
+  await assertUrlTargetsTestDb(testDbUrl);
   // seed 파일과 하드코딩 baseline의 집합 일치 — seed가 바뀌면 재감사 필요.
   const seedIds = assertSeedIds(
     loadSeedOrderIds(readFileSync("db/seeds/scenarios.json", "utf8")),
@@ -1509,7 +1572,7 @@ export async function setupRestrictedE2EDb(): Promise<void> {
       "scenarios.json seed 주문 집합이 baseline과 다르다 — restricted 재감사 필요",
     );
   // 스키마는 사전 조회로만 — 불충족이면 migrate 승인이 없으므로 중단한다.
-  const check = postgres(TEST_DB_URL, { max: 1 });
+  const check = postgres(testDbUrl, { max: 1 });
   try {
     if (!(await schemaSatisfied(check as unknown as Exec, 4)))
       throw new Error(
@@ -1518,7 +1581,7 @@ export async function setupRestrictedE2EDb(): Promise<void> {
   } finally {
     await check.end().catch(() => {});
   }
-  const db = postgres(TEST_DB_URL, { max: 1 });
+  const db = postgres(testDbUrl, { max: 1 });
   try {
     const plan = await restrictedE2EReset(db as unknown as TxDb);
     if (plan.mode === "remediate")

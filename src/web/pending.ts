@@ -14,9 +14,12 @@
 export interface PendingWrite {
   uiKey: string; // 클라이언트 idempotency key (서버 조회 시 'ui-' 접두)
   // CHECKOUT은 견적 확정 intent다 — 카트 쓰기가 아니므로 카트 소비자에게 노출하지 않는다.
-  kind: "ADD_CART" | "UPDATE_CART" | "REMOVE_CART" | "CHECKOUT";
+  // CANCEL_ORDER는 주문 취소 승인 intent다 — 주문 상세 시트만 소비한다 [PMQA-060].
+  // SET_WISHLIST는 찜 저장/해제 intent다 [PMQA-070] — 카트·결제·취소 소비자가
+  // 읽지 않도록 별도 kind로 격리하고, 찜 표면(recent?tab=wish)만 소비한다.
+  kind: "ADD_CART" | "UPDATE_CART" | "REMOVE_CART" | "CHECKOUT" | "CANCEL_ORDER" | "SET_WISHLIST";
   path: string;
-  method: "POST" | "PATCH" | "DELETE";
+  method: "POST" | "PATCH" | "DELETE" | "PUT";
   payload: Record<string, unknown>;
   label: string;
   at: number;
@@ -32,8 +35,8 @@ const LS_PREFIX = "pending-writes-v1:";
 const LS_LEGACY = "pending-writes-v1"; // 사용자 미구분 구버전 키 — 읽지 않고 정리만.
 const MAX = 10;
 
-const KINDS = new Set<string>(["ADD_CART", "UPDATE_CART", "REMOVE_CART", "CHECKOUT"]);
-const METHODS = new Set<string>(["POST", "PATCH", "DELETE"]);
+const KINDS = new Set<string>(["ADD_CART", "UPDATE_CART", "REMOVE_CART", "CHECKOUT", "CANCEL_ORDER", "SET_WISHLIST"]);
+const METHODS = new Set<string>(["POST", "PATCH", "DELETE", "PUT"]);
 
 const valid = (x: unknown): x is PendingWrite => {
   const p = x as PendingWrite;
@@ -79,6 +82,12 @@ export function bindPendingUser(userId: string | null) {
 
 const bucket = () => LS_PREFIX + (scope ?? "unbound");
 
+// 현재 바인딩된 사용자 스코프 — 진행 중인 쓰기·복구가 시작 시점과 같은
+// 계정 컨텍스트인지 검사하는 epoch guard용이다 [PMQA-060 MJ060-2].
+// 스코프가 바뀌면(계정 전환·로그아웃) 진행 중 작업은 후속 POST·intent 변경 없이
+// 방치한다 — intent는 원래 계정 버킷에 남아 원 계정 복귀 시 복구된다.
+export const pendingScope = (): string | null => scope;
+
 function readAll(): PendingWrite[] {
   const k = bucket();
   // write 실패로 메모리에만 있는 버킷은 storage보다 최신 — 먼저 본다.
@@ -115,6 +124,9 @@ export const listCartPending = (): PendingWrite[] =>
 // 같은 kind만 골라 보는 접근점 — Checkout 화면은 "CHECKOUT"만.
 export const listPendingByKind = (kind: PendingWrite["kind"]): PendingWrite[] =>
   listPending().filter((p) => p.kind === kind);
+// 찜 intent만 — 카트 소비자(CART_KINDS 필터)에 섞이지 않는다 [PMQA-070].
+export const listWishlistPending = (): PendingWrite[] =>
+  listPendingByKind("SET_WISHLIST");
 export const getPending = (uiKey: string) =>
   listPending().find((p) => p.uiKey === uiKey) ?? null;
 

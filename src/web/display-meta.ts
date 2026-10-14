@@ -47,6 +47,12 @@ export const rateOf = (p: ProductSummary) => {
   return o && o > m ? Math.round(((o - m) / o) * 100) : 0;
 };
 
+// 카드 표시·찜 스냅샷 전용 [F03] — matched_variants가 비면 null을 돌려
+// 카드의 '가격 정보 없음' truthful fallback과 null 스냅샷을 가능하게 한다.
+// 전역 minPriceOf 계약(빈 배열 → Infinity)은 유지 — 다른 화면 재작성 없음.
+export const cardMinPriceOf = (p: ProductSummary): number | null =>
+  p.matched_variants.length ? minPriceOf(p) : null;
+
 // 로컬 생성 webp 컨벤션 — 시드 image_urls가 비어 있을 때의 표시 경로.
 export const productImg = (p: { product_id: string; image: string | null }) =>
   p.image ?? `/assets/products/${p.product_id}.webp`;
@@ -79,6 +85,35 @@ export const GROUP_HERO: Record<string, string[]> = {
 // 시즌 추천 탭 상품 — 쌀쌀한 계절 홈카페/무드 컨셉의 데모 큐레이션 [Project].
 export const SEASONAL = [
   "p-d-lamp-2", "p-d-cof-1", "p-d-cof-2", "p-d-pro-1", "p-d-tee-2", "p-d-chair-2",
+];
+
+// 특가 탭 > 기획전 — 캠페인 그룹(제목+부제+가로 레일+더보기) [Observed 48 구조].
+// 실제 캠페인 기간·랭킹이 아니라 기존 정적 메타의 재구성이다 [Project].
+export interface CampaignGroup {
+  id: string;
+  title: string;
+  sub: string;
+  // productIds 우선, 없으면 group(상위 카테고리 그룹) 전체를 쓴다.
+  productIds?: string[];
+  group?: string;
+  more: { cat: string; sub?: string };
+}
+export const CAMPAIGN_GROUPS: CampaignGroup[] = [
+  {
+    id: "season",
+    title: "시즌 기획전",
+    sub: "홈카페 · 무드등 모음",
+    productIds: SEASONAL,
+    more: { cat: "season" },
+  },
+  {
+    id: "beauty",
+    title: "뷰티 상품 모음",
+    sub: "선케어부터 메이크업까지",
+    group: "beauty",
+    // 식품 전체보기와 같은 기존 목록 경로로 연결 — 캠페인 전용 화면은 없다 [Project]
+    more: { cat: "beauty", sub: "all" },
+  },
 ];
 
 // 카테고리 브라우저의 서브카테고리 원형 아이콘 그리드 [Project].

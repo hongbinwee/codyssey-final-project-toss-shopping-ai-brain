@@ -3,11 +3,16 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: commerce
-      POSTGRES_PASSWORD: commerce
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg-password
       POSTGRES_DB: commerce
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    secrets:
+      - pg-password
 volumes:
   pgdata:
+secrets:
+  pg-password:
+    file: ./.secrets/pg-password

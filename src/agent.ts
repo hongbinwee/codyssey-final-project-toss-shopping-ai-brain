@@ -68,12 +68,12 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
     risk: "READ", brains: ["shopping"], write: false,
     parameters: {
       type: "object",
-      properties: { product_id: str, variant_id: str, query: str, cursor: str, limit: int },
+      properties: { product_id: str, variant_id: str, query: str, sort: str, cursor: str, limit: int },
       required: ["product_id"],
     },
-    allowed: ["product_id", "variant_id", "query", "cursor", "limit"],
+    allowed: ["product_id", "variant_id", "query", "sort", "cursor", "limit"],
     required: ["product_id"],
-    run: async (i) => getReviews(i as { product_id: string; variant_id?: string; query?: string; cursor?: string; limit?: number }),
+    run: async (i) => getReviews(i as { product_id: string; variant_id?: string; query?: string; sort?: string; cursor?: string; limit?: number }),
   },
   get_cart: {
     description: "현재 사용자의 카트와 금액을 조회한다.",

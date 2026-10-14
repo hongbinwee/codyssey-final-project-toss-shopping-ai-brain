@@ -4,7 +4,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   canRequestCancel, cardHead, cardRightLabel, deliveredAtFromEvents,
-  koLongDate, koShortDate, refundLabel, showShipChip,
+  koLongDate, koShortDate, refundLabel, refundLine, showShipChip,
 } from "../../src/order-display.ts";
 
 const base = {
@@ -129,5 +129,34 @@ describe("refundLabel — 목록 환불 라벨 회귀 보존 [PM048-A]", () => {
     assert.equal(refundLabel({ refund_status: "REFUNDED" }), "환불 완료");
     // 미확인 값은 '완료'로 단정하지 않고 서버 원문 그대로 — CANCELLED 헤더로 환불 유추 금지
     assert.equal(refundLabel({ refund_status: "PROCESSING" }), "PROCESSING");
+  });
+});
+
+describe("refundLine — 결제 정보 환불 행 [PMQA-060]", () => {
+  test("NONE·미설정이면 행 자체를 숨긴다", () => {
+    assert.equal(refundLine({ refund_status: null, refunded_amount_won: 0 }), null);
+    assert.equal(refundLine({ refund_status: "NONE", refunded_amount_won: 0 }), null);
+  });
+  test("PENDING은 '예정' 금액 — 서버 예정액만 표시하고 실환불액으로 단정하지 않는다", () => {
+    assert.deepEqual(
+      refundLine({ refund_status: "PENDING", refunded_amount_won: 0, expected_amount_won: 292000 }),
+      { label: "환불 처리 중", amount_won: 292000, amount_kind: "expected" },
+    );
+    // 예정액조차 없으면 금액을 숨긴다 (0원 표시로 완료 오인 방지)
+    assert.deepEqual(
+      refundLine({ refund_status: "PENDING", refunded_amount_won: 0, expected_amount_won: null }),
+      { label: "환불 처리 중", amount_won: null, amount_kind: null },
+    );
+  });
+  test("REFUNDED만 실환불액", () => {
+    assert.deepEqual(
+      refundLine({ refund_status: "REFUNDED", refunded_amount_won: 292000, expected_amount_won: 292000 }),
+      { label: "환불 완료", amount_won: 292000, amount_kind: "actual" },
+    );
+  });
+  test("미확인 서버값은 '완료'로 단정하지 않고 원문+금액 숨김 [PM060 matrix]", () => {
+    const rl = refundLine({ refund_status: "CHARGEBACK_REVIEW", refunded_amount_won: 999 });
+    assert.deepEqual(rl, { label: "환불 CHARGEBACK_REVIEW", amount_won: null, amount_kind: null });
+    assert.notEqual(rl!.label, "환불 완료");
   });
 });

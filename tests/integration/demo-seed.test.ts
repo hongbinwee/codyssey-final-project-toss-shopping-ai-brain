@@ -32,10 +32,15 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import postgres from "postgres";
+import "../../src/config.ts";
+import { databaseUrlForName } from "../../src/db-url.ts";
 import { connectDb, sql } from "../../src/db.ts";
 
 const DB = "commerce_demo_verify";
-const DB_URL = "postgres://commerce:commerce@localhost:5432/" + DB;
+const BASE_DB_URL = process.env.DATABASE_URL;
+if (!BASE_DB_URL) throw new Error("DATABASE_URL is required");
+const DB_URL = databaseUrlForName(DB, BASE_DB_URL);
+const TEST_DB_URL = databaseUrlForName("commerce_test", BASE_DB_URL);
 
 // PMQA-040 — 파일 전체 skip 사유는 상단 주석 참조.
 const SKIP_040 = "PMQA-040: scratch 수명주기 비활성 — 파일 상단 주석 참조";
@@ -47,7 +52,7 @@ const seed = (extra: string[] = [], url = DB_URL) =>
   });
 
 test("--demo는 테스트 DB(commerce_test)에서 실행을 거부한다", { skip: SKIP_040 }, () => {
-  const r = seed(["--demo"], "postgres://commerce:commerce@localhost:5432/commerce_test");
+  const r = seed(["--demo"], TEST_DB_URL);
   assert.notEqual(r.status, 0);
   assert.match(String(r.stderr) + String(r.stdout), /commerce_test/);
 });
@@ -56,14 +61,14 @@ test("--demo 가드는 ?database= 우회도 막는다(실제 접속 DB 기준)",
   // postgres.js는 ?database= 옵션을 실제 접속에 사용한다 — URL의 pathname은
   // commerce지만 접속 DB는 commerce_test가 되는 우회. 가드가 실제 DB명을
   // 검사하므로 거부돼야 하고 commerce_test에는 어떤 변경도 없어야 한다.
-  const tdb = postgres("postgres://commerce:commerce@localhost:5432/commerce_test");
+  const tdb = postgres(TEST_DB_URL);
   const before = await tdb.unsafe<{ c: number }[]>(
     "SELECT count(*)::int AS c FROM products WHERE id LIKE 'p-d-%'",
   );
-  const r = seed(
-    ["--demo"],
-    "postgres://commerce:commerce@localhost:5432/commerce?database=commerce_test",
-  );
+  const bypassUrl = new URL(TEST_DB_URL);
+  bypassUrl.pathname = "/commerce";
+  bypassUrl.searchParams.set("database", "commerce_test");
+  const r = seed(["--demo"], bypassUrl.toString());
   assert.notEqual(r.status, 0);
   assert.match(String(r.stderr) + String(r.stdout), /commerce_test/);
   const afterRows = await tdb.unsafe<{ c: number }[]>(

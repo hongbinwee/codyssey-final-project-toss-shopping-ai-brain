@@ -40,6 +40,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import postgres from "postgres";
+import "../../src/config.ts";
+import { databaseUrlForName } from "../../src/db-url.ts";
 import {
   assertReadonlyPreflight,
   planReadonlyRun,
@@ -58,10 +60,19 @@ import {
 } from "../helpers/testdb.ts";
 import { childEnv } from "../../scripts/pmqa054-evidence-run.ts";
 
-const TEST_URL =
-  "postgres://commerce:commerce@localhost:5432/commerce_test";
-const DEV_URL = "postgres://commerce:commerce@localhost:5432/commerce";
+const baseDatabaseUrl = process.env.DATABASE_URL;
+if (!baseDatabaseUrl) throw new Error("DATABASE_URL is required");
+const TEST_URL = databaseUrlForName("commerce_test", baseDatabaseUrl);
+const DEV_URL = databaseUrlForName("commerce", baseDatabaseUrl);
 const PW_CLI = join("node_modules", "playwright", "cli.js");
+
+function safeError(error: unknown): string {
+  const value = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return value.replace(
+    /(postgres(?:ql)?:\/\/[^:/\s]+:)[^@\s/]+@/gi,
+    "$1[REDACTED]@",
+  );
+}
 
 type Pg = Q & {
   begin: <T>(fn: (q: Q) => Promise<T>) => Promise<T>;
@@ -221,7 +232,7 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
       await deps.probeDb(testConn, RO_DB, RO_DB_OID);
       await deps.probeDb(devConn, RO_DEV_DB, RO_DEV_DB_OID);
     } catch (e) {
-      errors.push("DB probe: " + e);
+      errors.push("DB probe: " + safeError(e));
       proceed = false;
     }
 
@@ -305,7 +316,7 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
       pwError = r.error;
     }
   } catch (e) {
-    errors.push(String(e));
+    errors.push(safeError(e));
   } finally {
     // 사후 감사 — DB에 접속한 경로이므로 throw/nonzero/조회 실패 모두 시도한다.
     let after: DbSnap | null = null;
@@ -314,13 +325,13 @@ export async function runAudit(deps: AuditDeps): Promise<AuditVerdict> {
       after = await deps.snapInTxn(testConn);
       if (before) drift = diffSnaps(before, after);
     } catch (e) {
-      errors.push("after 스냅(commerce_test) 실패: " + e);
+      errors.push("after 스냅(commerce_test) 실패: " + safeError(e));
     }
     try {
       afterDev = await deps.snapInTxn(devConn);
       if (beforeDev) driftDev = diffSnaps(beforeDev, afterDev);
     } catch (e) {
-      errors.push("after 스냅(commerce) 실패: " + e);
+      errors.push("after 스냅(commerce) 실패: " + safeError(e));
     }
     const verdict = auditVerdict({
       gateOk, gateReasons, spawned, pwStatus, pwError,
@@ -550,7 +561,7 @@ function realDeps(): AuditDeps {
       // spawnfail(error만, exit 없음)도 hang 없이 결과를 돌린다 [PM QA 056].
       return await new Promise((res) => {
         child.once("error", (e) =>
-          res({ status: -1, error: String(e) }),
+          res({ status: -1, error: safeError(e) }),
         );
         child.once("exit", (code) =>
           res({ status: code ?? -1, error: null }),

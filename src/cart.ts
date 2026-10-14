@@ -10,8 +10,8 @@ import { runAction, type ActionResult } from "./actions.ts";
 import type { RequestContext } from "./session.ts";
 import { randomUUID } from "node:crypto";
 
-async function getOrCreateCart(userId: string): Promise<{ id: string; version: number }> {
-  const rows = await sql.unsafe<{ id: string; version: number }[]>(
+async function getOrCreateCart(userId: string, db: Q = sql): Promise<{ id: string; version: number }> {
+  const rows = await db.unsafe<{ id: string; version: number }[]>(
     "INSERT INTO carts (id, user_id) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET user_id=$2 RETURNING id, version",
     ["cart-" + userId, userId],
   );
@@ -19,18 +19,36 @@ async function getOrCreateCart(userId: string): Promise<{ id: string; version: n
 }
 
 // 카트 뷰 조립. 같은 쿼리/계산을 getCart와 addToCart 커밋 전 미리보기가 공유한다.
-async function cartView(q: Q, cart: { id: string; version: number }): Promise<CartView> {
-  const rows = await q.unsafe(
-    `SELECT ci.id AS cart_item_id, ci.quantity, ci.variant_id,
-            v.product_id, v.option_values_json, v.unit_price_won, v.stock_qty,
-            v.active AS variant_active, v.version AS variant_version,
-            p.name AS product_name, p.image_urls, p.active AS product_active
-     FROM cart_items ci
-     JOIN product_variants v ON v.id = ci.variant_id
-     JOIN products p ON p.id = v.product_id
-     WHERE ci.cart_id = $1 ORDER BY ci.id`,
-    [cart.id],
-  );
+// opts.itemIds를 주면 해당 cart_item 행만 뷰로 만든다 — checkout의
+// CART_SELECTED 견적이 같은 뷰 계약으로 부분집합을 표시한다 [PMQA-067].
+export async function cartView(
+  q: Q,
+  cart: { id: string; version: number },
+  opts?: { itemIds?: string[] },
+): Promise<CartView> {
+  const rows = opts?.itemIds
+    ? await q.unsafe(
+        `SELECT ci.id AS cart_item_id, ci.quantity, ci.variant_id,
+                v.product_id, v.option_values_json, v.unit_price_won, v.stock_qty,
+                v.active AS variant_active, v.version AS variant_version,
+                p.name AS product_name, p.image_urls, p.active AS product_active
+         FROM cart_items ci
+         JOIN product_variants v ON v.id = ci.variant_id
+         JOIN products p ON p.id = v.product_id
+         WHERE ci.cart_id = $1 AND ci.id = ANY($2) ORDER BY ci.id`,
+        [cart.id, opts.itemIds],
+      )
+    : await q.unsafe(
+        `SELECT ci.id AS cart_item_id, ci.quantity, ci.variant_id,
+                v.product_id, v.option_values_json, v.unit_price_won, v.stock_qty,
+                v.active AS variant_active, v.version AS variant_version,
+                p.name AS product_name, p.image_urls, p.active AS product_active
+         FROM cart_items ci
+         JOIN product_variants v ON v.id = ci.variant_id
+         JOIN products p ON p.id = v.product_id
+         WHERE ci.cart_id = $1 ORDER BY ci.id`,
+        [cart.id],
+      );
   const items: CartItemView[] = rows.map((r) => {
     const av = variantAvailability(r.product_active, r.variant_active, r.stock_qty);
     return {
@@ -65,10 +83,10 @@ async function cartView(q: Q, cart: { id: string; version: number }): Promise<Ca
   };
 }
 
-export async function getCart(ctx: RequestContext): Promise<ToolResult<CartView>> {
+export async function getCart(ctx: RequestContext, db: Q = sql): Promise<ToolResult<CartView>> {
   const trace_id = crypto.randomUUID();
-  const cart = await getOrCreateCart(ctx.actorUserId);
-  return ok(await cartView(sql, cart), trace_id);
+  const cart = await getOrCreateCart(ctx.actorUserId, db);
+  return ok(await cartView(db, cart), trace_id);
 }
 
 export type AddToCartInput = {

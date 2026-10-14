@@ -3,11 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 import { apiSafe, type ApiResult } from "../api.ts";
 import type { SearchResult } from "../../contracts.ts";
-import { ProductCard } from "../components/ProductCard.tsx";
+import { WishProductCard } from "../components/WishProductCard.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
 import { Empty, ErrorState } from "../components/CommerceState.tsx";
-import { IcBack, IcCart, IcCheck, IcChevronDown, IcClock, IcClose, IcSearch } from "../icons.tsx";
-import { CATEGORY_GROUPS, groupOf, groupLabel } from "../display-meta.ts";
+import { IcBack, IcCart, IcCheck, IcChevronDown, IcClock, IcClose, IcFilter, IcSearch } from "../icons.tsx";
+import { groupLabel, rateOf } from "../display-meta.ts";
+import { SearchFilterPage } from "./SearchFilter.tsx";
+import { loadSearchPages } from "../search-loader.ts";
+import {
+  filterCountState,
+  owned,
+  suggestState,
+  type Owned,
+} from "../search-state.ts";
+import {
+  applySearchFilter,
+  categoriesIn,
+  countActiveFilters,
+  EMPTY_FILTER,
+  type FilterDraft,
+} from "../search-filter.ts";
 
 const RECENTS_KEY = "recent-searches";
 const loadRecents = (): string[] => {
@@ -51,6 +66,8 @@ export function Search({
   onOpenProduct,
   cartCount = 0,
   onOpenCart,
+  userId,
+  onOpenWish,
 }: {
   query: string;
   onBack: () => void;
@@ -58,24 +75,44 @@ export function Search({
   onOpenProduct: (id: string) => void;
   cartCount?: number;
   onOpenCart?: () => void;
+  userId: string | null;
+  onOpenWish: () => void;
 }) {
   const [text, setText] = useState(query);
   const [submitted, setSubmitted] = useState(query);
   const [recents, setRecents] = useState<string[]>(loadRecents);
-  const [sugs, setSugs] = useState<ApiResult<SearchResult> | null>(null);
-  const [res, setRes] = useState<ApiResult<SearchResult> | null>(null);
+  // 응답은 발행 시점의 query와 함께 보관한다 — owner가 현재 query와 다르면
+  // 표시·실행 모두 차단(A 결과가 B 입력 아래 남는 경로 차단) [PM].
+  const [sugs, setSugs] = useState<Owned<ApiResult<SearchResult>> | null>(null);
+  const [res, setRes] = useState<Owned<ApiResult<SearchResult>> | null>(null);
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
+  const [sugTick, setSugTick] = useState(0); // 자동완성 실패 재시도
   const [sort, setSort] = useState<Sort>("RELEVANCE");
-  const [cat, setCat] = useState("");
+  // 적용된 필터 — 전용 필터 화면의 draft와 분리(적용 전 뒤로가기는 폐기) [F02]
+  const [applied, setApplied] = useState<FilterDraft>(EMPTY_FILTER);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 응답 세대 가드 — 정렬/검색어가 바뀐 뒤 도착한 구 응답이 새 결과를 덮지 못한다 [Luna]
+  const resSeq = useRef(0);
+  const sugSeq = useRef(0);
+
+  // 언마운트 시 진행 중 응답의 재적용을 막는다 [PM].
+  useEffect(
+    () => () => {
+      resSeq.current++;
+      sugSeq.current++;
+    },
+    [],
+  );
 
   // 뒤로가기 등으로 URL의 q가 바뀌면 입력값/제출어를 동기화
   useEffect(() => {
     setText(query);
     setSubmitted(query);
-    setCat("");
+    setApplied(EMPTY_FILTER);
+    setFilterOpen(false);
   }, [query]);
 
   useEffect(() => inputRef.current?.focus(), []);
@@ -83,28 +120,53 @@ export function Search({
   // 자동완성 — 입력이 마지막 제출어와 다르고 비어있지 않을 때만
   useEffect(() => {
     if (!text || text === submitted) {
+      // 지우기/미제출 전환도 진행 중 응답을 무효화한다 — 시작 시점에만
+      // 세대를 올리면 clear 뒤 late 응답이 재적용될 수 있다 [PM].
+      sugSeq.current++;
       setSugs(null);
       return;
     }
+    const my = ++sugSeq.current;
+    const q = text; // 이 응답의 owner — 적용 시점에 입력이 바뀌어 있어도 q에 귀속
     const t = setTimeout(() => {
-      apiSafe<SearchResult>("/api/products?query=" + encodeURIComponent(text) + "&limit=5").then(setSugs);
+      apiSafe<SearchResult>("/api/products?query=" + encodeURIComponent(q) + "&limit=5")
+        .then((r) => {
+          if (sugSeq.current === my) setSugs({ q, r });
+        });
     }, 150);
     return () => clearTimeout(t);
-  }, [text, submitted]);
+  }, [text, submitted, sugTick]);
 
   // 결과 조회
   useEffect(() => {
-    if (!submitted) return;
+    // 미제출 상태로 돌아가도 진행 중 페이지네이션을 무효화한다 [PM].
+    if (!submitted) {
+      resSeq.current++;
+      return;
+    }
     setLoading(true);
-    apiSafe<SearchResult>(
+    const my = ++resSeq.current;
+    const q = submitted; // 이 결과의 owner — 제출어가 바뀌면 표시 차단 [PM]
+    const base =
       // 카테고리 칩은 상위 그룹(digital/beauty/...)으로, 결과에서 클라이언트 필터한다.
       // 서버 category 파라미터는 단일 값만 받아 monitor가 디지털 그룹에 못 들어가므로 쓰지 않는다.
-      // limit=50(서버 최대): 데모 카탈로그(28개) 전체를 한 페이지로 받아야
-      // 클라이언트 그룹 필터가 첫 페이지(기본 20) 밖의 상품을 누락하지 않는다.
-      "/api/products?query=" + encodeURIComponent(submitted) + "&sort=" + sort + "&limit=50",
-    )
-      .then(setRes)
-      .finally(() => setLoading(false));
+      // limit=50(서버 최대)으로 커서를 끝까지 따라간다 — 첫 페이지만으로
+      // '최종 N개'나 그룹 필터를 계산하면 뒤 페이지 상품이 누락된다 [Luna/PM].
+      "/api/products?query=" + encodeURIComponent(submitted) + "&sort=" + sort + "&limit=50";
+    (async () => {
+      // 커서 추종·계약 방어(has_more+next_cursor 없음/반복 커서/중복 product_id)는
+      // loadSearchPages에 위임 — 단위 테스트가 같은 함수를 mock IO로 검증한다 [PM].
+      const out = await loadSearchPages(
+        base,
+        (u) => apiSafe<SearchResult>(u),
+        () => resSeq.current !== my,
+      );
+      if ("stale" in out || resSeq.current !== my) return;
+      if (!out.ok) setRes({ q, r: { ok: false, error: out.error } });
+      else setRes({ q, r: { ok: true, data: out.data } });
+    })().finally(() => {
+      if (resSeq.current === my) setLoading(false);
+    });
   }, [submitted, sort, tick]);
 
   const submit = (q: string) => {
@@ -131,12 +193,18 @@ export function Search({
   const mode =
     text !== submitted ? (text ? "suggest" : "recents") : submitted ? "results" : "recents";
 
-  // 결과에 등장한 상위 그룹으로 필터 칩을 만든다 (데이터 없는 필터는 보여주지 않는다)
-  const resItems = res?.ok ? res.data.items : [];
-  const cats = CATEGORY_GROUPS.filter((g) =>
-    resItems.some((i) => groupOf(i.category) === g.id),
-  ).map((g) => g.id);
-  const shown = cat ? resItems.filter((i) => groupOf(i.category) === cat) : resItems;
+  // 필터 칩·적용은 실제 결과 데이터에 존재하는 값만 사용한다 — 필터 전용
+  // 화면(Ref105/106)의 draft는 적용 버튼으로 확정되기 전까지 applied와 분리된다.
+  // 현재 제출어 소유가 아닌 결과는 즉시 차단한다 — A 결과가 B 아래 표시되지 않는다.
+  const resVisible = owned(res, submitted);
+  const resItems = resVisible?.ok ? resVisible.data.items : [];
+  const cats = categoriesIn(resItems);
+  // PRICE_ASC는 '필터된 variants 최저가'로 재정렬 — 서버의 상품 전체 최저가
+  // 정렬은 밴드가 적용되면 표시가와 어긋난다 [PM].
+  const shown = applySearchFilter(resItems, applied, {
+    minPriceSort: sort === "PRICE_ASC",
+  });
+  const sugState = suggestState(text, sugs);
 
   return (
     <div className="search-screen">
@@ -205,8 +273,8 @@ export function Search({
 
       {mode === "suggest" && (
         <section className="search-body">
-          {sugs?.ok && sugs.data.items.length > 0 ? (
-            sugs.data.items.map((p) => (
+          {sugState === "items" && sugs?.r.ok ? (
+            sugs.r.data.items.map((p) => (
               <button
                 key={p.product_id}
                 className="recent-row sug-row"
@@ -215,8 +283,21 @@ export function Search({
                 <Marked name={p.name} needle={text} />
               </button>
             ))
-          ) : (
+          ) : sugState === "error" ? (
+            <p className="muted sm">
+              자동완성을 불러오지 못했어요{" "}
+              <button
+                type="button"
+                className="retry-inline"
+                onClick={() => setSugTick((t) => t + 1)}
+              >
+                재시도
+              </button>
+            </p>
+          ) : sugState === "empty" ? (
             <p className="muted sm">일치하는 상품명이 없어요</p>
+          ) : (
+            <p className="muted sm">검색 중…</p>
           )}
         </section>
       )}
@@ -224,21 +305,33 @@ export function Search({
       {mode === "results" && (
         <section className="search-body results-zone">
           <div className="chip-row">
-            <button className={"fchip" + (cat === "" ? " on" : "")} onClick={() => setCat("")}>
+            <button
+              className={"fchip filter-trigger" + (countActiveFilters(applied) ? " on" : "")}
+              onClick={() => {
+                inputRef.current?.blur(); // 필터가 열린 뒤에도 검색 입력에 포커스가 남지 않게 [PM]
+                setFilterOpen(true);
+              }}
+            >
+              <IcFilter size={15} /> 필터
+            </button>
+            <button className="fchip sort-trigger" onClick={() => setSortOpen(true)}>
+              {SORT_LABEL[sort]} <IcChevronDown size={14} />
+            </button>
+            <button
+              className={"fchip" + (applied.category === null ? " on" : "")}
+              onClick={() => setApplied((a) => ({ ...a, category: null }))}
+            >
               전체
             </button>
             {cats.map((c) => (
               <button
                 key={c}
-                className={"fchip" + (cat === c ? " on" : "")}
-                onClick={() => setCat(c)}
+                className={"fchip" + (applied.category === c ? " on" : "")}
+                onClick={() => setApplied((a) => ({ ...a, category: a.category === c ? null : c }))}
               >
                 {groupLabel(c)}
               </button>
             ))}
-            <button className="fchip sort-trigger" onClick={() => setSortOpen(true)}>
-              {SORT_LABEL[sort]} <IcChevronDown size={14} />
-            </button>
           </div>
           {loading ? (
             <div className="product-grid">
@@ -250,23 +343,36 @@ export function Search({
                 </div>
               ))}
             </div>
-          ) : !res ? null : !res.ok ? (
+          ) : !resVisible ? null : !resVisible.ok ? (
             <ErrorState
-              text={"조회에 실패했어요 (" + res.error.code + ")"}
+              text={"조회에 실패했어요 (" + resVisible.error.code + ")"}
               onRetry={() => setTick((t) => t + 1)}
             />
           ) : shown.length === 0 ? (
             <Empty text="조건에 맞는 상품이 없어요" />
           ) : (
-            <div className="product-grid">
-              {shown.map((p) => (
-                <ProductCard
-                  key={p.product_id}
-                  p={p}
-                  onOpen={() => onOpenProduct(p.product_id)}
-                />
-              ))}
-            </div>
+            <>
+              {/* 할인 배지 출처 안내 — 검색 카드는 카드별 데모 표기가 없으므로
+                  결과 영역에서 한 번만 고지한다 [MAJOR073-02]. 배지가 하나도
+                  없으면 문구도 숨긴다. */}
+              {shown.some((p) => rateOf(p) > 0) && (
+                <p className="muted sm search-note">
+                  할인율·특가 표시는 데모 정가 기준이며 실제 가격 이력이 아니에요
+                </p>
+              )}
+              <div className="product-grid">
+                {shown.map((p) => (
+                  <WishProductCard
+                    key={p.product_id}
+                    p={p}
+                    userId={userId}
+                    onOpen={() => onOpenProduct(p.product_id)}
+                    onGoWish={onOpenWish}
+                    variant="search"
+                  />
+                ))}
+              </div>
+            </>
           )}
         </section>
       )}
@@ -290,6 +396,21 @@ export function Search({
             </button>
           ))}
         </BottomSheet>
+      )}
+
+      {filterOpen && (
+        <SearchFilterPage
+          items={resItems}
+          // 전체 커서를 다 모았을 때만 최종 개수를 약속한다 — 확인 중/실패를 구분 [PM]
+          countState={filterCountState(loading, resVisible)}
+          onRetry={() => setTick((t) => t + 1)}
+          initial={applied}
+          onBack={() => setFilterOpen(false)}
+          onApply={(f) => {
+            setApplied(f);
+            setFilterOpen(false);
+          }}
+        />
       )}
     </div>
   );

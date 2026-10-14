@@ -33,15 +33,23 @@ test("t3: checkout order -> A02 confirm -> cancel REQUESTED on W06", async ({ pa
 
   // 확인 없는 상태에서는 실행 버튼이 열리지 않는다 — 시트를 먼저 연다
   await page.getByRole("button", { name: "취소하기" }).click();
-  await expect(page.getByText("전체 상품이 취소돼요")).toBeVisible();
-  const submit = page.getByRole("button", { name: "이 주문 취소 요청" });
-  await expect(submit).toBeDisabled(); // 사유 선택 전 비활성
+  // 06C: 사유+견적 확인 단계의 CTA는 최종 확인 화면으로 이동한다(실행 아님).
+  const next = page.getByRole("button", { name: "취소 내용 확인" });
+  await expect(next).toBeDisabled(); // 사유 선택 전 비활성
 
   await page.getByText("단순 변심이에요").click();
-  await expect(page.getByText(/환불 예정/).and(page.locator(".sheet *"))).toBeVisible();
-  await expect(page.getByText("292,000원").last()).toBeVisible();
-  await expect(submit).toBeEnabled();
+  // 사유 단계에는 환불액을 표시하지 않는다 — 견적은 백그라운드 조회이며
+  // 금액 확인은 최종 확인 단계에서만 한다 [PMQA-075 F15 · Ref087/088].
+  await expect(page.getByText(/환불 예정/).and(page.locator(".sheet *"))).toHaveCount(0);
+  await expect(next).toBeEnabled();
 
+  await next.click();
+  // 최종 확인 — 주문 대상·사유·환불 예정액을 확인한 뒤 명시 실행한다 [Ref088].
+  await expect(page.getByText("전체 상품이 취소돼요")).toBeVisible();
+  await expect(page.locator(".pay-row.cancel-refund")).toContainText("292,000원");
+  const submit = page.getByRole("button", { name: "이 주문 취소 요청" });
+  await expect(submit).toBeEnabled();
+  await expect(page.getByText("단순 변심이에요").last()).toBeVisible();
   await submit.click();
   await expect(page.getByText("취소 요청이 접수됐어요")).toBeVisible();
   await page.getByRole("button", { name: "확인" }).last().click();
@@ -59,15 +67,13 @@ test("t3: checkout order -> A02 confirm -> cancel REQUESTED on W06", async ({ pa
 });
 
 test("t3: shipped order is ineligible in A02 (e2e-a seed order)", async ({ page }) => {
-  // 출고된 seed 주문 — 시트가 서버 판정을 보여주고 실행을 막는다.
+  // 출고된 seed 주문 — 서버 canonical cancel_eligible=false이므로 '취소하기'
+  // CTA 자체가 fail-closed로 비노출된다(06B 정책 — 시트 진입 자체가 불가).
   await page.goto("/");
   await page.getByPlaceholder("접근 코드").fill("e2e-a");
   await page.getByRole("button", { name: "시작하기" }).click();
   await page.getByRole("button", { name: "내 쇼핑" }).click();
   await page.getByText("코드뷰 모니터 B").first().click(); // ord-a-ship (배송 중)
   await expect(page.getByRole("heading", { name: "주문 상세" })).toBeVisible();
-  await page.getByRole("button", { name: "취소하기" }).click();
-  await expect(page.getByText("지금은 이 주문을 취소할 수 없어요")).toBeVisible();
-  await expect(page.getByText("이미 출고된 주문은 취소할 수 없어요")).toBeVisible();
-  await expect(page.getByRole("button", { name: "이 주문 취소 요청" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "취소하기" })).toHaveCount(0);
 });

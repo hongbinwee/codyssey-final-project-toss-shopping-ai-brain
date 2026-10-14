@@ -48,6 +48,17 @@ const RUN_ID_RE =
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
 const OPTIN_ENV = "SCRATCH_DB_TESTS";
 
+/** 격리 모드 관련 env가 일부라도 들어왔는지 판정한다 — partial env도 fail closed. */
+export function isolatedEnvTouched(
+  env: Record<string, string | undefined>,
+): boolean {
+  return (
+    ISOLATED_ENV_KEYS.some((k) => env[k] !== undefined) ||
+    env[ISOLATED_STRICT_ENV] !== undefined ||
+    env[OPTIN_ENV] !== undefined
+  );
+}
+
 // 계약·오류 메시지에는 credential이 든 URL을 출력하지 않는다 — 호스트·경로
 // 형태만 최소 표기한다.
 function safeUrl(url: string): string {
@@ -277,4 +288,15 @@ export async function verifyOwnedExec(
   if (runId !== snap.runId)
     return { ok: false, reason: "소유 마커 불일치 — 다른 실행 소유" };
   return { ok: true };
+}
+
+// pool executor에서는 연속 SELECT가 서로 다른 physical connection으로
+// 갈 수 있으므로, identity와 marker를 하나의 transaction executor에서 읽는다.
+export async function verifyOwnedTransaction(
+  pool: {
+    begin: <T>(fn: (q: Exec) => Promise<T>) => Promise<T>;
+  },
+  contract: IsolatedContract,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  return pool.begin((q) => verifyOwnedExec(q, contract));
 }

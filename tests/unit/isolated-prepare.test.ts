@@ -27,6 +27,7 @@ import {
   type SqlClient,
 } from "../helpers/isolated-prepare.ts";
 import { seedBase, type SeedExec } from "../../scripts/base-seed.ts";
+import { requiredMigrations } from "../../scripts/migrations-manifest.ts";
 
 const CONTRACT = {
   dbUrl: "postgres://commerce:commerce@localhost:5432/scratch_0123456789abcdef",
@@ -301,6 +302,94 @@ describe("prepareIsolatedDb — 성공 경로", () => {
       assert.ok(rec, f + " _migrations 기록 없음");
       assert.equal(rec.p?.[1], sha, f + " sha 불일치");
     }
+  });
+
+  test("phase 6만 canonical 004 wishlist migration을 포함한다", async () => {
+    const m = makeClient();
+    const r = await prepareIsolatedDb(FULL_ENV, { connect: m.connect }, { phase: 6 });
+    const expected = requiredMigrations(6);
+    assert.deepEqual(r.migrations.map((x) => x.name), expected);
+    assert.ok(expected.includes("004_wishlist_items.sql"));
+    const body = readFileSync("db/migrations/004_wishlist_items.sql", "utf8");
+    assert.ok(m.client.queries.some((rec) => rec.q === body));
+    assert.deepEqual(r.seededFiles, [
+      "users.json",
+      "catalog.json",
+      "reviews.json",
+      "scenarios.json",
+    ]);
+  });
+
+  test("주입 seed reader는 owned guard 뒤 같은 트랜잭션에서 실행된다", async () => {
+    const m = makeClient();
+    const reads: string[] = [];
+    const readerSawGuardedTxn: boolean[] = [];
+    const seedRead = (f: string): unknown => {
+      reads.push(f);
+      readerSawGuardedTxn.push(
+        m.client.events.includes("BEGIN") &&
+          !m.client.events.includes("COMMIT") &&
+          m.client.queries[0]?.q.includes("current_database()") === true &&
+          m.client.queries[1]?.q.includes("_scratch_owner") === true &&
+          m.client.queries[0]?.inTxn === true &&
+          m.client.queries[1]?.inTxn === true,
+      );
+      if (f === "catalog.json")
+        return {
+          products: [{
+            id: "p-d-preview",
+            name: "Preview Demo",
+            brand: "Demo",
+            category: "digital",
+            description: "preview seed reader test",
+            image_urls: [],
+            specs: {},
+          }],
+          variants: [{
+            id: "v-d-preview",
+            product_id: "p-d-preview",
+            option_values: {},
+            spec_overrides: {},
+            unit_price_won: 1000,
+            stock_qty: 1,
+          }],
+        };
+      if (f === "reviews.json")
+        return [{
+          id: "r-d-preview",
+          product_id: "p-d-preview",
+          variant_id: "v-d-preview",
+          rating: 5,
+          body: "preview review",
+          source_kind: "SYNTHETIC",
+          source_ref: "unit",
+          written_at: "2026-10-14T00:00:00.000Z",
+        }];
+      if (f === "scenarios.json") return { orders: [] };
+      return [];
+    };
+    const r = await prepareIsolatedDb(
+      FULL_ENV,
+      { connect: m.connect, seedRead },
+      { phase: 6 },
+    );
+
+    assert.equal(r.ok, true);
+    assert.deepEqual(reads, ["users.json", "catalog.json", "reviews.json", "scenarios.json"]);
+    assert.ok(readerSawGuardedTxn.every(Boolean));
+    assert.ok(m.client.queries.every((q) => q.inTxn));
+    assert.ok(m.client.queries.some((q) => q.q.startsWith("INSERT INTO products") && q.p?.[0] === "p-d-preview"));
+    assert.ok(m.client.queries.some((q) => q.q.startsWith("INSERT INTO reviews") && q.p?.[0] === "r-d-preview"));
+  });
+
+  test("지원하지 않는 phase는 DB 연결 전 거부한다", async () => {
+    const m = makeClient();
+    await assert.rejects(
+      prepareIsolatedDb(FULL_ENV, { connect: m.connect }, { phase: 5 } as never),
+      /phase는 4.*또는 6/,
+    );
+    assert.equal(m.connectCalls, 0);
+    assert.equal(m.client.queries.length, 0);
   });
 
   test("기존 _migrations 행의 sha가 같으면 재적용하지 않는다", async () => {

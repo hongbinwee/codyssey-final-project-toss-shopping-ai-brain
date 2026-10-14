@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.secrets/
 web/app.js
 .pgdata/
 test-results/

@@ -1,5 +1,13 @@
 # Implementation Decisions
 
+## 최신 체크포인트 정정 — 2026-10-14
+
+> 이 블록이 과거 승인 대기·검증 표기보다 현재 상태에 우선한다. 과거 기록은 당시 이력으로 보존한다.
+
+- 현재 작업은 `checkpoint/commerce-20261014`의 WIP다. PMQA-070의 최신 승인과 PMQA-079의 한정된 실행 승인 범위에서 진행 중이며, 이는 전체 회귀·Freeze 승인으로 확대 해석하지 않는다.
+- 최신 고정 Suite는 E2E 52 PASS / 5 FAIL / 16 NOT_RUN이고 Integration은 NOT_RUN이다. check/build는 이번 checkpoint에서 exit 0, 전체 unit은 **IN_PROGRESS/미완료**이며 PASS로 계산하지 않는다.
+- 찜 변경과 migration 004는 현재 코드 체크포인트에 포함되지만 이 작업 중 DB migration은 실행하지 않았다. 09 Commerce Environment Freeze 목표는 유지되며 미완료다.
+
 2026-10-05 · Phase 0 환경 확정. IMPLEMENTATION_PLAN.md가 위임한 스택 선택을 여기에 기록한다.
 
 ## 스택 최종 결정 (계획의 권장안 대비 변경)
@@ -157,8 +165,8 @@ Superseded 처리된 과거 결정 (삭제하지 않고 기록 — 미래의 독
 
 | 항목 | 결정 | 근거 |
 | --- | --- | --- |
-| 상세 하단 CTA 매핑 | Toss의 4분할 CTA를 그대로 만들지 않고 지원 3 CTA(장바구니 아이콘·옵션 선택·n원 담기)로 매핑한다. 찜 하트·공유 등 미지원 요소는 버튼으로 만들지 않는다 | [Project] 지원하지 않는 동작을 흉내 내지 않는 근거 없는 UI 금지 원칙 |
-| 전체 cart 계약 보존 | can_checkout·checkout은 전체 장바구니 기준을 유지한다. UI 부분선택(항목 checkbox·선택 합계·전체 견적 동시 표시)은 허용하되 비전체 선택 시 주문 CTA를 disabled + 안내로 처리한다 — Backend 부분 주문은 여전히 제외 | 사용자 05 구조 요구 — UI 선택과 Backend 주문 범위를 구분해 혼동과 잘못된 결제를 막는다 |
+| 상세 하단 CTA 매핑 | Toss의 4분할 CTA를 그대로 만들지 않고 지원 3 CTA(장바구니 아이콘·옵션 선택·n원 담기)로 매핑한다. 찜 하트·공유 등 미지원 요소는 버튼으로 만들지 않는다. **[Superseded 2026-10-13 — PMQA-067, 사용자 C 통합 승인]** 하단 바는 `[카트 아이콘][N원 담기 ghost][구매하기 primary]`(Ref04)로 재구현됐다 — 옵션 진입은 본문 `.optline` 행이 담당하고 '구매하기'는 DIRECT 견적 주문서로 이동한다. 찜은 여전히 버튼을 흉내 내지 않으나, 실제 구현이 필수로 승인됐다(신규 저장 계약·migration 설계는 서면 승인 대기) **[Superseded 2026-10-13 — PMQA-070, 사용자 찜 저장 설계·구현 승인]** — '서면 승인 대기'는 해소됐다: migration 004(phase6 opt-in)·GET/PUT /api/wishlist·찜 탭/하트/저장 시트가 코드·문서 수준으로 실구현됐다(docs/wishlist-design.md). 실DB 적용·브라우저 통합·Visual은 미승인 — **PM 최종 판정: 정적+DB-free 한정 PASS**(2026-10-13, shots/pmqa070-final/run-4d7b54ed-… · 열린 B/M 0 · 실DB/브라우저/Visual NOT_RUN 유지) | [Project] 지원하지 않는 동작을 흉내 내지 않는 근거 없는 UI 금지 원칙 → 067에서 실제 동작하는 CTA로 대체 |
+| 전체 cart 계약 보존 | can_checkout·checkout은 전체 장바구니 기준을 유지한다. UI 부분선택(항목 checkbox·선택 합계·전체 견적 동시 표시)은 허용하되 비전체 선택 시 주문 CTA를 disabled + 안내로 처리한다 — Backend 부분 주문은 여전히 제외. **[Superseded 2026-10-13 — PMQA-067, 사용자 C 통합 승인]** Backend 부분 주문 제외는 폐기 — CART_SELECTED 견적·주문이 실제 구현됐다(선택 cart_item_id 부분집합·미선택 보존·카트 version 미서명). '전체 아니면 disabled' 규칙과 직접 구매 금지도 함께 폐기된다 | 사용자 05 구조 요구 → 067에서 사용자 C 승인으로 확장 |
 | 리뷰 미지원 요소 정직 표시 | 사진 리뷰 그리드·작성자 표기는 지원하지 않는다. 리뷰는 flat list + 출처 칩(SYNTHETIC=시연/REAL=실사용)과 실제 저장 행 수만 표시하고, 평점은 전체 집계와 일치할 때만 노출한다. 내부 variant id는 사용자 옵션 라벨로 해소한다 | 존재하지 않는 리뷰 메타를 만들지 않는 정직 표시 원칙; PMQA-05 검수에서 내부 id 노출을 해소 요구 |
 | MAJOR/MINOR 분리 | 구조적 결함(CTA 가림·리뷰 가시성·부분선택 구조·비교 캔버스 잘림)은 05 correction 안에서 해소한다. 배송 데모 표기의 줄바꿈·미세 서체/간격 등 표면 polish만 08 Final Visual Polish로 이관한다 | PMQA-05-FIDELITY-FIX-029 — 구조 이슈를 외형 수정으로 미루지 않는다 |
 

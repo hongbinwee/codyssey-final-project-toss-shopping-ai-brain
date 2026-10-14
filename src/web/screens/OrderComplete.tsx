@@ -112,40 +112,47 @@ export function OrderComplete({
         )}
       </div>
 
-      {/* 주문 상품 — 스냅샷 이름/옵션/수량/가격 + 조회 시점 카탈로그 이미지 */}
-      <div className="checkout-block">
-        <h3 className="section-title">주문 상품 {o.items.length}건</h3>
-        <ul className="cart-list">
-          {o.items.map((i) => (
-            <li key={i.order_item_id} className="cart-item">
-              <div className="cart-thumb">
-                <img
-                  src={productImg({ product_id: i.product_id ?? i.variant_id, image: i.image })}
-                  alt=""
-                  onError={(e) => {
-                    e.currentTarget.style.display = "none";
-                  }}
-                />
-              </div>
-              <div className="cart-info">
-                <div>{i.product_name}</div>
-                <div className="muted">
-                  {Object.values(i.option_values).join(" · ")} · {i.quantity}개
-                </div>
-              </div>
-              <div className="cart-right"><b>{fmtWon(i.line_total_won)}</b></div>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="checkout-block">
-        <h3 className="section-title">배송지</h3>
-        {/* Ref077과 동일 계층 — 주소/상세가 주 정보, 이름·연락처는 보조 */}
-        <div>{o.address_snapshot.address} {o.address_snapshot.detail}</div>
-        <div className="muted">
-          {o.address_snapshot.name} · {o.address_snapshot.phone}
+      {/* 주문 상품 — Ref077: '주문 상품 N건' 제목·중첩 카드 목록 없이 품목마다
+          flat 카드 한 장 [Observed·PMQA-075 F13]. 카드 안은
+          [img] | 상품명(+옵션) | '단가 · 수량' 인라인 — 스냅샷
+          unit_price_won·quantity만 표시한다(line_total과 구분).
+          도착예정·배송 라벨은 스냅샷에 없어 렌더하지 않는다. */}
+      {o.items.map((i) => (
+        <div key={i.order_item_id} className="checkout-card oc-item">
+          <div className="checkout-thumb">
+            <img
+              src={productImg({ product_id: i.product_id ?? i.variant_id, image: i.image })}
+              alt=""
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          </div>
+          <div className="checkout-item-info">
+            <div className="checkout-item-name">
+              {i.product_name}
+              {Object.values(i.option_values).length
+                ? ", " + Object.values(i.option_values).join(", ")
+                : ""}
+            </div>
+            <div className="checkout-item-price">
+              <b>{fmtWon(i.unit_price_won)}</b>
+              <span className="checkout-item-qty"> · {i.quantity}개</span>
+            </div>
+          </div>
         </div>
+      ))}
+
+      {/* 배송지 — Ref077: 상품 카드 다음 별도 둥근 카드 없이 페이지 배경 위
+          flat 섹션. 공통 .checkout-block 회색 카드 대신 OrderComplete 전용
+          .oc-sec로 세로 구획만 둔다 [PMQA-075-FIX MAJOR1 — Luna/PM].
+          계층 — 수취인(굵게) → 주소/상세 → 연락처. 배송메모·주소 변경은
+          미지원이라 렌더하지 않는다 [PMQA-075 F13]. */}
+      <div className="oc-sec">
+        <h3 className="section-title">배송지</h3>
+        <div className="oc-addr-name">{o.address_snapshot.name}</div>
+        <div>{o.address_snapshot.address} {o.address_snapshot.detail}</div>
+        <div className="muted">{o.address_snapshot.phone}</div>
       </div>
 
       <div className="muted sm oc-note">

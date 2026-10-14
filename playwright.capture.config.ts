@@ -4,10 +4,16 @@
 // 동일 안전 경계: test-server.ts 래퍼가 commerce_test를 실측 확인 후에만 listen.
 // reuseExistingServer=false — dev 서버 위에서 돌지 않고 자체 3101을 쓴다.
 import { defineConfig } from "@playwright/test";
+import "./src/config.ts";
 import { assertEntryRunnable } from "./tests/helpers/pw-config-gate.ts";
+import { databaseUrlForName } from "./src/db-url.ts";
 
 // PMQA-055: capture 전용 늦은 예약 경로는 이번 지원 미완 — 설정 평가에서 거부.
 assertEntryRunnable("playwright.capture.config.ts");
+
+const baseDatabaseUrl = process.env.DATABASE_URL;
+if (!baseDatabaseUrl) throw new Error("DATABASE_URL is required");
+const testDatabaseUrl = databaseUrlForName("commerce_test", baseDatabaseUrl);
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -27,7 +33,7 @@ export default defineConfig({
     env: {
       ...process.env,
       PORT: "3101",
-      DATABASE_URL: "postgres://commerce:commerce@localhost:5432/commerce_test",
+      DATABASE_URL: testDatabaseUrl,
       TEST_USER_CODES: "e2e-a=u-a,e2e-b=u-b,e2e-c=u-c,e2e-d=u-d",
       LLM_PROVIDER: "stub",
       CI: "1",

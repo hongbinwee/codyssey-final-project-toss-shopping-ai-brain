@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "scripts", "tests", "playwright.config.ts"]
+  "include": ["src", "scripts", "tests", "playwright.config.ts", "playwright.isolated.config.ts"]
 }

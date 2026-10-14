@@ -8,8 +8,10 @@ import type { OrderView } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { CancelSheet } from "../components/CancelSheet.tsx";
 import { OrderCard } from "../components/OrderCard.tsx";
+import { listPendingByKind, type PendingWrite } from "../pending.ts";
 import {
   cardHead, cardRightLabel, deliveredAtFromEvents, showShipChip,
+  refundLine,
 } from "../../order-display.ts";
 
 const SHIP_LABEL: Record<string, string> = {
@@ -45,6 +47,15 @@ export function OrderDetail({
   const shipRef = useRef<HTMLDivElement | null>(null);
   // 응답 역전 가드 — 주문 A→B 빠른 이동 시 느린 A 응답이 B 화면을 덮지 않는다 [PM 보조 기준].
   const seqRef = useRef(0);
+  // 미해결 취소 intent — execute commit 뒤 '취소하기'가 숨어도 복구 통로를 유지한다 [MJ060-1].
+  const [cxlPendings, setCxlPendings] = useState<PendingWrite[]>(() =>
+    listPendingByKind("CANCEL_ORDER"),
+  );
+  useEffect(() => {
+    const on = () => setCxlPendings(listPendingByKind("CANCEL_ORDER"));
+    addEventListener("pending-writes", on);
+    return () => removeEventListener("pending-writes", on);
+  }, []);
 
   async function reload() {
     const seq = ++seqRef.current;
@@ -78,6 +89,8 @@ export function OrderDetail({
       </div>
     );
   const o = res.data;
+  const cancelPending =
+    cxlPendings.find((p) => p.payload?.order_id === o.id) ?? null;
   const head = cardHead({
     order_status: o.status,
     cancel_status: o.cancel_request?.status ?? null,
@@ -146,7 +159,13 @@ export function OrderDetail({
         }
         onCancel={
           // 서버 canonical cancel_eligible만 소비 — UI 재판정 금지 [PMQA-06B-053].
-          o.cancel_eligible === true ? () => setCancelOpen(true) : undefined
+          // 미해결 intent가 있으면 새 취소 대신 복구 버튼만 연다 [MJ060-1].
+          !cancelPending && o.cancel_eligible === true
+            ? () => setCancelOpen(true)
+            : undefined
+        }
+        onCancelRecovery={
+          cancelPending ? () => setCancelOpen(true) : undefined
         }
       />
 
@@ -175,12 +194,25 @@ export function OrderDetail({
               모의 결제 {fmtWon(o.payment.paid_amount_won)} — 실제 결제는 발생하지 않아요
               {" · "}{new Date(o.payment.paid_at).toLocaleString("ko-KR")}
             </div>
-            {o.payment.refund_status !== "NONE" && (
-              <div className="muted">
-                환불 {o.payment.refund_status === "PENDING" ? "처리 중" : "완료"}
-                {" · "}{fmtWon(o.payment.refunded_amount_won)}
-              </div>
-            )}
+            {/* 환불 행은 서버 refund_status에만 근거한다 — PENDING은 예정액,
+                REFUNDED만 실환불액, 미확인 값은 '완료'로 단정하지 않는다 [PMQA-060]. */}
+            {(() => {
+              const rl = refundLine({
+                refund_status: o.payment!.refund_status,
+                refunded_amount_won: o.payment!.refunded_amount_won,
+                expected_amount_won: o.cancel_request?.refund_amount_won ?? null,
+              });
+              if (!rl) return null;
+              return (
+                <div className="muted">
+                  {rl.label}
+                  {rl.amount_won != null &&
+                    " · " + (rl.amount_kind === "expected" ? "예정 " : "") + fmtWon(rl.amount_won)}
+                  {rl.amount_kind === "actual" && o.payment!.refunded_at &&
+                    " · " + new Date(o.payment!.refunded_at).toLocaleString("ko-KR")}
+                </div>
+              );
+            })()}
           </>
         ) : (
           <div className="muted">결제 정보가 없어요</div>
@@ -237,32 +269,37 @@ export function OrderDetail({
           </div>
           <div className="muted">
             환불 예정 {fmtWon(o.cancel_request.refund_amount_won)}
-            {o.payment?.refund_status === "REFUNDED" ? " — 환불 완료" : o.payment?.refund_status === "PENDING" ? " — 환불 처리 중" : ""}
+            {(() => {
+              const rl = o.payment
+                ? refundLine({
+                    refund_status: o.payment.refund_status,
+                    refunded_amount_won: o.payment.refunded_amount_won,
+                    expected_amount_won: o.cancel_request!.refund_amount_won,
+                  })
+                : null;
+              return rl
+                ? " — " + rl.label +
+                    (rl.amount_kind === "actual" && rl.amount_won != null
+                      ? " " + fmtWon(rl.amount_won)
+                      : "")
+                : "";
+            })()}
           </div>
         </section>
         </>
       )}
 
-      <div className="bottom-bar">
+      {/* Ref080/084에는 하단 고정바가 없다 — 목록 복귀만 남기고, 준비 중 AI
+          문의 CTA는 카드 내 ghost 한 곳에만 둔다(중복 진입 제거)
+          [PMQA-075 F14]. */}
+      <div className="bottom-bar od-actions">
         <button className="btn ghost" onClick={onBack}>목록</button>
-        {/* CS Brain 미구축 — 실제 문의로 연결되지 않는 primary CTA를 열지 않고
-            준비 중 상태로 둔다 [PMQA-06B-053 MJ053-2] */}
-        <button
-          className="btn primary"
-          disabled
-          title="AI 주문 문의 기능은 아직 준비 중이에요"
-        >
-          AI 주문 문의 · 준비 중
-        </button>
       </div>
 
       {cancelOpen && (
         <CancelSheet
           orderId={o.id}
-          itemSummary={
-            o.items[0]?.product_name +
-            (o.items.length > 1 ? " 외 " + (o.items.length - 1) + "건" : "")
-          }
+          order={o}
           onClose={(changed) => {
             setCancelOpen(false);
             if (changed) reload();

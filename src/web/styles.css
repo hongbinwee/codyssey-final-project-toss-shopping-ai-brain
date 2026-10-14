@@ -216,6 +216,64 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 }
 .shop-tab.on { background: var(--chip-on); color: var(--text); font-weight: 700; }
 
+/* 리스트 뷰 전용 헤더 — 글로벌 검색 헤더 대신 ← · 그룹명▾ · 검색 · 장바구니 [Observed 100] */
+.list-head {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center;
+  padding: 4px 10px 4px 2px; /* [Project] .top 아이콘 라인과 맞춤 */
+  background: var(--bg);
+}
+.list-title {
+  display: flex; align-items: center; gap: 1px;
+  border: none; background: none; cursor: pointer; padding: 8px 4px;
+  font-size: 17px; font-weight: 700; color: var(--text);
+}
+.list-head .list-spacer { flex: 1; }
+
+/* 리스트 뷰 로컬 서브탭 — 헤더 아래 그룹 내 카테고리 전환 [Observed 100] */
+.list-tabs {
+  display: flex; gap: 0; overflow-x: auto; scrollbar-width: none;
+  margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad);
+  border-bottom: 1px solid var(--line);
+}
+.list-tabs::-webkit-scrollbar { display: none; }
+.list-tab {
+  flex-shrink: 0; border: none; background: none; cursor: pointer;
+  padding: 8px 10px 11px; font-size: 14.5px; color: var(--muted);
+  position: relative; white-space: nowrap;
+}
+.list-tab.on { color: var(--text); font-weight: 700; }
+.list-tab.on::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px;
+  height: 2px; border-radius: 1px; background: var(--text);
+}
+
+/* 가로 상품 레일 — 식품 홈 추천·기획전 그룹 [Observed 27/48] */
+.prod-rail {
+  display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad) 4px;
+}
+.prod-rail::-webkit-scrollbar { display: none; }
+.prod-rail .wish-cell { flex: 0 0 148px; }
+
+/* 섹션 헤더 우측 '전체보기 >' [Observed 27] */
+.section-h .sec-more {
+  float: right; display: inline-flex; align-items: center;
+  border: none; background: none; cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--muted);
+  margin-top: 2px; padding: 0;
+}
+
+/* 기획전 그룹 — 제목+부제+가로 레일+전체폭 더보기 [Observed 48] */
+.camp-sec { margin-top: 18px; }
+.camp-sub { font-size: 13px; margin: -8px 0 10px; }
+.camp-more {
+  display: block; width: 100%; margin-top: 10px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: none; color: var(--text);
+  font-size: 14px; font-weight: 600; padding: 13px 0; cursor: pointer;
+}
+
 /* 히어로 캐러셀 — 카드형(좌 텍스트+우 이미지), 다크에서도 크림 카드 유지 [Observed] */
 .hero-track {
   display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory;
@@ -369,6 +427,12 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 .sale-promo img { width: 42%; object-fit: cover; display: block; }
 .sale-tabs {
   display: flex; margin: 12px -10px 0; border-bottom: 1px solid var(--line);
+  /* 스크롤 시 서브탭이 상단에 고정된다 [Observed 35]. 우측 패딩은 고정된
+     float-nav 아이콘(2×38+gap)과 겹치지 않게 비워두는 값 — 정확한 오프셋은
+     승인된 브라우저 검증으로 확인 예정 [Project] */
+  position: sticky; top: 0; z-index: 21;
+  background: var(--bg);
+  padding-right: 90px;
 }
 .sale-tab {
   flex: 1; padding: 9px 0 11px; border: none; background: none; cursor: pointer;
@@ -442,6 +506,8 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
 .list-h .cnt { margin-left: 6px; font-size: 13px; font-weight: 500; }
 
 .section-h { margin: 20px 0 12px; font-size: 16px; font-weight: 700; }
+/* 시즌 홈 그룹 경계선 — 추천/특가 섹션 사이의 full-width 구분 [Observed 50] */
+.sec-div { border: 0; border-top: 8px solid var(--field); margin: 24px 0 0; }
 /* 추천 섹션의 합성 지표 안내 칩 — Toss의 AI/광고 칩 슬롯을 정직한 표기로 대체 */
 .demo-chip {
   margin-left: 7px; padding: 2px 6px; border-radius: 6px;
@@ -532,6 +598,49 @@ main { flex: 1; padding: 0 var(--pad) 110px; }
   color: var(--cartline);
   display: flex; align-items: center; justify-content: center;
 }
+
+/* ── 검색 결과 카드 변형 [F03 — Observed search/103·104] ──
+   홈 카드(밝은 일체형 배경+이미지 하단 페이드)와 달리 검색 카드는 카드 배경
+   없이 페이지 위에 열린 그리드다 — 정사각 라운드 이미지(페이드 없음),
+   이미지 안 우하단 흰 쇼핑백 윤곽, 상품명 위 다크 최저가 배너, 별점 행. */
+/* 오픈 배경 — 카드 라이트 토큰을 페이지 토큰으로 재배선 [MAJOR073-01].
+   --ptext(#1d1f24)·--psub 등이 다크 페이지 --bg 위 검정으로 남는 회귀 해소.
+   선언 교체만으로 모든 .product-* 규칙이 재해석되며 홈 기본 토큰은 불변. */
+.product-card.search {
+  background: transparent; border-radius: 0;
+  --ptext: var(--text);
+  --psub: var(--text-2);
+  --pchip: var(--chip);
+  --pline: var(--line);
+  --cartline: var(--text-2);
+}
+.product-card.search .product-thumb {
+  aspect-ratio: 1; border-radius: 12px; overflow: hidden;
+}
+.product-card.search .product-thumb img {
+  -webkit-mask-image: none; mask-image: none;
+}
+.product-card.search .product-info { padding: 9px 2px 0; }
+.thumb-cart {
+  position: absolute; right: 10px; bottom: 10px;
+  color: #fff; display: flex;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+}
+/* 조건부 최저가 배너 — 검색은 상품명 위 다크 마룬 pill [Observed search/103] */
+.search-lowest {
+  display: inline-flex; align-items: center;
+  background: #4a2823; color: #ffd8cd;
+  font-size: 11.5px; font-weight: 600; letter-spacing: -0.01em;
+  padding: 4px 9px; border-radius: 8px; margin: 0 0 6px;
+}
+.search-lowest .signal-demo { color: inherit; opacity: 0.75; }
+/* 검색 원본의 평점 ★는 노랑 [Observed search/103] — 카드 다크 별점 재정의 해제 */
+.product-card.search .product-meta .meta-star { color: var(--star); }
+/* 빈 variants truthful fallback — 가짜 가격 숫자를 꾸미지 않는다 [F03] */
+.price-none { font-size: 15px; font-weight: 600; color: var(--psub); }
+/* 검색 결과 데모 출처 안내 — 카드별 표기가 없는 특가 배지의 정가 메타 출처를
+   결과 영역에서 고지한다 [MAJOR073-02] */
+.search-note { margin: 2px 2px 10px; }
 
 /* 스켈레톤 */
 .skel-card {
@@ -707,14 +816,7 @@ button.recent-row { background: none; border: none; cursor: pointer; text-align:
 .info-star { color: var(--text-2); }
 .info-next { flex: 0 0 auto; color: var(--muted); }
 .rating-retry { margin: 4px 0 0 70px; padding: 2px 0; font-size: 12px; text-align: left; }
-/* 옵션 변경 진입 버튼 — 실제 선택은 BottomSheet [Observed product-detail] */
-.option-open {
-  width: 100%; display: flex; justify-content: space-between; align-items: center;
-  background: var(--card); border: 1px solid var(--line);
-  border-radius: var(--radius-sm); padding: 14px;
-  color: var(--text); font-size: 15px; cursor: pointer; text-align: left;
-}
-.option-open:disabled { opacity: 0.45; cursor: not-allowed; }
+/* .option-open은 계약 테스트 선택자 훅 — 실제 스타일은 .optline [PMQA-066] */
 .review-head { display: flex; align-items: center; gap: 7px; min-height: 20px; }
 .review-head b { color: var(--text-2); font-size: 13px; letter-spacing: 1px; }
 /* 리뷰 출처 칩 — SYNTHETIC을 실사용 리뷰로 위장하지 않게 구분 */
@@ -771,21 +873,125 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .detail-panel { min-height: 160px; padding: 14px 0 20px; }
 .review-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }
 .review-summary-head > .muted { font-size: 13px; }
-.review-rating { display: flex; align-items: center; gap: 5px; font-size: 18px; }
-.review-rating .muted { font-size: 13px; }
-.review-star { color: var(--text-2); }
 .review-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
 .review-item { background: transparent; border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 14px 0 16px; }
 .review-item p { margin: 9px 0 0; line-height: 1.5; font-size: 14px; }
 .review-date { margin-left: auto; color: var(--muted); font-size: 12px; }
 .review-option { margin-top: 7px; font-size: 12px; }
-.review-summary { margin: 0 0 8px; font-size: 13px; }
-.review-provenance { margin: -2px 0 10px; font-size: 11px; line-height: 1.45; }
 .detail-info-panel > p { margin: 0 0 14px; line-height: 1.55; color: var(--text-2); }
 .detail-info-panel dl { margin: 0; }
 .spec-row { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 14px; }
 .spec-row dt { color: var(--muted); }
 .spec-row dd { margin: 0; color: var(--text); }
+
+/* PMQA-066 — 제품 화면군 Reference 보정 [Observed product-detail/04·05·095·071, reviews/19·20] */
+/* F04 하단 썸네일 옵션 행 — info-rows와 같은 8px 구획 분리, 썸네일+선택값+파란 진입 링크 */
+.optline {
+  display: flex; align-items: center; gap: 12px; width: auto;
+  margin: 0 calc(-1 * var(--pad)); padding: 14px var(--pad);
+  border: 0; border-top: 8px solid var(--field);
+  background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.optline:disabled { opacity: 0.5; cursor: not-allowed; }
+.optline-img { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 8px; object-fit: cover; background: var(--field); }
+.optline-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.optline-label { font-size: 14.5px; line-height: 1.35; }
+.optline-price { font-size: 12.5px; }
+.optline-cta { display: inline-flex; align-items: center; gap: 1px; flex: 0 0 auto; color: var(--accent); font-size: 13px; font-weight: 600; }
+/* F19 옵션 시트 — 선택은 둥근 강조 카드, 미선택은 파란 옵션 텍스트 */
+.opt-list { display: flex; flex-direction: column; }
+.opt-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  width: 100%; padding: 12px 4px; background: none; border: 0; border-radius: 0;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.opt-item .opt-name { font-size: 15px; color: var(--accent); line-height: 1.4; }
+.opt-item .opt-price { font-size: 16px; font-weight: 700; }
+.opt-item .opt-sub { font-size: 12px; }
+.opt-item.sel { background: var(--field); border-radius: 12px; padding: 14px; }
+.opt-item.sel .opt-name { color: var(--text); font-weight: 600; }
+.opt-item:disabled { cursor: not-allowed; }
+.opt-item:disabled .opt-name,
+.opt-item:disabled .opt-price { color: var(--muted); font-weight: 400; }
+/* F08/F07 큰 별 클러스터 — 별 묶음+평점+개수가 요약의 주정보 */
+.stars { display: inline-flex; align-items: center; gap: 2px; }
+.stars .star-on { color: var(--star); }
+.stars .star-off { color: var(--line); }
+.rev-cluster { display: flex; align-items: center; gap: 6px; margin: 4px 0 3px; }
+.rev-cluster .rev-avg { font-size: 21px; font-weight: 800; letter-spacing: -0.3px; }
+.rev-cluster .muted { font-size: 13px; }
+.detail-hero.tappable { cursor: zoom-in; }
+/* F07 전체 리뷰 전용 화면 — 상단 뒤로 아이콘만, 요약→'전체 리뷰'→정렬 영역 */
+.screen.reviews-full { padding-top: 0; }
+.rev-nav { display: flex; align-items: center; height: 48px; }
+.rev-scope { font-size: 13px; }
+.reviews-full .rev-cluster { margin: 6px 0 4px; }
+.reviews-full .rev-cluster .rev-avg { font-size: 24px; }
+.rev-list-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 18px 0 2px;
+}
+.rev-list-head b { font-size: 17px; }
+.rev-list-head .muted { font-size: 13px; }
+
+/* F20 리뷰 정렬 — Ref127의 '전체 리뷰' 우측 chevron → 우측 정렬 둥근 팝오버
+   [Observed 구조]. 바텀시트가 아닌 앵커 팝오버라 자체 스코프다. */
+.rev-sort-wrap { position: relative; }
+.rev-sort-trigger {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 0; background: none; padding: 2px 0;
+  color: var(--text-2); font-size: 13px; cursor: pointer;
+}
+.rev-sort-trigger svg { color: var(--muted); }
+.rev-sort-scrim { position: fixed; inset: 0; z-index: 45; }
+.rev-sort-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 46;
+  min-width: 148px; padding: 6px;
+  background: var(--bg-elev); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex; flex-direction: column;
+}
+.rev-sort-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border: 0; border-radius: 10px;
+  background: none; color: var(--text); font-size: 14px;
+  cursor: pointer; text-align: left; white-space: nowrap;
+}
+.rev-sort-item.sel { font-weight: 600; }
+.rev-sort-check { margin-left: auto; color: var(--accent); display: flex; }
+
+.review-more-error { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+/* F32 전용 확대 뷰어 — 하단 구매바·뒤 스크롤보다 위에 뜨는 전체 덮개 */
+.viewer {
+  position: fixed; inset: 0; z-index: 60;
+  background: #16181c; color: #fff;
+  display: flex; flex-direction: column;
+}
+.viewer-back {
+  position: absolute; top: 14px; left: 14px; z-index: 2;
+  width: 40px; height: 40px; border: 0; border-radius: 50%;
+  background: transparent; color: #fff; display: grid; place-items: center; cursor: pointer;
+}
+.viewer-back:active { background: rgba(255, 255, 255, 0.12); }
+.viewer-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.viewer-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.viewer-strip {
+  display: flex; width: 100%; height: 100%;
+  overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+}
+.viewer-strip::-webkit-scrollbar { display: none; }
+.viewer-strip img {
+  width: 100%; max-height: 100%; flex: 0 0 100%;
+  object-fit: contain; scroll-snap-align: center; align-self: center;
+}
+.viewer-thumbs { display: flex; gap: 8px; padding: 0 16px calc(16px + env(safe-area-inset-bottom)); }
+.viewer-thumb {
+  width: 52px; height: 52px; padding: 0; overflow: hidden;
+  border: 2px solid transparent; border-radius: 10px;
+  background: none; cursor: pointer; opacity: 0.55;
+}
+.viewer-thumb.on { border-color: #fff; opacity: 1; }
+.viewer-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* 하단 고정 바 — CTA 있는 푸시 화면용 */
 .bottom-bar {
@@ -803,14 +1009,13 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .bottom-bar.has-note { flex-direction: column; align-items: stretch; }
 .bottom-bar .bar-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex: 1; }
 .bottom-bar .bar-row.detail-actions { justify-content: stretch; gap: 8px; }
-.detail-cart-btn, .detail-option-cta {
+.detail-cart-btn {
   position: relative; flex: 0 0 auto; height: 48px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--bg-elev); color: var(--text); cursor: pointer;
 }
 .detail-cart-btn { width: 44px; display: grid; place-items: center; }
-.detail-option-cta { min-width: 92px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; }
-.detail-cart-btn:disabled, .detail-option-cta:disabled { opacity: 0.45; cursor: not-allowed; }
-.detail-actions .btn.primary { flex: 1; min-width: 0; min-height: 48px; padding: 0 10px; font-size: 15px; white-space: nowrap; }
+.detail-cart-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.detail-actions .btn { flex: 1; min-width: 0; min-height: 48px; padding: 0 10px; font-size: 15px; white-space: nowrap; }
 .bottom-bar .bar-note {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
   font-size: 13px; color: var(--muted); padding-bottom: 10px; margin-bottom: 10px;
@@ -892,10 +1097,16 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .cart-info .badge-soldout { margin-top: 5px; }
 .qty-ctrl.sm {
   margin-top: 10px; gap: 8px; padding: 5px 10px; border-radius: 8px;
-  display: flex; width: 100%; justify-content: space-between;
+  display: inline-flex; min-width: 104px; justify-content: space-between;
 }
 .qty-ctrl.sm button { width: 28px; height: 28px; border: 0; background: transparent; font-size: 16px; }
 .qty-ctrl.sm b { min-width: 16px; text-align: center; font-size: 14px; align-self: center; }
+
+/* 빈 카트 — Ref099: 카드 없이 페이지 배경 위 아이콘+굵은 제목+보조 문구 [PMQA-075 F24] */
+.cart-empty { padding: 52px 0 40px; }
+.cart-empty .cart-empty-ic { color: var(--field); display: block; }
+.cart-empty-title { margin-top: 14px; font-size: 22px; font-weight: 800; line-height: 1.3; }
+.cart-empty-sub { margin-top: 6px; font-size: 14px; color: var(--muted); }
 
 /* 결제 예상 금액 패널 — Ref126의 접힘/펼침 견적 구조 [Observed cart/126].
    헤더(총 N건 결제 예상 금액 + 총액 + chevron) → 구분선 → 상품 금액·배송비 행 → CTA. */
@@ -917,7 +1128,6 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .cart-quote-rows[hidden] { display: none; }
 .cart-quote-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 14px; }
 .cart-quote-row > span:last-child { color: var(--text-2); }
-.cart-summary-count { color: var(--muted); font-size: 12px; }
 .cart-summary .muted { font-size: 13px; }
 .cart-checkout-action { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .cart-checkout-action > .muted { text-align: center; }
@@ -1001,6 +1211,10 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
   margin: 22px calc(-1 * var(--pad)) 0;
 }
 /* 배송지 — flat 영역, 주소 주 정보 / 이름·연락처 보조 [Observed Ref051] */
+.checkout-ship .ship-to {
+  font-size: 19px; font-weight: 700; line-height: 1.35;
+  margin: -2px 0 8px; color: var(--text);
+}
 .checkout-ship .ship-addr { font-size: 15.5px; line-height: 1.5; color: var(--text); }
 .checkout-ship .ship-sub { margin-top: 4px; font-size: 13.5px; color: var(--muted); }
 /* 상품 카드 — 단일 카드, 내부 행은 중첩 카드 없이 플랫 배치 */
@@ -1021,6 +1235,21 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .checkout-item-info { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.4; }
 .checkout-item-info .muted { margin-top: 3px; }
 .checkout-item-price { margin-top: 5px; font-size: 15.5px; }
+.checkout-item-name { line-height: 1.4; }
+.checkout-item-qty { color: var(--muted); font-size: 14px; }
+/* 주문 완료 flat 상품 카드 — Ref077 [PMQA-075 F13] */
+.oc-item { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; }
+/* 주문 완료 배송지 — Ref077: 상품 카드 다음 배송지는 별도 둥근 카드가 아니라
+   페이지 배경 위 넓은 flat 섹션. 공통 .checkout-block(회색 카드)는 다른 화면
+   영향을 피해 바꾸지 않고 .oc-screen 스코프로만 배경·border·radius를 없앤다.
+   구획은 세로 여백만 — 26px은 캡처 측정이 아닌 [Project] 채택값
+   [PMQA-075-FIX F13 잔여 MAJOR1]. */
+.oc-screen .oc-sec { margin-top: 26px; }
+.oc-screen .oc-sec > .section-title { margin: 0 0 12px; }
+.oc-screen .oc-addr-name { font-weight: 700; margin-bottom: 4px; }
+/* 주문 상세 하단 — 목록 단일 액션만 [PMQA-075 F14: Ref080/084에는
+   고정바 내 AI CTA 없음] */
+.order-detail .od-actions .btn { flex: 1; }
 /* 카드 내 '주문 금액' 요약 토글 행 [Observed Ref051] — 펼치면 카드 밖
    독립 '총 결제 금액' 섹션이 열린다 */
 .checkout-card .cart-quote-toggle {
@@ -1193,3 +1422,350 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .sheet-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
 .sheet-actions .btn { min-width: 110px; }
 
+/* F23 배송정보 시트 — Ref093 label/value 행 + 하단 단일 확인 CTA [Observed 구조] */
+/* .ship-sheet 스코프 — 본문만 스크롤·CTA는 flex 하단 고정(문서 흐름 끝에서
+   밀려 가려지지 않음). 배경 스크롤은 BottomSheet lockScroll이 담당한다. */
+.sheet.ship-sheet {
+  display: flex; flex-direction: column;
+  max-height: 85vh; overflow: hidden;
+}
+.ship-sheet .ship-scroll { min-height: 0; overflow-y: auto; }
+.ship-sheet .sheet-cta { flex-shrink: 0; }
+.ship-rows { display: flex; flex-direction: column; }
+.ship-row {
+  display: flex; gap: 12px; padding: 12px 0;
+  border-bottom: 1px solid var(--line); font-size: 14px;
+}
+.ship-row:first-child { padding-top: 4px; }
+.ship-k { flex: 0 0 76px; color: var(--muted); font-size: 13px; }
+.ship-v { flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; }
+.ship-gap { font-size: 12.5px; line-height: 1.5; margin: 14px 0 0; }
+.sheet-cta { width: 100%; min-height: 48px; margin-top: 18px; font-size: 16px; }
+
+/* ── 취소 플로우 전용 페이지 [Observed Ref087/088/089 + Project 최소값] ──
+   overlay/sheet 클래스 계약은 유지하고 flex column fullpage로 scoped override.
+   다른 .sheet(옵션·정렬)에는 영향이 없도록 전부 .cancel-overlay/.cancel-sheet
+   스코프 안에 둔다. */
+.cancel-overlay { align-items: stretch; }
+.cancel-overlay .sheet {
+  height: 100%; max-height: none; border-radius: 0; padding: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+@media (prefers-color-scheme: light) {
+  .cancel-overlay .sheet { border: 0; }
+}
+.cancel-top {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 48px; padding: 2px 10px; flex: none;
+}
+.cancel-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 8px 20px 24px;
+}
+.cancel-title {
+  font-size: 24px; font-weight: 700; line-height: 1.35;
+  letter-spacing: -0.02em; margin: 16px 0 22px;
+}
+.cancel-done-title { text-align: center; margin-top: 36px; }
+
+/* 상품 행 — 썸네일 + 상품명 + '단가 · 수량' [Ref087/088/089 공통] */
+.cancel-item { display: flex; gap: 12px; align-items: center; }
+.cancel-item + .cancel-item { margin-top: 12px; }
+.cancel-thumb {
+  display: block; width: 72px; height: 72px; flex: none;
+  border-radius: 12px; overflow: hidden; background: var(--field);
+}
+.cancel-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cancel-item-nm { font-size: 15px; font-weight: 500; line-height: 1.4; }
+.cancel-item-pr { font-size: 14px; color: var(--text-2); margin-top: 3px; }
+.cancel-badge {
+  display: inline-block; font-size: 11px; font-weight: 600; line-height: 1;
+  color: var(--discount);
+  background: color-mix(in srgb, var(--discount) 15%, transparent);
+  border-radius: 5px; padding: 4px 6px; margin-bottom: 6px;
+}
+.cancel-div { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
+
+/* 접수 카드·사유 박스·견적 미리보기 [Ref089 카드 / Project] */
+.cancel-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px; margin-top: 22px;
+}
+.cancel-reason-box {
+  background: var(--field); border-radius: var(--radius-sm);
+  padding: 13px 14px; font-size: 14px; color: var(--text-2); margin-top: 14px;
+}
+.cancel-quote {
+  background: var(--field); border-radius: var(--radius-sm);
+  padding: 13px 14px; margin-top: 14px; font-size: 14px;
+}
+
+/* 사유 행 — 카드형 .reason-opt를 flat 행으로 override [Ref087]:
+   좌 라벨(~17px) + 우 체크(muted → 선택 시 accent). 숨은 radio는 접근성 유지. */
+.cancel-sheet .reason-opt {
+  background: none; border: 0; border-radius: 0;
+  padding: 18px 0; margin-top: 0; font-size: 17px; position: relative;
+}
+.cancel-sheet .reason-opt input {
+  position: absolute; opacity: 0; width: 0; height: 0;
+}
+.reason-check { margin-left: auto; color: var(--muted); flex: none; }
+.cancel-sheet .reason-opt.sel .reason-check { color: var(--accent); }
+
+/* 최종 확인 금액 행 — flat 라벨/값 행 + 환불 예정액 accent 강조 [Ref088] */
+.cancel-sheet .pay-row { font-size: 16px; padding: 9px 0; }
+.cancel-sheet .pay-row.cancel-refund { font-size: 17px; }
+.cancel-sheet .pay-row.cancel-refund span,
+.cancel-sheet .pay-row.cancel-refund b { color: var(--accent); font-weight: 700; }
+
+/* 취소 안내 — 소제목 + 불릿 안내 [Ref088 하단] */
+.cancel-note { margin-top: 28px; }
+.cancel-note b { display: block; font-size: 15px; margin-bottom: 10px; }
+.cancel-note p {
+  margin: 0 0 8px; font-size: 14px; color: var(--text-2); line-height: 1.55;
+}
+.cancel-note p::before { content: "\00b7  "; }
+
+/* 하단 단일 CTA — safe-area 포함, 전폭 [Ref087/088/089] */
+.cancel-cta {
+  flex: none;
+  padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
+}
+.cancel-cta .btn { width: 100%; min-height: 54px; font-size: 17px; }
+
+/* ── C/069 F09 최근 본 · F16 내 쇼핑 · F22 준비중 표시 ──────────────── */
+
+/* 탭·네비·메뉴의 '준비중' 미니 표시 [Project] */
+.tab-soon {
+  display: inline-block; margin-left: 4px; padding: 1px 5px;
+  border-radius: 6px; background: var(--chip-on);
+  color: var(--muted); font-size: 10px; font-weight: 500;
+  vertical-align: 1px;
+}
+.menu-soon {
+  margin-left: auto; padding: 2px 7px; border-radius: 7px;
+  background: var(--chip-on); color: var(--muted); font-size: 11px;
+}
+.menu-item:disabled { opacity: 0.55; cursor: default; }
+.nav-item:disabled { opacity: 0.55; cursor: default; }
+.nav-soon {
+  position: absolute; top: 4px; left: 50%; transform: translateX(4px);
+  padding: 1px 4px; border-radius: 5px; background: var(--chip-on);
+  color: var(--muted); font-size: 8px; white-space: nowrap;
+}
+
+/* F09 최근 본 — 카드별 X는 Project 유용성 결정(직접 관측 근거 없음) */
+.recent-cell { position: relative; }
+.recent-x {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45); color: #fff;
+  font-size: 15px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.recent-note { margin: 6px 0 2px; }
+
+/* 가로 스크롤 rail — F16 최근본 thumb · 최근 주문 카드 */
+.hscroll {
+  display: flex; gap: 10px; overflow-x: auto;
+  scrollbar-width: none; padding: 2px 0 6px;
+}
+.hscroll::-webkit-scrollbar { display: none; }
+.recent-thumb {
+  flex: 0 0 auto; width: 74px; height: 74px; padding: 0;
+  border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; background: var(--card); cursor: pointer;
+}
+.recent-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.recent-thumb.off {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 15px;
+}
+
+.myshop-title { margin-top: 10px; }
+.myshop-menu-row {
+  display: flex; align-items: center; width: 100%; margin-top: 14px;
+  padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); color: var(--text); font-size: 14.5px;
+  text-align: left; cursor: pointer;
+}
+.myshop-sec-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 22px 0 8px;
+}
+.myshop-sec-head h3 { margin: 0; font-size: 16px; }
+.myshop-empty { padding: 10px 0 4px; }
+
+.mini-order {
+  flex: 0 0 auto; width: 150px; padding: 10px; text-align: left;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); cursor: pointer;
+  display: flex; flex-direction: column; gap: 4px; color: var(--text);
+}
+.mini-thumb { width: 100%; height: 74px; }
+.mini-order b { font-size: 13px; }
+.mini-order .muted.sm { font-size: 11.5px; }
+.mini-order-name {
+  font-size: 12.5px; color: var(--text-2);
+  display: -webkit-box; overflow: hidden;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+
+/* ── 찜 [PMQA-070] — 하트 오버레이·찜 탭 셀·저장 시트 ─────────────── */
+
+/* 카드 위 하트 — 썸네일 우상단 작은 원형 버튼 [Project]. card-cart는
+   aria-hidden 장식이라 위치·역할을 분리한다. */
+.wish-cell { position: relative; }
+/* X/bag의 기준 박스 — 셀 전체(이미지+정보)가 아니라 이미지(aspect-ratio 1)
+   영역만 덮는다. 셀 기준 bottom이면 bag이 상품명·가격을 가린다
+   [PM070 Ref124 재검수]. pointer-events는 끄고 버튼만 켜 빈 영역 클릭이
+   카드 버튼(.wish-item)으로 통과하게 한다. */
+.wish-visual {
+  position: absolute; top: 0; left: 0; right: 0; aspect-ratio: 1;
+  z-index: 2; pointer-events: none;
+}
+.wish-visual .wish-x, .wish-visual .wish-bag { pointer-events: auto; }
+.wish-heart {
+  position: absolute; top: 9px; right: 9px; z-index: 2;
+  width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 50%;
+  background: var(--card); color: var(--text-2);
+  display: grid; place-items: center; cursor: pointer;
+}
+.wish-heart.on { color: var(--danger); }
+.wish-heart:disabled { opacity: 0.55; cursor: default; }
+
+/* 찜 결과 인라인 안내 — 카드는 좌하단 칩, 상세 하단바는 바 위 전폭 [Project] */
+.wish-fb {
+  position: absolute; left: 8px; bottom: 8px; z-index: 3;
+  display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  max-width: calc(100% - 46px); padding: 5px 9px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--bg-elev); color: var(--text-2); font-size: 11.5px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+}
+.wish-fb .link { font-size: 11.5px; }
+.detail-actions { position: relative; }
+.detail-actions .wish-fb {
+  left: 0; right: 0; bottom: calc(100% + 6px); max-width: none;
+}
+
+/* 상세 하단 하트 CTA — Ref08 하단 CTA 행의 찜 Action [Observed 구조].
+   카트 버튼과 같은 크기·테두리로 나란히 둔다. */
+.detail-heart {
+  position: relative; flex: 0 0 auto; width: 44px; height: 48px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg-elev); color: var(--text);
+  display: grid; place-items: center; cursor: pointer;
+}
+.detail-heart.on { color: var(--danger); }
+.detail-heart:disabled { opacity: 0.45; cursor: not-allowed; }
+.detail-heart svg { width: 21px; height: 21px; }
+
+/* 찜 탭 셀 — Ref124 목록 구조 [Observed]: 카드 본문은 상세 진입,
+   이미지 위 X는 찜 해제, 우하단 bag은 별개 Action(상세 진입으로 매핑). */
+.wish-item {
+  display: block; width: 100%; padding: 0; border: none;
+  background: none; text-align: left; cursor: pointer;
+}
+.wish-thumb {
+  position: relative; display: block; aspect-ratio: 1;
+  border-radius: 12px; overflow: hidden; background: var(--chip);
+}
+.wish-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wish-inactive {
+  position: absolute; left: 8px; bottom: 8px; padding: 2px 7px;
+  border-radius: 7px; background: rgba(0,0,0,.55); color: #fff;
+  font-size: 10.5px; font-weight: 600;
+}
+.wish-info { display: block; padding: 6px 2px 0; }
+.wish-x {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: rgba(0,0,0,.45); color: #fff;
+  font-size: 15px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.wish-x:disabled { opacity: 0.5; cursor: default; }
+.wish-bag {
+  position: absolute; right: 10px; bottom: 10px; z-index: 2;
+  width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 50%;
+  background: var(--card); color: var(--text-2);
+  display: grid; place-items: center; cursor: pointer;
+}
+
+/* 찜 저장 시트 — Ref06 core [Observed]: 썸네일+안내+우측 바로가기 한 행,
+   하단 큰 단일 닫기 CTA. */
+.wish-sheet-row { display: flex; align-items: center; gap: 12px; }
+.wish-sheet-thumb {
+  flex: 0 0 auto; width: 52px; height: 52px;
+  border-radius: 10px; overflow: hidden; background: var(--chip);
+}
+.wish-sheet-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wish-sheet-txt { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+.wish-sheet-name {
+  display: block; margin-top: 2px; font-size: 12px; font-weight: 400;
+  color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wish-sheet-go { flex: 0 0 auto; }
+.wish-sheet-close { width: 100%; margin-top: 18px; min-height: 52px; font-size: 16px; }
+
+/* 내 쇼핑 찜 row — 확정 건수 칩 + chevron */
+.menu-cnt { margin-left: 6px; color: var(--accent); font-weight: 700; }
+.menu-chevron { margin-left: auto; color: var(--muted); }
+
+/* 검색 전용 필터 화면 — Ref105/106 [Observed→Project]: 공용 BottomSheet가 아닌
+   전체화면 overlay. 상단 탭은 섹션 앵커, 하단 'N개 상품 보기' 고정 CTA. */
+.flt-screen {
+  position: fixed; inset: 0; z-index: 60;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+}
+.flt-head {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 56px; padding: 0 16px; flex: 0 0 auto;
+}
+.flt-reset {
+  border: none; background: none; color: var(--text-2);
+  font-size: 14px; font-weight: 600; cursor: pointer; padding: 6px 0;
+}
+.flt-tabs {
+  display: flex; gap: 18px; padding: 0 16px; flex: 0 0 auto;
+  border-bottom: 1px solid var(--line); overflow-x: auto;
+}
+.flt-tabs::-webkit-scrollbar { display: none; }
+.flt-tab {
+  position: relative; border: none; background: none; cursor: pointer;
+  padding: 10px 0 12px; font-size: 15px; color: var(--muted); font-weight: 500;
+  white-space: nowrap;
+}
+.flt-tab.on { color: var(--text); font-weight: 700; }
+.flt-tab.on::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: var(--text); border-radius: 1px;
+}
+.flt-body { flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
+.flt-sec { padding: 16px 0 8px; }
+.flt-sec-t { margin: 0 0 12px; font-size: 15px; font-weight: 700; }
+.flt-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.flt-chips .fchip.more { color: var(--muted); }
+.flt-cta {
+  flex: 0 0 auto; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line); background: var(--bg);
+}
+.flt-apply {
+  width: 100%; min-height: 52px; border: none; border-radius: 12px;
+  background: var(--accent); color: #fff; font-size: 16px; font-weight: 700;
+  cursor: pointer;
+}
+.flt-apply:disabled { background: var(--chip); color: var(--muted); cursor: default; }
+.flt-apply.ghost { background: var(--chip); color: var(--text); }
+.flt-cta-err {
+  display: flex; flex-direction: column; gap: 8px;
+  font-size: 13px; color: var(--text-2);
+}
+.flt-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+/* 인라인 재시도 — 자동완성/개수 실패의 복구 경로 [Project] */
+.retry-inline {
+  border: none; background: none; color: var(--accent);
+  font: inherit; font-weight: 600; cursor: pointer; padding: 0 4px;
+}

@@ -162,9 +162,10 @@ test("detail: default option → sheet → qty → add → cart ops → empty", 
 
   // 옵션 변경은 BottomSheet — 품절 옵션(v-a-27)은 비활성
   await page.locator(".option-open").click();
-  const sheet = page.getByRole("dialog", { name: "옵션 선택" });
+  // 시트 타이틀은 '옵션 한번에 보기', 옵션 행 클래스는 .opt-item [PMQA-066 계약]
+  const sheet = page.getByRole("dialog", { name: "옵션 한번에 보기" });
   await expect(sheet).toBeVisible();
-  const soldout = sheet.locator("button.sort-item", { hasText: "27인치" });
+  const soldout = sheet.locator("button.opt-item", { hasText: "27인치" });
   await expect(soldout).toBeDisabled();
   await expect(soldout).toContainText("품절");
   await sheet.getByRole("button", { name: /24인치/ }).click();
@@ -183,7 +184,7 @@ test("detail: default option → sheet → qty → add → cart ops → empty", 
   await page.getByRole("button", { name: /수량 감소/ }).click();
   await expect(page.locator(".cart-item .qty-ctrl b").first()).toHaveText("1");
   await page.getByRole("button", { name: "삭제" }).click();
-  await expect(page.getByText("장바구니가 비어 있어요")).toBeVisible();
+  await expect(page.getByText("장바구니가 비었어요")).toBeVisible();
 });
 
 test("detail: 카트 상품명/썸네일 클릭 시 상품 상세로 이동", async ({ page }) => {
@@ -286,6 +287,7 @@ test("reviews: 출처 칩·실제 행 수·페이지네이션·빈 상태", asyn
         }],
         total_matching: 2, returned_count: 1,
         next_cursor: more ? "c2" : null, has_more: more,
+        sort: "LATEST",
       },
     });
     if (!url.includes("cursor=")) return route.fulfill({ json: mk("x1", "첫 페이지 리뷰", "SYNTHETIC", true) });
@@ -301,7 +303,7 @@ test("reviews: 출처 칩·실제 행 수·페이지네이션·빈 상태", asyn
 
   // 빈 상태 — 실제 fixture에 빈 리뷰 상품이 없으므로 응답을 가공해 검증
   await page.route("**/api/products/p-c/reviews**", (route) =>
-    route.fulfill({ json: { ok: true, data: { reviews: [], total_matching: 0, returned_count: 0, next_cursor: null, has_more: false } } }));
+    route.fulfill({ json: { ok: true, data: { reviews: [], total_matching: 0, returned_count: 0, next_cursor: null, has_more: false, sort: "LATEST" } } }));
   await page.goto("/#/p/p-c");
   await expect(page.getByText(/아직 리뷰가 없어요/)).toBeVisible();
 });
@@ -487,7 +489,7 @@ test("cart DELETE drop → 결과 확인 → 삭제 확정", async ({ page }) =>
   await page.unroute("**/api/cart/items/*");
   await page.getByRole("button", { name: "결과 확인" }).click();
   await expect(page.getByText(/완료된 요청/)).toBeVisible();
-  await expect(page.getByText("장바구니가 비어 있어요")).toBeVisible();
+  await expect(page.getByText("장바구니가 비었어요")).toBeVisible();
 });
 
 test("replay는 snapshot이 아니라 최신 카트를 표시한다", async ({ page }) => {
@@ -525,7 +527,7 @@ test("OUT_OF_STOCK 확정 거절 → pending 해제·자동 재실행 없음", a
   // p-c 32인치는 재고 2 — 2개 담은 뒤 +1은 서버가 OUT_OF_STOCK으로 거절한다
   await page.goto("/#/p/p-c");
   await page.locator(".option-open").click();
-  await page.getByRole("dialog", { name: "옵션 선택" })
+  await page.getByRole("dialog", { name: "옵션 한번에 보기" })
     .getByRole("button", { name: /32인치/ }).click();
   await page.locator(".qty-ctrl").getByRole("button", { name: "+" }).click();
   await page.getByRole("button", { name: "698,000원 담기" }).click();
@@ -632,7 +634,7 @@ test("pending intent는 사용자 스코프: B에 안 보이고 A 복귀 시 복
   await loginClean(page, "e2e-b"); // B의 카트도 비워 깨끗한 상태를 증명한다
   await page.goto("/#/cart");
   await expect(page.getByText("결과를 확인하지 못한 요청이 있어요")).toHaveCount(0);
-  await expect(page.getByText("장바구니가 비어 있어요")).toBeVisible();
+  await expect(page.getByText("장바구니가 비었어요")).toBeVisible();
   await page.goto("/#/p/p-b");
   await expect(page.getByRole("button", { name: /담기/ })).toBeEnabled(); // B는 잠기지 않는다
 
@@ -820,7 +822,7 @@ test("확정 거절 → 최신 CartView 회수: 초기 쓰기 경로 (PATCH/GET 
   // p-c 32인치 재고 2를 실제로 2개 담는다 — can_checkout=true 상태에서 시작
   await page.goto("/#/p/p-c");
   await page.locator(".option-open").click();
-  await page.getByRole("dialog", { name: "옵션 선택" })
+  await page.getByRole("dialog", { name: "옵션 한번에 보기" })
     .getByRole("button", { name: /32인치/ }).click();
   await page.locator(".qty-ctrl").getByRole("button", { name: "+" }).click();
   await page.getByRole("button", { name: "698,000원 담기" }).click();
@@ -923,7 +925,7 @@ test("상세: overlay navigation, 평점 진입, 리뷰/상품정보 탭과 옵�
   await expect(page.locator(".info-row").first()).toContainText("4개");
 
   await page.locator(".option-open").click();
-  const optionSheet = page.getByRole("dialog", { name: "옵션 선택" });
+  const optionSheet = page.getByRole("dialog", { name: "옵션 한번에 보기" });
   await expect(optionSheet.getByRole("button", { name: /27인치/ })).toBeDisabled();
   // 27인치 fixture 옵션은 품절이므로 선택되지 않고 구매 가능한 기본값 유지.
   await expect(page.locator(".option-open")).toContainText("24인치");
@@ -971,7 +973,7 @@ test("상세: overlay navigation, 평점 진입, 리뷰/상품정보 탭과 옵�
   await Promise.all(responseBodies);
 });
 
-test("cart: 부분 선택은 whole-cart checkout을 막고 선택삭제는 실제 선택만 지운다", async ({ page }) => {
+  test("cart: 부분 선택은 선택 상품만 주문서로 보내고 선택삭제는 실제 선택만 지운다", async ({ page }) => {
   await loginClean(page);
   await addFixtureVariant(page, "p-a", "v-a-24");
   await addFixtureVariant(page, "p-b", "v-b-24");
@@ -985,11 +987,25 @@ test("cart: 부분 선택은 whole-cart checkout을 막고 선택삭제는 실�
 
   const selectA = page.getByRole("checkbox", { name: "코드뷰 모니터 A 선택" });
   await selectA.uncheck();
-  await expect(order).toBeDisabled();
-  await expect(page.getByText("전체 상품을 선택해야 주문할 수 있어요")).toBeVisible();
-  await expect(page.locator(".cart-summary")).toContainText("총 2건 결제 예상 금액");
+  // 부분 선택은 주문을 막지 않는다 — 선택 상품만 견적 대상이다 [PMQA-067 CART_SELECTED].
+  const order1 = page.getByRole("button", { name: /1건 · .* 주문하기/ });
+  await expect(order1).toBeEnabled();
+  await expect(page.locator(".cart-summary")).toContainText("선택 1건 결제 예상 금액");
+  await order1.click();
+  await page.waitForURL(/#\/checkout\?src=sel&items=/);
+  const selIds = new URLSearchParams(page.url().split("?")[1] ?? "").get("items")!.split(",");
+  expect(selIds).toHaveLength(1); // 선택한 B의 cart_item_id 하나만 전달된다
+  await expect(page.getByText("일반 배송 상품 1건")).toBeVisible();
+  await expect(page.locator(".checkout-item-info")).toHaveCount(1);
+  await expect(page.locator(".checkout-item-info")).toContainText("코드뷰 모니터 B");
 
-  // 부분선택 안내로 고정 패널이 커진 상태에서도 마지막 카드의 수량 컨트롤에 도달할 수 있다
+  // 주문하지 않고 돌아오면 두 항목이 그대로다 — 견적은 카트를 변경하지 않는다
+  await page.goto("/#/cart");
+  await expect(page.locator(".cart-name")).toHaveCount(2);
+
+  // 0선택 안내로 고정 패널이 커진 상태에서도 마지막 카드의 수량 컨트롤에 도달할 수 있다
+  await page.getByRole("checkbox", { name: "전체 선택" }).uncheck();
+  await expect(page.getByText("주문할 상품을 선택해 주세요")).toBeVisible();
   await page.evaluate(async () => {
     scrollTo(0, document.documentElement.scrollHeight);
     await new Promise<void>((resolve) =>
@@ -1010,17 +1026,18 @@ test("cart: 부분 선택은 whole-cart checkout을 막고 선택삭제는 실�
   });
   expect(partialCover, JSON.stringify(partialCover)).toMatchObject({ found: true, aboveBar: true, inside: true });
 
+  // B만 선택해 삭제 — 실제 선택 항목만 지워진다
+  await page.getByRole("checkbox", { name: "코드뷰 모니터 B 선택" }).check();
   await page.getByRole("button", { name: "선택 항목 제거" }).click();
   await expect(page.locator(".cart-name")).toHaveCount(1);
   await expect(page.locator(".cart-name")).toContainText("코드뷰 모니터 A");
   await expect(page.getByRole("checkbox", { name: "코드뷰 모니터 A 선택" })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: "전체 선택" })).not.toBeChecked();
-  await expect(page.getByRole("button", { name: /1건 · .* 주문하기/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /0건 · .* 주문하기/ })).toBeDisabled();
   await page.getByRole("checkbox", { name: "코드뷰 모니터 A 선택" }).check();
   await expect(page.getByRole("checkbox", { name: "전체 선택" })).toBeChecked();
   await expect(page.getByRole("button", { name: /1건 · .* 주문하기/ })).toBeEnabled();
-  await expect(page.locator(".cart-summary-count")).toContainText("선택 1건 · 선택 상품 합계");
-  await expect(page.locator(".cart-summary-total")).toContainText("총 1건 결제 예상 금액");
+  await expect(page.locator(".cart-summary-total")).toContainText("선택 1건 결제 예상 금액");
   await emptyCart(page);
 });
 
@@ -1039,7 +1056,7 @@ test("cart: 결제 예상 금액 패널 접기·펼치기 — 서버 금액 그�
   await expect(rows).toContainText("배송비");
   await expect(rows).toContainText("3,000원");
   await expect(page.locator(".cart-summary-total b")).toHaveText("183,000원");
-  await expect(page.locator(".cart-summary")).toContainText("총 1건 결제 예상 금액");
+  await expect(page.locator(".cart-summary")).toContainText("선택 1건 결제 예상 금액");
 
   const readCart = () =>
     page.context().request.get("/api/cart").then((r) => r.json());
@@ -1196,7 +1213,7 @@ test("cart: 선택 삭제는 서버의 최신 cart version을 순서대로 사�
     return route.continue();
   });
   await page.getByRole("button", { name: "선택 항목 제거" }).click();
-  await expect(page.getByText("장바구니가 비어 있어요")).toBeVisible();
+  await expect(page.getByText("장바구니가 비었어요")).toBeVisible();
   expect(versions).toEqual([before.data.version, before.data.version + 1]);
 });
 
@@ -1426,7 +1443,8 @@ test("상품 상세: dark/light 초기·탭 겹침·sticky 상태에서 CTA가 �
       await expect.poll(() => page.locator(".detail-tabs").evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBe(48);
       await assertFooterHit();
 
-      await page.getByRole("button", { name: "옵션 선택" }).click();
+      // 옵션 진입은 하단 바의 별도 CTA가 아니라 본문의 .optline 행이다 [PMQA-067 하단 바 Ref04 구조].
+      await page.locator(".option-open").click();
       const sheet = page.locator(".sheet-overlay");
       await expect(sheet).toBeVisible();
       const sheetAboveFooter = await page.evaluate(() => {

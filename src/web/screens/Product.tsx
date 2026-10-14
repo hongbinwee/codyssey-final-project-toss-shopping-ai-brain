@@ -12,26 +12,41 @@
 // - 상단 내비는 별도 backbar가 아니라 hero 위 플로팅 아이콘(← · 검색 · 카트+배지).
 //   hero를 거의 지나 스크롤되면 읽기용 solid 바로 전환한다.
 // - 정보 계층: 이름 → 브랜드·설명 → 할인율+정가 → 판매가 → 평점·리뷰 진입 행 → 배송 행.
+//   배송 행은 Ref093 '배송정보' BottomSheet를 연다 — 실제 지원 데이터(서버
+//   배송비, 부재·비정상은 '정보 없음' 구분)만 표시하고 ETA/택배사/개인
+//   주소·발송 시점 데모 라벨은 배송 조건으로 확장하지 않는다(gap 명시).
 //   평점은 /api/products 목록에서 product_id 정확 매칭으로만 결정 — 요청 실패/미매칭은
 //   별도 안내와 재시도를 제공하며 '아직 리뷰 없어요'로 오인시키지 않는다. 리뷰 수와
 //   정확히 일치하는 요약만 사용하고 부분 로드 평균은 만들지 않는다.
 // - 본문 하단은 [리뷰 (n개) | 상품 정보] sticky 탭. 정렬 UI는 없다 —
 //   서버 getReviews는 최신순만 지원하므로 추천순을 흉내내지 않는다.
 // - 리뷰 행은 카드 대신 flat row + divider — variant id가 아니라 옵션 라벨로 표시.
-// - 하단 바는 [카트 진입][옵션 선택][N원 담기]. 찜·뽑기 등 미지원 기능은 없다 [Project].
+// - 하단 바는 Ref04 구조 [카트 아이콘][N원 담기(보조)][구매하기(주 CTA)] —
+//   옵션 진입은 본문 .optline 행이 담당하고 하단 바에 별도 옵션 버튼을 두지
+//   않는다. 찜·뽑기 등 미지원 기능은 없다 [PMQA-067, 이전 3버튼 구조는 Superseded].
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiSafe, fmtWon, newActionKey, AMBIGUOUS_CODES, type ApiResult } from "../api.ts";
+import { apiSafe, fmtWon, newActionKey, shipFeeLabel, AMBIGUOUS_CODES, type ApiResult } from "../api.ts";
 import type {
   CartView, MatchedVariant, ProductDetail, ProductSummary, ReviewsResult, SearchResult,
 } from "../../contracts.ts";
 import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
+import { ReviewRow, Stars } from "../components/ReviewBits.tsx";
 import { PRODUCT_META, SPEC_LABEL, productImg } from "../display-meta.ts";
 import {
   listCartPending, putPending, removePending, lookupAction,
   type PendingWrite,
 } from "../pending.ts";
 import { IcBack, IcCart, IcChevronRight, IcSearch, IcStar } from "../icons.tsx";
+import { WishButton } from "../components/WishButton.tsx";
+
+import {
+  resolveDetailResume,
+  saveDetailResume,
+  takeDetailResumeIfFresh,
+} from "../detail-resume.ts";
+import { recordRecentView } from "../recent-viewed.ts";
+import { createReviewPager } from "../review-pager.ts";
 
 type RatingLoad =
   | { state: "loading" }
@@ -41,18 +56,29 @@ type RatingLoad =
 
 export function Product({
   productId,
+  userId,
   onBack,
   onOpenSearch,
   onOpenCart,
+  onOpenReviews,
   onCartChanged,
   cartCount,
+  onBuyNow,
+  onOpenWish,
 }: {
   productId: string;
+  userId: string | null;
   onBack: () => void;
   onOpenSearch: () => void;
   onOpenCart: () => void;
+  onOpenReviews: () => void;
   onCartChanged: (v: CartView) => void;
   cartCount: number;
+  // PMQA-067 바로 구매 — 현재 선택 옵션·수량으로 카트를 거치지 않는
+  // DIRECT 견적 주문서로 이동한다. 담기와 별개 동작이다.
+  onBuyNow: (target: { variant_id: string; quantity: number }) => void;
+  // 찜 진입 — Ref08 하단 하트 CTA와 저장 시트의 '바로가기' 목적지 [PMQA-070].
+  onOpenWish: () => void;
 }) {
   const [detail, setDetail] = useState<ApiResult<ProductDetail> | null>(null);
   const [reviews, setReviews] = useState<ApiResult<ReviewsResult> | null>(null);
@@ -61,8 +87,10 @@ export function Product({
   const [variantId, setVariantId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [shipOpen, setShipOpen] = useState(false);
   const [tab, setTab] = useState<"reviews" | "info">("reviews");
   const [navSolid, setNavSolid] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [addedOk, setAddedOk] = useState(false);
@@ -72,8 +100,18 @@ export function Product({
   const seq = useRef(0);
   const heroRef = useRef<HTMLDivElement | null>(null);
   const tabsRef = useRef<HTMLDivElement | null>(null);
+  const viewerStripRef = useRef<HTMLDivElement | null>(null);
   // double-click 같은 동기 중복 호출 차단 — state 반영 전 두 번째 호출을 막는다.
   const busyRef = useRef(false);
+  // F07 복귀 스냅샷의 스크롤 복원 대기값과 1회 적용 플래그.
+  const pendingScrollY = useRef<number | null>(null);
+  const resumeDone = useRef(false);
+  // 리뷰 로드는 detail/summary와 다른 세대 — 패널 재시도가 진행 중인 평점
+  // 로드를 무효화하지 않게 분리한다. 더보기 pager도 이 세대를 따른다.
+  const revSeq = useRef(0);
+  const reviewsRef = useRef<ApiResult<ReviewsResult> | null>(null);
+  reviewsRef.current = reviews;
+  const pagerRef = useRef<ReturnType<typeof createReviewPager> | null>(null);
 
   // pending 저장소 변경을 구독 — 같은 actor의 미확정 cart write를 전역 잠금에 쓴다.
   useEffect(() => {
@@ -86,20 +124,45 @@ export function Product({
     d.variants.find((v) => v.availability === "AVAILABLE")?.variant_id ?? null;
 
   // 초기 로드: detail+reviews. 재시도도 같은 경로를 타야 초기화 규칙이 동일하다.
-  const loadInitial = useCallback(async (pid: string, my: number) => {
-    const r = await apiSafe<ProductDetail>("/api/products/" + pid);
-    if (seq.current !== my) return;
-    setDetail(r);
-    if (r.ok) {
-      setVariantId(pickDefault(r.data));
-      setQty(1);
-    }
-  }, []);
+  const loadInitial = useCallback(
+    async (pid: string, my: number) => {
+      const r = await apiSafe<ProductDetail>("/api/products/" + pid);
+      if (seq.current !== my) return;
+      setDetail(r);
+      if (!r.ok) return;
+      // F09 — 상세 '성공' 조회만 기록한다. 실패·stale 세대(위 가드)는 제외하고,
+      // 기록 대상은 서버 canonical id·명시 actor다 [C/069 Ref45].
+      recordRecentView(userId, r.data.product.id);
+      // F07 복귀 스냅샷 — 같은 계정·같은 상품에서만 적용하고 1회 소비한다.
+      // stale 세대면 스냅샷을 소비하지 않는다(isStale 가드, Luna 지적).
+      // 복원 불가·수량 감소는 조용히 교체하지 않고 안내한다.
+      const plan = resolveDetailResume(
+        r.data.variants,
+        takeDetailResumeIfFresh(() => seq.current !== my, pid),
+        userId,
+      );
+      if (plan.apply) {
+        setVariantId(plan.variantId ?? pickDefault(r.data));
+        setQty(plan.qty);
+        pendingScrollY.current = plan.scrollY;
+        if (plan.notice === "OPTION_UNAVAILABLE")
+          setFeedback(
+            "이전에 고른 옵션은 지금 구매할 수 없어요. 옵션을 다시 확인해 주세요.",
+          );
+        else if (plan.notice === "QTY_REDUCED")
+          setFeedback("선택한 수량이 현재 재고에 맞춰 조정됐어요.");
+      } else {
+        setVariantId(pickDefault(r.data));
+        setQty(1);
+      }
+    },
+    [userId],
+  );
   const loadReviews = useCallback(async (pid: string, my: number, limit = 4) => {
     const r = await apiSafe<ReviewsResult>(
       "/api/products/" + pid + "/reviews?limit=" + limit,
     );
-    if (seq.current === my) setReviews(r);
+    if (revSeq.current === my) setReviews(r);
   }, []);
 
   // 평점·리뷰 진입 행용 — 목록 응답에서 같은 product_id만 매칭한다.
@@ -116,17 +179,49 @@ export function Product({
     setSummary(match ? { state: "loaded", summary: match } : { state: "unmatched" });
   }, []);
 
-  // 플로팅 내비 → hero를 거의 지나면 읽기용 solid 바로 전환 [Observed 05 + Project].
+  // 플로팅 내비 → 이미지 일부와 정보 영역이 함께 보이는 시점에 solid 바로
+  // 전환 [Observed 05 — 정확한 경계 픽셀은 브라우저 승인 후 검증, 지금은
+  // hero 대부분이 지나기 전 전환되는 Project 임계값].
   // hero가 없는 로딩/에러 상태는 detail-null 시 nav 쪽에서 solid를 강제한다.
   useEffect(() => {
     const on = () => {
       const h = heroRef.current?.offsetHeight ?? 0;
-      setNavSolid(window.scrollY > Math.max(h - 56, 8));
+      setNavSolid(window.scrollY > Math.max(h - 150, 8));
     };
     on();
     addEventListener("scroll", on, { passive: true });
     return () => removeEventListener("scroll", on);
   }, [detail?.ok]);
+
+  // F07 — 리뷰 전체보기 복귀 시 저장한 스크롤 위치로 되돌린다.
+  // detail 렌더가 끝난 뒤 다음 프레임에 적용한다(이미지 디코드로 수 px
+  // 밀릴 수 있음 — 정확도는 브라우저 승인 단계에서 검증).
+  useEffect(() => {
+    if (!detail?.ok || resumeDone.current || pendingScrollY.current == null)
+      return;
+    const y = pendingScrollY.current;
+    pendingScrollY.current = null;
+    resumeDone.current = true;
+    requestAnimationFrame(() => scrollTo(0, y));
+  }, [detail?.ok]);
+
+  // 뷰어가 열린 동안 문서 뒤 스크롤과 하단 구매바를 잠근다 — 뷰어 레이어가
+  // 위를 덮지만 배경 스크롤은 별도로 차단해야 한다 [Ref071 구조 보존].
+  useEffect(() => {
+    if (!viewerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [viewerOpen]);
+
+  // 뷰어 오픈 시 스트립을 현재 hero 위치로 맞춘다(다중 이미지만).
+  useEffect(() => {
+    if (!viewerOpen || !viewerStripRef.current) return;
+    const el = viewerStripRef.current;
+    el.scrollTo({ left: imgIdx * el.clientWidth });
+  }, [viewerOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 확정 거절 뒤 최신화: 현재 선택이 아직 구매 가능하면 유지하고,
   // 품절됐으면 첫 AVAILABLE로 다시 고른다(초기화와 규칙 통일).
@@ -148,18 +243,46 @@ export function Product({
   // productId 변경 → 모든 상태 리셋 + 후행 응답 차단(stale 누출 방지)
   useEffect(() => {
     const my = ++seq.current;
+    const myR = ++revSeq.current;
     setDetail(null);
     setReviews(null);
     setSummary({ state: "loading" });
     setVariantId(null);
     setQty(1);
     setImgIdx(0);
+    // 열려 있던 overlay도 함께 닫는다 — 상품 전환 뒤 이전 상품의
+    // 옵션/배송/이미지 시트가 새 상품 위에 누출되지 않게 한다 [PMQA-068].
+    setSheetOpen(false);
+    setShipOpen(false);
+    setViewerOpen(false);
     setTab("reviews");
     setFeedback(null);
     setAddedOk(false);
+    setMoreLoading(false);
+    pendingScrollY.current = null;
+    resumeDone.current = false;
+    // 리뷰 더보기 실행기 — 세대별 인스턴스라 이전 잠금·요청이 새지 않는다.
+    pagerRef.current = createReviewPager({
+      getSeq: () => revSeq.current,
+      getReviews: () => reviewsRef.current,
+      fetchPage: (c) =>
+        apiSafe<ReviewsResult>(
+          "/api/products/" + productId + "/reviews?limit=10&cursor=" +
+            encodeURIComponent(c),
+        ),
+      apply: setReviews,
+      setBusy: setMoreLoading,
+      onError: () => setFeedback("리뷰를 더 불러오지 못했어요"),
+    });
     loadInitial(productId, my);
-    loadReviews(productId, my);
+    loadReviews(productId, myR);
     loadSummary(productId, my);
+    // 언마운트·productId 변경 — 늦게 도착한 응답이 화면 밖에서 복원
+    // 스냅샷을 소비하거나 상태를 쓰지 못하게 두 세대를 모두 무효화한다.
+    return () => {
+      seq.current++;
+      revSeq.current++;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
@@ -323,27 +446,6 @@ export function Product({
     await syncCart();
   }
 
-  async function loadMoreReviews() {
-    if (!reviews?.ok || !reviews.data.next_cursor || moreLoading) return;
-    setMoreLoading(true);
-    const my = seq.current;
-    const r = await apiSafe<ReviewsResult>(
-      "/api/products/" + productId + "/reviews?limit=10&cursor=" +
-        encodeURIComponent(reviews.data.next_cursor),
-    );
-    setMoreLoading(false);
-    if (seq.current !== my) return;
-    if (r.ok)
-      setReviews({
-        ok: true,
-        data: {
-          ...r.data,
-          reviews: [...reviews.data.reviews, ...r.data.reviews],
-        },
-      });
-    else setFeedback("리뷰를 더 불러오지 못했어요");
-  }
-
   // 리뷰 작성일 표기 — "26.6.22" 형태 [Observed reviews/19]
   const fmtDate = (iso: string) => {
     const t = Date.parse(iso);
@@ -370,6 +472,18 @@ export function Product({
         top: el.getBoundingClientRect().top + window.scrollY - 56,
         behavior: "smooth",
       });
+  };
+
+  // F07 — 전체 리뷰로 나가기 전 현재 선택·수량·스크롤을 스냅샷으로 남긴다.
+  // 복원은 같은 계정·같은 상품에서 한 번만 적용되고 즉시 소비된다.
+  const openReviews = () => {
+    saveDetailResume(productId, {
+      user: userId,
+      variantId,
+      qty,
+      scrollY: window.scrollY,
+    });
+    onOpenReviews();
   };
 
   // hero 위 플로팅 내비 — 로딩/에러(hero 없음)와 스크롤 후엔 solid로 읽기 배경 확보.
@@ -405,9 +519,10 @@ export function Product({
           text={"상품을 불러오지 못했어요 (" + detail.error.code + ")"}
           onRetry={() => {
             const my = ++seq.current;
+              const myR = ++revSeq.current;
             setDetail(null);
             loadInitial(productId, my);
-            loadReviews(productId, my);
+              loadReviews(productId, myR);
             loadSummary(productId, my);
           }}
         />
@@ -470,7 +585,17 @@ export function Product({
   return (
     <div className={"screen detail" + (anyPending ? " has-pending" : "")}>
       {navEl}
-      <div className="detail-hero" ref={heroRef}>
+      {/* hero 탭 → 실제 이미지의 전용 확대 뷰어로 진입 [Ref071]. 이미지
+          클릭이 구매 동작과 섞이지 않도록 뷰어는 별도 오버레이다. */}
+      <div
+        className="detail-hero tappable"
+        ref={heroRef}
+        role="button"
+        tabIndex={0}
+        aria-label="상품 이미지 확대 보기"
+        onClick={() => setViewerOpen(true)}
+        onKeyDown={(e) => e.key === "Enter" && setViewerOpen(true)}
+      >
         {images.length > 1 ? (
           <div
             className="hero-strip"
@@ -513,11 +638,7 @@ export function Product({
       ) : null}
       {shownWon != null && <div className="price-main">{fmtWon(shownWon)}</div>}
       {/* Ref04의 가격 보조 행 — 서버 배송료만 표시한다 (단가·적립 등 미지원 정보는 없다). */}
-      <div className="price-sub">
-        {detail.data.shipping_fee_won > 0
-          ? "배송비 " + fmtWon(detail.data.shipping_fee_won)
-          : "무료배송"}
-      </div>
+      <div className="price-sub">{shipFeeLabel(detail.data.shipping_fee_won)}</div>
 
       <div className="info-rows">
         <button className="info-row" onClick={goReviews}>
@@ -534,20 +655,28 @@ export function Product({
               )}
             </span>
             <small className="review-provenance-note">
-              저장된 실사용·시연 리뷰 전체 기준
+              실사용·시연 리뷰 기준
             </small>
           </span>
           <IcChevronRight size={15} className="info-next" />
         </button>
-        {delivery && (
-          <div className="info-row static">
-            <span className="info-k">배송</span>
-            <span className="info-v">
-              {delivery}
-              <small className="signal-demo">데모</small>
-            </span>
-          </div>
-        )}
+        {/* Ref093 — 배송 행은 정적 표시가 아니라 '배송정보' 시트 진입이다.
+            delivery meta가 없는 상품도 서버 배송비는 항상 있으므로 행은
+            항상 표시하고, 데모 라벨 칩은 meta 값에만 단다 [PMQA-068]. */}
+        <button className="info-row" onClick={() => setShipOpen(true)}>
+          <span className="info-k">배송</span>
+          <span className="info-v">
+            {delivery ? (
+              <>
+                {delivery}
+                <small className="signal-demo">데모</small>
+              </>
+            ) : (
+              shipFeeLabel(detail.data.shipping_fee_won)
+            )}
+          </span>
+          <IcChevronRight size={15} className="info-next" />
+        </button>
       </div>
       {(summary.state === "error" || summary.state === "unmatched") && (
         <button className="link rating-retry" onClick={() => loadSummary(productId, seq.current)}>
@@ -555,20 +684,31 @@ export function Product({
         </button>
       )}
 
-      <h3 className="section-title">옵션</h3>
+      {/* 하단 썸네일 옵션 행 [Observed product-detail/095의 상세 내 옵션 진입 행]:
+          별도 '옵션' 제목·박스 대신 썸네일+선택값+파란 진입 링크 행을 둔다.
+          실제 변경은 BottomSheet — 가격·재고·수량 계약은 아래 qty-row가 유지한다. */}
+      {/* .option-open은 기존 계약 테스트의 선택자 훅 — 스타일은 .optline이 담당. */}
       <button
-        className="option-open"
+        className="optline option-open"
         onClick={() => setSheetOpen(true)}
         disabled={soldOutAll || anyPending}
       >
-        <span>
-          {selected
-            ? Object.values(selected.option_values).join(" · ")
-            : soldOutAll
-              ? "구매 가능한 옵션이 없어요"
-              : "옵션을 선택하세요"}
+        <img className="optline-img" src={images[0]} alt="" />
+        <span className="optline-main">
+          <span className="optline-label">
+            {selected
+              ? Object.values(selected.option_values).join(" · ")
+              : soldOutAll
+                ? "구매 가능한 옵션이 없어요"
+                : "옵션을 선택하세요"}
+          </span>
+          {selected && (
+            <span className="optline-price muted">{fmtWon(selected.unit_price_won)}</span>
+          )}
         </span>
-        <IcChevronRight size={16} />
+        <span className="optline-cta">
+          옵션 선택 <IcChevronRight size={14} />
+        </span>
       </button>
       {selected && (
         <div className="qty-row">
@@ -620,59 +760,54 @@ export function Product({
             <ErrorState
               text="리뷰를 불러오지 못했어요"
               onRetry={() => {
-                const my = seq.current;
+                // 리뷰 세대만 갱신 — 진행 중인 평점/상세 로드는 무효화하지 않고,
+                // 더보기의 stale 응답은 pager가 버린다.
+                const myR = ++revSeq.current;
                 setReviews(null);
-                loadReviews(productId, my);
+                loadReviews(productId, myR);
               }}
             />
           ) : reviews.data.total_matching === 0 ? (
             <Empty text="아직 리뷰가 없어요. 근거로 쓸 실사용 평가가 부족합니다." />
           ) : (
             <>
+              {/* 리뷰 요약 — 큰 별+평점+개수 한 묶음이 주정보 [Observed reviews/20].
+                  출처 고지는 짧은 한 줄로 유지하고 제거하지 않는다(F08). */}
               <div className="review-summary-head">
-                <span className="muted">이 상품의 리뷰 전체</span>
-                {exactRating != null && reviewTotal != null && (
-                  <div className="review-rating">
-                    <IcStar size={20} className="review-star" />
-                    <b>{exactRating}</b>
-                    <span className="muted">({reviewTotal}개)</span>
-                  </div>
-                )}
+                <span className="muted">이 상품의 모든 상점 리뷰</span>
               </div>
-              <div className="review-summary muted">
-                리뷰 {reviews.data.total_matching}개
-                {reviews.data.reviews.length < reviews.data.total_matching &&
-                  " · " + reviews.data.reviews.length + "개 표시"}
-              </div>
-              <p className="review-provenance muted">
-                평점과 리뷰 수는 저장된 모든 출처(실사용·시연)를 포함해요. 리뷰별 출처는 각 항목에 표시합니다.
-              </p>
+              {exactRating != null && reviewTotal != null && (
+                <div className="rev-cluster">
+                  <Stars rating={exactRating} size={20} />
+                  <b className="rev-avg">{exactRating}</b>
+                  <span className="muted">({reviewTotal}개)</span>
+                </div>
+              )}
+              <small className="review-provenance-note">실사용·시연 리뷰 기준</small>
               <ul className="review-list">
                 {reviews.data.reviews.map((rv) => (
-                  <li key={rv.id} className="review-item">
-                    <div className="review-head">
-                      <b aria-label={"별점 " + rv.rating + "점"}>{"★".repeat(rv.rating)}</b>
-                      <span
-                        className={
-                          "src-chip" + (rv.source_kind === "SYNTHETIC" ? " syn" : "")
-                        }
-                      >
-                        {rv.source_kind === "SYNTHETIC" ? "시연 리뷰" : "실사용 리뷰"}
-                      </span>
-                      <time className="review-date" dateTime={rv.written_at}>{fmtDate(rv.written_at)}</time>
-                    </div>
-                    {rv.variant_id && (
-                      <div className="review-option muted">옵션 {variantLabel(rv.variant_id)}</div>
-                    )}
-                    <p>{rv.body}</p>
-                  </li>
+                  <ReviewRow
+                    key={rv.id}
+                    rv={rv}
+                    optionLabel={rv.variant_id ? variantLabel(rv.variant_id) : null}
+                    dateText={fmtDate(rv.written_at)}
+                  />
                 ))}
               </ul>
               {reviews.data.has_more && (
-                <button className="link" onClick={loadMoreReviews} disabled={moreLoading}>
+                <button
+                  className="link"
+                  onClick={() => pagerRef.current?.loadMore()}
+                  disabled={moreLoading}
+                >
                   {moreLoading ? "불러오는 중…" : "리뷰 더 보기"}
                 </button>
               )}
+              {/* F07 — 전체 리뷰 전용 화면으로 연결 [Observed reviews/19].
+                  복귀 시 선택·수량·스크롤은 detailResume 스냅샷이 복원한다. */}
+              <button className="link" onClick={openReviews}>
+                리뷰 {reviewTotal}개 전체 보기
+              </button>
             </>
           )}
         </section>
@@ -702,38 +837,63 @@ export function Product({
           </div>
         )}
         <div className="bar-row detail-actions">
+          {/* Ref08 — 하트는 하단 CTA 행의 찜 Action [Observed]. 카트 버튼과
+              나란한 별개 동작으로 두고, 저장 확정 시 상품 정보가 담긴
+              시트를 연다 [PMQA-070]. */}
+          <WishButton
+            className="detail-heart"
+            userId={userId}
+            product={{
+              product_id: productId,
+              name: p.name,
+              image: p.images?.[0] ?? null,
+              price_won: minWon,
+            }}
+            onGoWish={onOpenWish}
+          />
           <button className="detail-cart-btn" aria-label="장바구니" onClick={onOpenCart}>
             <IcCart size={21} />
             {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
           </button>
+          {/* Ref04 하단 구조: 아이콘 + 보조 CTA(담기) + 주 CTA(구매하기).
+              옵션 변경 진입은 본문 .optline 행·시트가 담당한다 — 하단 바에
+              별도 옵션 버튼을 두지 않는다 [PMQA-067 Ref04/096 정합]. */}
           <button
-            className="detail-option-cta"
-            disabled={soldOutAll || anyPending}
-            onClick={() => setSheetOpen(true)}
-          >
-            옵션 선택
-          </button>
-          <button
-            className="btn primary"
+            className="btn ghost"
             aria-label={soldOutAll ? "품절" : adding ? "담는 중" : fmtWon(totalWon) + " 담기"}
             disabled={!selected || adding || anyPending || soldOutAll}
             onClick={add}
           >
             {soldOutAll ? "품절" : adding ? "담는 중…" : fmtWon(totalWon) + " 담기"}
           </button>
+          {/* 바로 구매 — 담기와 별개 동작. 카트를 거치지 않는 DIRECT 견적
+              주문서로 이동한다 [PMQA-067, Ref04 구매하기 CTA 대응]. */}
+          <button
+            className="btn primary"
+            aria-label="구매하기"
+            disabled={!selected || adding || anyPending || soldOutAll}
+            onClick={() =>
+              selected &&
+              onBuyNow({ variant_id: selected.variant_id, quantity: qty })
+            }
+          >
+            구매하기
+          </button>
         </div>
       </div>
 
       {sheetOpen && detail.ok && (
-        <BottomSheet title="옵션 선택" onClose={() => setSheetOpen(false)}>
-          <div className="sheet-list">
+        <BottomSheet title="옵션 한번에 보기" onClose={() => setSheetOpen(false)}>
+          {/* Ref095 — 선택 옵션은 둥근 강조 카드, 미선택은 파란 옵션 텍스트.
+              가격·재고·quantity/pending lock·변경 handler는 기존 계약 불변. */}
+          <div className="opt-list">
             {detail.data.variants.map((v) => {
               const soldOut = v.availability !== "AVAILABLE";
               const on = v.variant_id === variantId;
               return (
                 <button
                   key={v.variant_id}
-                  className={"sort-item" + (on ? " on" : "")}
+                  className={"opt-item" + (on ? " sel" : "")}
                   disabled={soldOut}
                   onClick={() => {
                     setVariantId(v.variant_id);
@@ -742,22 +902,57 @@ export function Product({
                     setSheetOpen(false);
                   }}
                 >
-                  <span>
+                  <span className="opt-name">
                     {Object.values(v.option_values).join(" · ")}
-                    <span className="desc">
-                      {soldOut
-                        ? v.availability === "SOLD_OUT"
-                          ? "품절"
-                          : "판매 중단"
-                        : "재고 " + v.stock_qty + "개"}
-                    </span>
                   </span>
-                  <b>{fmtWon(v.unit_price_won)}</b>
-                  {on && <span className="sort-check">✓</span>}
+                  <span className="opt-price">{fmtWon(v.unit_price_won)}</span>
+                  <span className="opt-sub muted">
+                    {soldOut
+                      ? v.availability === "SOLD_OUT"
+                        ? "품절"
+                        : "판매 중단"
+                      : "재고 " + v.stock_qty + "개"}
+                  </span>
                 </button>
               );
             })}
           </div>
+        </BottomSheet>
+      )}
+
+      {/* Ref093 '배송정보' 시트 — grabber·타이틀은 공용 BottomSheet가 담당하고
+          본문은 label/value 행 + 하단 단일 확인 CTA. Backend가 실제 지원하는
+          정보만 표시한다(배송비=서버값, 부재·비정상은 '정보 없음' 구분).
+          PRODUCT_META의 '내일도착/오늘출발' 데모 라벨을 배송 조건으로
+          확장하지 않는다 — 도착 예정일·택배사·보장 확률·개인 배송지 박스는
+          데이터가 없어 복제하지 않고 gap 문구로 명시한다 [PMQA-068]. */}
+      {shipOpen && detail.ok && (
+        <BottomSheet
+          title="배송정보"
+          onClose={() => setShipOpen(false)}
+          className="ship-sheet"
+          lockScroll
+        >
+          {/* 본문만 스크롤하고 확인 CTA는 시트 하단에 고정 — 작은 화면에서도
+              CTA가 문서 흐름 끝에 밀려 가려지지 않는다 [PMQA-068]. */}
+          <div className="ship-scroll">
+            <div className="ship-rows">
+              <div className="ship-row">
+                <span className="ship-k">배송비</span>
+                <span className="ship-v">{shipFeeLabel(detail.data.shipping_fee_won)}</span>
+              </div>
+            </div>
+            <p className="ship-gap muted">
+              도착 예정일·택배사·배송지별 조건은 아직 제공하지 않아요.
+              {delivery && " 상품 행의 '" + delivery + "' 표시는 시연용 라벨이며 실제 배송 약속이 아니에요."}
+            </p>
+          </div>
+          <button
+            className="btn primary sheet-cta"
+            onClick={() => setShipOpen(false)}
+          >
+            확인
+          </button>
         </BottomSheet>
       )}
 
@@ -801,6 +996,57 @@ export function Product({
             <button className="link" onClick={onOpenCart}>
               장바구니 보기
             </button>
+          )}
+        </div>
+      )}
+
+      {/* F32 전용 확대 뷰어 [Observed product-detail/071]: 상단 뒤로 · 중앙
+          확대 이미지 · 하단 thumbnail strip. 실제 존재하는 이미지만 열고
+          없는 장수를 채우지 않는다 — 1장이면 썸네일 행도 1개다. */}
+      {viewerOpen && (
+        <div className="viewer" role="dialog" aria-label="상품 이미지 확대 보기">
+          <button
+            className="viewer-back"
+            aria-label="뒤로가기"
+            onClick={() => setViewerOpen(false)}
+          >
+            <IcBack size={26} />
+          </button>
+          <div className="viewer-stage">
+            {images.length > 1 ? (
+              <div
+                className="viewer-strip"
+                ref={viewerStripRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  setImgIdx(Math.round(el.scrollLeft / el.clientWidth));
+                }}
+              >
+                {images.map((src, i) => (
+                  <img key={i} src={src} alt={p.name} />
+                ))}
+              </div>
+            ) : (
+              <img className="viewer-img" src={images[imgIdx]} alt={p.name} />
+            )}
+          </div>
+          {images.length > 1 && (
+            <div className="viewer-thumbs">
+              {images.map((src, i) => (
+                <button
+                  key={i}
+                  className={"viewer-thumb" + (i === imgIdx ? " on" : "")}
+                  aria-label={"이미지 " + (i + 1)}
+                  onClick={() => {
+                    const el = viewerStripRef.current;
+                    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+                    setImgIdx(i);
+                  }}
+                >
+                  <img src={src} alt="" />
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}

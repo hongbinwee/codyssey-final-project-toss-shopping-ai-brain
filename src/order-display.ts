@@ -110,3 +110,34 @@ export function refundLabel(o: { refund_status: string | null }): string | null 
   if (!s || s === "NONE") return null;
   return REFUND_STATUS_LABEL[s] ?? s;
 }
+
+// 결제 정보의 환불 행 — PENDING은 '예정' 금액(취소 요청 스냅샷 등 서버 예정액)이고
+// REFUNDED만 실제 환불액이다. 미확인 refund_status는 '완료'로 단정하지 않고 서버
+// 원문을 표시하며 금액은 숨긴다 [PMQA-060 — 기존 'NONE 외 전부 완료' fallback 수정].
+export type RefundLine = {
+  label: string;                           // '환불 처리 중' | '환불 완료' | '환불 <서버원문>'
+  amount_won: number | null;               // 표시 금액 — 없으면 null
+  amount_kind: "expected" | "actual" | null; // expected=환불 예정액 / actual=실환불액
+};
+export function refundLine(o: {
+  refund_status: string | null;
+  refunded_amount_won: number;
+  expected_amount_won?: number | null;
+}): RefundLine | null {
+  const s = o.refund_status;
+  if (!s || s === "NONE") return null;
+  if (s === "REFUNDED")
+    return {
+      label: "환불 완료",
+      amount_won: o.refunded_amount_won,
+      amount_kind: "actual",
+    };
+  if (s === "PENDING")
+    return {
+      label: "환불 처리 중",
+      amount_won: o.expected_amount_won ?? null,
+      amount_kind: o.expected_amount_won != null ? "expected" : null,
+    };
+  // 미확인 서버값은 상태 원문만 표시 — 금액·완료 여부를 추정하지 않는다.
+  return { label: "환불 " + s, amount_won: null, amount_kind: null };
+}

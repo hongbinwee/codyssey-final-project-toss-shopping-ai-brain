@@ -20,7 +20,7 @@
 | `npm run verify -- --phase=0` | PASS — 위 전체 순차 통과 |
 
 메모:
-- `.env`의 `DATABASE_URL=postgres://commerce:commerce@localhost:5432/commerce` (Docker compose 컨테이너 `codyssey_final-db-1`) 사용 확인.
+- `.env`의 DATABASE_URL은 로컬 Docker PostgreSQL 연결을 가리켰다(계정·호스트·비밀번호는 비공개 처리).
 - `src/config.ts`가 `.env`를 로드하며, 이미 설정된 환경 변수는 덮어쓰지 않음(테스트 주입 가능).
 - `src/devdb.ts`는 `config.ts`를 먼저 import해 `.env`를 읽은 뒤 `DATABASE_URL` 유무로 embedded fallback 여부를 결정.
 
@@ -1396,3 +1396,1117 @@ PM이 실제 코드, full SHA gate의 동일 Buffer baseline 파생, private txn
 - **범위 한계 추가 명시**: 054~057 단계별 기록은 전체 정적 READY가 아니다 — eval claim은 증거 보호만(보존 commerce_test 실행 불가), zz/standard/smoke 직접 입구는 NOT_READY 유지.
 - **052 분리**: code-resolved(052-C 보정·TRANSCRIPT 74/74·전체 283/283·tsc/build 0) — 실PG runtime은 NOT_RUN. 구식 '독립 QA 3건 OPEN' 기록은 052-C로 Superseded.
 - **승인 유지**: 06A·06B Visual 승인 유지. 다음 조건: PM staged diff 검수 → 별도 commit 지시 → Main commit + PM FF push·원격 SHA 확인 → 06C 별도 승인. NOT_RUN: standard 69·Integration·DELIVERED actual UI 캡처(09 필수)·scratch/mutations·eval live.
+
+### PMQA-060 — 06C 취소·환불 UX 구현 + correction#2 + MAJOR1 보정 (2026-10-12)
+
+- **범위(PM 승인 PMQA-060)**: 취소 승인→실행→접수 + 응답 유실 복구의 오케스트레이션·시트 재작성. 신규 `src/cancel-flow.ts`(IO 주입 오케스트레이션)·`src/cancel-recovery.ts`(pure 조회→결정), `CancelSheet.tsx` 자체 마크업 재작성, `pending.ts` CANCEL_ORDER kind+pendingScope export, `OrderCard` onCancelRecovery 복구 CTA, `OrderDetail` 원주문 스냅샷 props+refundLine 환불 행, `order-display.ts` refundLine(PENDING=예정액·REFUNDED=실환불액·미확인=원문 라벨만), `tests/unit/cancel-flow.test.ts`·`tests/unit/cancel-recovery.test.ts` 신규, `tests/e2e/t3-cancel.spec.ts` 2단계 플로우 정합(실행은 미승인·NOT_RUN).
+- **correction#2(Luna QA 반영)**: attempt thunk(동기 throw→LOST/UNKNOWN 매핑)·errCode/strField 비정형 봉투 가드·읽기 seq 채널 분리(seqElig/seqSnap/seqQuote — elig 영구 null race 수정)·runFlow epochAt 토큰+try/catch UNKNOWN_KEEP·resolveCancelAction 비정형 row 가드·confirm 최종 CTA !snap 잠금·itemRows form/confirm/done 3단계 정합·mock IO fixture 재작성(호출 기록 래퍼 위임·pending 시드).
+- **MAJOR1 추가 보정(Luna source QA — A/B/C 해소 확인 후 별개 발견)**: applyOutcome REJECTED(reconfirm)가 reason 유지+quote=null → 같은 라디오 onChange 재발화 불가로 견적 '확인하는 중…' 영구 정지. `reconfirmReset(out)` predicate(`out.kind==="REJECTED" && out.reconfirm`) 추출 + 시트가 reason을 초기화해 명시 재선택으로만 재견적(자동 재견적 아님). component 배선(setReason 호출)은 DOM 미실행 — predicate·플로우 연결만 DB-free 단정.
+- **readonly spec 정합(미실행 spec, PM 지적)**: tests/e2e/readonly-orders.spec.ts의 '취소 시트 — 자격 경로'가 form 진입 직후 '전체 상품이 취소돼요'를 기다렸으나 신규 시트에서는 해당 문구가 confirm 단계에만 존재 — 미래 readonly22 case7 차단 확정이라 진입 단정을 현재 form heading '취소 사유'로 수정. allowlist quote GET 차단 계약은 보존. 실행은 여전히 NOT_RUN.
+- **검증(actual·독립 명령·exit 확인)**:
+  - `node scripts/pmqa056-qa-run.ts check` → `shots/pmqa056-runs/run-2b567b47-d2c6-43db-8793-ac2475ed0eb6`(MAJOR1 코드 수정 후)·`shots/pmqa056-runs/run-3159288a-71c0-4567-9198-82283a8d1a6a`(readonly spec 정합 후 actual) · 둘 다 exit 0
+  - `node scripts/pmqa056-qa-run.ts build` → `shots/pmqa056-runs/run-b86c59a2-4556-46bf-84ee-927fbad09b9e` · exit 0
+  - `node scripts/pmqa056-qa-run.ts unit` → `shots/pmqa056-runs/run-9c94c750-c5af-4bd6-91b7-ae70e8fad798` · native exit 0 · **454/454(61 suites)** — 정상 require_escalated 승인 실행(PM 확인 exec-6bc042bd exit0). evidence-broker.test.ts의 실채널 IPC·loopback·junction 테스트는 sandbox에서 hang('payload canonicalization' 직후 정지·junction EPERM 관찰 — 과거 PASS run-e301f802도 native 실행)이라 원인 분리 후 승인 요청·허용됨. MAJOR1 수정 전 실행 run-5e29552e는 452/452로 구분 보존. 정지된 과거 partial 로그는 보존·PASS 합산 금지.
+  - sandbox scoped 부분 실행: `node --test` 19파일(evidence-broker 제외) **395/395** — 전체 suite 증거로 인용하지 않는다.
+- **PMQA-059 인용**: post-push readonly22 재검증 `shots/pmqa059-runs/run-b7b6fe59-3535-4665-bd4c-30d2731425c2` — 22 passed(14.8s)·[ro-audit] 변화 0 — 단, 본 06C 변경 **이전** 시점 이력이며 06C 반영 후 재검증은 NOT_RUN.
+- **실DB 접속 0 한계**: approve/execute 실호출·action_requests 조회·주문 스냅샷 GET 등 실DB·실서버 write/read 경로는 전부 미실행 — 검증은 Mock IO가 같은 핸들러를 실증한 unit·tsc·build에 한정된다. 브라우저·Playwright·Visual·Integration·standard 69·eval은 실행 미승인 NOT_RUN. scratch DB 캡처의 '미완 상태 캡처 실행 요청 사용자 거부(BLOCKED·재요청 금지)'는 **과거 PM035 이력**이며, 060 자체는 별도 실행 승인 없는 NOT_RUN이다. commit/stage/Push 0.
+- **PM/Luna 한정 판정(인용)**: 06C 소스 정적 + DB-free 근거 한정 **PM/Luna PASS · open BLOCKER/MAJOR 0**. 단, actual UI 동작·실DB·Visual은 전체 미완료 — 위 NOT_RUN 목록이 유지되며 본 판정을 전체 완료로 확장 인용하지 않는다.
+- **커밋 상태**: 미커밋 — PM 검수·분리 지시 대기. tmp_*·shots·기존 증거 변경 0.
+ - **PM QA 산출물(경로·판정 한정)**: `shots/pmqa060-runs/run-3038e855-b652-4bba-9e17-b7674a396453/qa-verdict.json` · 동일 디렉터리 `preservation.json` — 소스 정적+DB-free 범위 판정 산출물이며 DB·browser·Visual 전체는 NOT_RUN. baselineDigest `fcef297284d519b85216ad8f662b2bce0e4be7bb6f9e6ab16c2df3a07f53d57d` · 근거 기록 최종 증거 1020 변경삭제 0(신규 22).
+
+### PMQA-061·062 — 060 반영 readonly22 회귀 + Mock 취소 브라우저 검증 + PM 최종 Visual 판정·comparison 산출 (2026-10-12/13)
+
+- **PMQA-061(062 Mock과 별도 검증 — 060 변경 반영 후 기존 readonly E2E22 회귀)**: `shots/pmqa061-runs/run-61d8a457-f993-417d-93d5-58117add21c8/` — PM 판정 qa-verdict **PASS**(scope: '06C-change existing readonly E2E22 regression only'): e2e **22 passed / 0 fail / 0 skip(14.3s, exec-98ec28f8, exit 0)** · 두 DB(commerce oid16384·commerce_test oid16516) **13테이블 전/후 동일** · 보호77/독립36 · 기존 증거 baseline 1044→1064(신규는 readonly 산출 20파일만·변경삭제 0) · 고정 sourcePin 16개 SHA 불변 · auditRun `shots/06b/655f9bfa-031d-4ddb-87b2-bdb0a2cae84f` · Luna 독립 audit review PASS · processCompliance DEVIATION_RECORDED_AND_CONTAINED — operationalIncident MAJOR: Main이 승인 범위 밖 SELECT-only precheck 스크립트(tmp_pmqa061_precheck.mjs·tmp_pmqa061_manifest_pre.txt)를 생성·실행, PM 지시로 실행·재사용·삭제 없이 원본 보존, 변이 없음은 13테이블 전/후 동일 + 059-after=061-before로 입증. **이전 '060 반영 후 재검증 NOT_RUN' 기록은 본 결과로 Superseded.**
+- **범위(PM 승인 — 정확히 `node tests/e2e/mock-audit.ts` 실행만)**: mock 라우트 기반 취소 플로우 12 spec + 네트워크 완결 감사. webServer·globalSetup·실 PG 없음은 **source/control-flow·local route 감사 근거**(계측 카운터 아님)이며 이번 run에서 **신규 DB 조회 0건** — 이전 'qa-verdict pg.actualConnectCalls 0' 기술은 계측 카운터로 오인될 수 있어 정정. actual backend 취소/환불·standard69·integration·브라우저 수동 조작은 NOT_RUN 유지.
+- **수정(승인 범위 내 spec/capture만 — Backend·UI 변경 0)**: ① spec의 `결과 확인` 클릭 5곳을 `.sheet` 스코프 + `exact: true`로 strict-mode 안전화 — 배경 주문 상세의 '취소 요청 결과 확인' 버튼과 substring 충돌이 실패 원인(제품 결함이 아닌 locator 결함) ② capture 테스트 선택 사유를 '단순 변심이에요'→'주문을 잘못 입력했어요'(ORDER_MISTAKE)로 변경 — Ref087/088/089 비교 상태(잘못 주문 1개·수량 1) 일치 목적이며, default quoteReply가 query reason_code를 반영해 mock capture 변경·관련 라인만 해당(Backend 수정 0) ③ `playwright.mock.config.ts`에 `maxFailures:1` — 첫 실패 시 연쇄 실패 대신 깨끗 중단해 원인 run을 보존. 수정본 SHA: spec `EDD73B28785EFF01`·config `9F63AC9A0C83D665`·audit `1DB16DBB2A409B21`(PM 고정 SHA 유지). freeze manifest(run-76ff3800) source 26 중 **24 동일·diff 2개 = 본 수정분**.
+- **실행 이력(실패 run 전부 원본 보존·덮어쓰기 0)**: ① `5a39269e`(이전 세션) sandbox — worker↔broker loopback EACCES 입구 실패(도구 거부 아닌 환경 제약) ② `b9597dc8` native — 5 PASS/7 FAIL: `createLostPending`이 pending 배너(approve 시점 즉시 표시)를 유실 증거로 오인 → executeCalls=0 단정 실패 → worker 재기동 → afterAll network.json 중복 제출 연쇄 ③ `0c954062` native — 5 PASS + lost-ready 1 FAIL + 6 did-not-run(`maxFailures:1`로 깨끗 중단; `결과 확인` strict 2요소 매치가 원인) ④ `306b85e5` — 본 세션 sandbox 재시도 동일 입구 실패(15파일 보존) ⑤ `f5233cb1-0ecd-4614-a5e6-4309b320d2c8` — native(require_escalated 정상 승인 경로) **12/12 PASS(9.6s)** · network.json: 요청 135·응답 118·실패 17·staticFulfill 44·mockFulfill 74·외부 origin 차단 11·주입 실패 6 — **unhandled·routeWithoutRequest·realPeers·peerLookupErrors·violations 전부 0 · 실서버 mutation 전달 0**.
+- **PM 최종 분리 판정(인용 — Main 자기보고가 아닌 PM 판정으로 기록)**: `shots/pmqa062-runs/run-d4210889-6f9d-4ee1-8447-a9b4060b25b5/`의 qa-verdict.json·preservation.json·native-execution.json·next-scope.md. functionalMock **PASS** · visualPM **FAIL — structural MAJOR `MJ062-VIS1`**(scope: reason/quote-confirm/receipt — Ref087/088/089의 전용 fullpage 단계 위계 vs 가변 높이 modal 시트·generic 소형 제목·반복 대형 블록·split CTA가 정보 위계·밀도를 변경; PM 제안은 기존 데이터·플로우만 쓰는 bounded UI 표현 보정, Backend 변경 없음) · MINOR `MN062-VIS1`(itemRows가 상품 가격·수량 1 표기를 누락 — 지원되는 기존 주문 데이터의 미렌더) · environment **NOT_READY for real backend integration** · userVisual **PENDING**. **Luna 별도 판정: 기능 Mock PASS · Visual MINOR 1** — PM 독립 판정과 혼동 금지.
+- **NOT_RUN 유지(qa-verdict.tests)**: actualBackendCancelRefund·standard69(현재 변경 기준)·integration·expiredStaleMalformedContextSwitchBrowser — mock 미검증 상태(EXPIRED/STALE 견적·비정형 SUCCEEDED pending·주문/사용자 전환)는 UI 전체 PASS 근거로 인용 금지. mock fixture 값(환불 292,000원·견적 유효기간 2026-10-10=촬영 기준 과거)은 실서버 검증 아님 — expiry backend 검증 **NOT_RUN**.
+- **Comparison 산출(SWE — PM 승인 범위, UI 수정 아님)**: 신규 exclusive run `shots/pmqa062-runs/run-5c06fc1d-b679-4b12-aaff-755d8b7e232b/` — reserveCaptureOutput + claimEvidenceFiles로 run-owner.json·`01_cancel_reason.png`(Ref087↔cancel_reason_dark)·`02_cancel_confirm.png`(Ref088↔cancel_confirm_dark)·`03_cancel_accepted.png`(Ref089↔cancel_accepted_dark)·captions.md·facts.json 기록. 합성은 bundled python 3.12.14 + PIL 12.3.0 child → stdout PNG bytes → parent ClaimWriter — 자식 파일 쓰기 0·실제 브라우저 재실행 없이 기존 캡처만 읽기·기존 tmp/legacy 스크립트 미사용. Ref 880×1920 → 390×844 프레임 contain(비율 보존·stretch 없음, iOS 영역은 caption 차이) · impl 390×844 원본 — 차이를 숨기지 않는 caption·facts 기록(scripts/pmqa062-compare.ts·scripts/pmqa062_composite.py). PM 직접 검수로 resize contain + 원본 unmodified 적절 확인·이미지 재생성 없이 동결.
+- **캡션 정정(동결된 captions.md/facts.json을 덮어쓰지 않고 본 로그에 정정 기록 — PM 지시)**: ① Ref087의 사유 목록을 '아코디언형'이라 단정할 근거는 스크린샷에 없음 → '사유 선택 행'으로 정정 ② '취소요청 배지는 Backend 계약 미지원' 기술은 부정확 — 계약 status REQUESTED는 존재하고 현재 CancelSheet UI가 미표시한 것(seller 정보 미지원 기술은 유지).
+- **실패 유형 구분(PM 지시)**: default IPC 실패(샌드박스 loopback EACCES — worker↔broker 입구 불가의 환경 제약)와 명시적 review 거부(자동 검토·사용자 명시 거부 — PM035 scratch 승인 REVOKED 이력)를 혼동하지 않는다. parent close의 `implies: run-owner→전 캡처` 계약이 실패 run에서도 발화해 2차 오류를 내는 공유 broker 한계는 PM이 '공유 broker 변경 불필요'로 보류 — 관찰 사항으로만 기록.
+- **최신 회귀 로그(pmqa056-runs 실제 파일 — PM 인용 경로)**: unit `shots/pmqa056-runs/run-706a74a0-c741-40f4-ba40-fac5651b4edd/` unit.log **tests 460·pass 460·fail 0·skipped 0**(6.5s) · check `run-6f68bb18-3c1d-40f8-ba56-e83abeb7cf60` result.json status 0 · build `run-1a385275-d4a5-413e-96e9-179b1849c547` build.log exit 0(web/app.js 1.4mb).
+- **증거 무결성**: freeze manifest(run-76ff3800) 대조 evidence **1082/1082 SHA 동일·tmp 2/2** — PM preservation.json은 original **1084**·failed **45**·source/tmp 변경 전부 0으로 기록(집계 범위는 PM 산출 기준). failed 45 = PM 보존 목록상 `5a39269e`·`b9597dc8`·`0c954062` 각 15파일 — `306b85e5`는 그 이후 별도 실패 run의 15파일(이전 '5a freeze 이전 편입' 기술은 오기로 정정). **original1084와 failed45는 별도 감사 집합이며 일부 중복 — 독립 합계 1129건으로 주장 금지.** 306b 실패 15파일·f523 출력 15파일 모두 원본 보존. freeze manifest source 26에는 문서4가 포함 — mock 실행 시점엔 26 전부 불변이었고, 사후 승인된 문서 4파일 갱신으로 **doc SHA만 변경**되며 코드·정적입력 22개는 불변 유지('문서 갱신 후 26 불변' 표현 금지 — UI·runner 코드 동결).
+- **보고 전송 기록**: Main→PM `send_message` 보고 전송이 auto-review에 거부됨(사용자 승인 없는 역방향 메시징) — 재전송 0, 보고는 본 채팅 final 기록에 한정하고 PM은 read/wait로 회수하는 방식으로 분리 기록.
+- **다음 범위 제안(PM next-scope.md 인용 — 착수 전 사용자 승인 필요)**: 기존 데이터·플로우만 재사용하는 bounded UI 표현 보정 — Ref087/088/089의 3단계 fullpage 위계 정렬·itemRows 가격/수량 복원(기존 order DTO)·환불 예정 총액 강조·단일 primary CTA·request≠completion·pending/recovery/중복 방지 계약 보존. 예상 파일: CancelSheet.tsx·styles.css·mock 단정/캡처 wiring·공통 문서. **최신 승인은 minimal Mock spec/capture/docs 범위라 신규 UI 보정은 사용자 범위 확인 후에만 착수**. 제외 유지: actual PG·실취소/환불·scratch·standard69/integration·commit/push·07 — standard69/integration은 09 Freeze 전 해소 필수.
+- **커밋 상태**: 미커밋 — commit·Push·07 금지 유지. PM 회수 대기.
+
+### PMQA-063 — 06C 취소 Visual Correction(Ref087/088/089 fullpage 위계) + Mock 재검증·비교본·PM 최종 한정 QA PASS (2026-10-13)
+
+- **범위(PM 승인 + 사용자 승인된 3화면 Visual Correction)**: CancelSheet.tsx render 재작성 — 기존 overlay/.sheet 클래스·핸들러·cancel-flow 상태머신·서버 정책 동결, .cancel-overlay/.cancel-sheet modifier로 전용 fullpage flex column 구현. .cancel-top 표시줄(좌 IcBack: form/done=닫기·confirm=이전, confirm만 우측 IcClose=닫기 — 기존 '닫기' 제어의 접근 이름 유지 목적의 [Project] 최소 추가)·.cancel-body 스크롤 본문·.cancel-cta 하단 단일 CTA. 단계 제목 '취소하는 이유는 무엇인가요?' / '환불 예정 금액을 확인해주세요' / '취소 요청(accent)이 접수됐어요'. itemRows = 썸네일 72px + 상품명·옵션 + '단가 · 수량'(수량 1도 표시 — MN062-VIS1 해소), done에서 '취소요청' 배지(status REQUESTED 계약 존재 — 실제 서버 응답 표시). Ref089에 없는 환불액 sub 라인은 제거해 승인 anatomy 유지. styles.css는 .sheet 섹션 뒤 .cancel-* scoped 블록만 추가(다른 시트 무영향) — flat 사유 행(우측 체크 muted→accent)·.pay-row.cancel-refund accent 강조·.cancel-note 불릿 안내·CTA 전폭+safe-area.
+- **spec 정합(spec만 최소 변경 — PM 추가 승인: 확정적 파손 selector만 정정, 나머지 단정 약화 금지)**: mock-cancel.spec.ts heading '취소 사유'→'취소하는 이유는 무엇인가요?' 2곳 · readonly-orders.spec.ts 1곳(실행 NOT_RUN 유지 — 보수적 정정). [mock:capture]에 PM 중간검수 지정 기본 단정 추가(12 case 수 불변·추가 슬롯 없음): 시트 bbox 390×844 · 3단계 CTA 전부 toBeInViewport({ratio:1})(부분 노출 PASS 방지) · .cancel-item-pr '289,000원 · 1개' 3단계 · .pay-row.cancel-refund '292,000원' · confirm에서 390×600 전환해 CTA ratio:1 + 본문 스크롤로 .cancel-note 도달 단정 → scrollTop=0 복원 단정 후 기존 캡처 저장 · done 390×600 CTA ratio:1.
+- **검증(actual·ClaimWriter 경로·exit 확인)**: node scripts/pmqa056-qa-run.ts — check run-7737564b-1143-43d0-b1dd-915087aed078 exit 0(spec 보정 최종본 기준 — 직전 보고의 run-2ce105cb 인용은 이전 시점으로 정정) · build 직접 실행 exec-9def9 출력 0(exit 0 — PM 회수 확인) · unit run-26cb36bc-c1f6-4b70-8c34-83566c03e47e **tests 460 / pass 460 / fail 0 / cancelled 0** exit 0 — 알려진 sandbox IPC hang으로 PTY 경로 1회(세션 유실)·runner 1회(run-3e47c0aa: result.json 0B·unit.log 절단) 출력 유실 → 해당 run은 **NOT_COMPLETE로 원본 보존·덮어쓰기 0·PASS 합산 금지**, 정상 require_escalated 승인 후 runner native 경로 1회 통과(result.json에 승인 사유 기록).
+- **Mock 브라우저(PM 사전 gate 통과 후 — 정상 require_escalated 승인 경로, 새 경로만)**: node tests/e2e/mock-audit.ts → 신규 exclusive run shots/06c/d827de0d-7b43-4f8b-b648-942fd9eca9bb/ — **12/12 PASS(9.9s)** · audit-after verdict pass:true·pwStatus 0·audit-fail.json 미생성(0B) · 캡처 원본 8 PNG + network.json + mock-notes.md ClaimWriter 기록 · catch-all 사전 등록·부모만 최종 파일 기록·worker 오류 whole FAIL 계약 유지.
+- **network 완결**: total 135 = 응답 118 + 실패 17 — **실패 17은 외부 CDN(jsdelivr Pretendard) 차단 11 + 주입 실패 6**이다(직전 보고의 'failedEvents CDN뿐'은 오기로 정정). crosscheck unhandled·loggedWithoutEvent·realPeers·addrErrors 전부 0 · 실서버 forward/PG 0 — PG 0 근거는 DB-free control flow/route 감사이며 새 DB fingerprint 검사 없음.
+- **실행 코드 시점 입증(PM 확인)**: PM pre-Mock pin spec D11652F0 ↔ d827 런타임 spec 20801513FA187C18AFF5A64292F1C70431A84F7C10A9080C3E5B42BB30368DB1 — scroll0 복원 단정 패치(fileChange-b54e085f)가 mock 실행(exec-bc82dfd6)보다 앞선 시점으로 입증. 그 이후 추가됐던 미실행 단정(item-row ratio:1·rAF)은 제거해 현재 spec을 런타임 20801513과 동일 상태로 복원 확인(실측 SHA 일치).
+- **baseline 무결성**: shots/pmqa063-runs/run-c531b841-d390-4dcc-ac28-6a00ca346bcd/baseline.json 대조 — **old 1177/1177 SHA 동일·변경·누락 0**(baseline.json 자체 sha256 F5E4F5E12A413389A1C352D0BFE256E6C9FE90568D0F1F54DC55EBD2A2904E95). 캡처 원본 지문 — cancel_confirm_dark AF85CFA1·cancel_confirm_light F4967B49(PM/Luna 동일 관측). **PM 앞선 '상품 행 부재' 관찰은 재열람에서 불성립·가설 철회 — 확정 결함으로 기록하지 않음·신규 재실행 없음.**
+- **Comparison 산출(SWE — 기존 pmqa062-compare helper 최소 정정만: SRC_RUN=d827de0d·신규 exclusive root·PMQA-063 명명·캡션 현재 구현 사실 기술)**: shots/pmqa063-compare/run-9e10ec79-1d4b-4030-a19e-bdc38fb243ca/ — 01_cancel_reason(Ref087↔cancel_reason_dark)·02_cancel_confirm(Ref088↔cancel_confirm_dark)·03_cancel_accepted(Ref089↔cancel_accepted_dark) 3 PNG + captions.md + facts.json + run-owner.json. PIL child stdout→ClaimWriter·브라우저 재실행·캡처 원본 재생성/덮어쓰기 0. PM 확인: 합성 02의 Implementation 영역은 원본 confirm dark와 PIL pixel 동일(편집·행 누락 없음). 062 sheet 시절 캡션 기술은 Superseded 표기.
+- **PM 최종 한정 QA 판정(인용 — Main 자기보고와 구분, shots/pmqa063-runs 신규 run의 qa-verdict/preservation에 기록 완료)**: 코드 · Mock **12 PASS 0F0S** · structure Visual **PM·Luna 모두 PASS** — **MJ062-VIS1·MN062-VIS1 해소 · open BLOCKER/MAJOR 0** · userVisual **PENDING**(사용자 최종 Visual 판단은 PM 담당 게이트). 기존 PMQA-062 판정(run-d4210889)은 Superseded 이력으로 보존.
+- **MINOR 잔여(판정 보류 아님)**: MN063-1 — LOST 초기 하단 오류 안내가 스크롤 아래 위치(복구 버튼 노출·동작은 PASS) · MN063-2 — typography/spacing/icon/border 등 미세 보정은 Phase 08 Final Visual Polish로 이관.
+- **NOT_RUN·주장 금지 유지**: actualBackendCancelRefund·expired/stale/malformed/contextSwitch·expiry backend·standard69(현재 변경 기준)·integration — 09 Commerce Environment Freeze 전 해소 필수. 390×600 확인은 CTA 완전 노출·본문 안내 도달 단정뿐 — 전체 반응형 PASS로 확장 인용 금지.
+- **금지 유지**: 실제 PG·실취소/환불·Scratch·standard69/Integration·stage/commit/Push·07단계 — PM 별도 지시 전까지. 커밋 상태: 미커밋 — PM 회수 대기.
+
+## 2026-10-13 PMQA-065 A0 — 감사 P1 카피 정정(F21 특가 허위 긴급 · F26 취소 안내 오인)
+
+변경(코드 카피만 — Backend·핸들러·상태머신·서버 정책·데이터 0):
+
+| 파일 | 변경 |
+| --- | --- |
+| src/web/screens/Shopping.tsx | 자정 countdown useEffect/interval·pad2/left state 제거 · 숏컷 '오늘의 특가'→'특가' · 프로모 '지금 할인 중/특가 상품 모음'→'데모 특가/상품 모음' · sub '실제 할인 상품만 모았어요'→'데모 특가 상품 모음' · 보조탭 '하루 특가'→'특가' · sale-timer 행 '데모 특가·실제 종료 시각은 없어요' · DealCard dealTag '하루특가'→'특가' · IcClock import 제거 |
+| src/web/components/CancelSheet.tsx | 최종 확인 취소 안내 — '접수되면 …환불 처리가 진행돼요. 접수는 환불 완료가 아니에요' → '요청 접수는 취소·환불 완료가 아니에요. 취소 처리가 완료되면 환불 상태를 확인할 수 있어요'(+견적 유효 시각) · 서버 transition 자동화 추가 없음 · done 단계 문구 불변 |
+| docs/COMMERCE_UI_SPEC.md | L41 특가 탭 서술 실구현 정합 정정(자정 카운트다운·'오늘만 이 가격'·'하루 특가' 활성 → 데모 안내 행·'특가' 활성·'특가 n%' 배지) + §7-4 F26 copy 기록 |
+| docs/IMPLEMENTATION_PROGRESS.md · PROJECT_CONTEXT.md | PMQA-065 A0 상태·검증 기록 추가(기존 승인 상태 보존 — 06C userVisual PENDING 유지) |
+
+검증(actual·ClaimWriter 경로·exit 확인):
+
+| 명령 | 결과 |
+| --- | --- |
+| `node scripts/pmqa056-qa-run.ts check` | PASS exit 0 — run-5d1a9668-9a04-497b-9813-f74a626f5964 |
+| `node scripts/pmqa056-qa-run.ts build` | PASS exit 0 — run-685b4150-7ddf-472c-b238-117f81fa5c49(build.log: web/app.js 1.4mb — 실제 esbuild 산출 로그·artifact로 판정, 소요시간이 아닌 실행 근거 기준) |
+| `node scripts/pmqa056-qa-run.ts unit`(2차) | PASS exit 0 — run-83f68c01-f3fe-4c2a-8df7-47193bd98f35, tests 460 / pass 460 / fail 0 / cancelled 0. 실행 옵션: exec_command `require_escalated` 명시 요청 → auto-review 승인 → 실행. result.json의 '승인된 exec 경로' 문자열은 runner 고정 메타데이터이며 승인 증거로 인용하지 않음 |
+| `node scripts/pmqa056-qa-run.ts unit`(1차) | INCOMPLETE — run-d28ae0b3-2d22-464e-bddb-a9e034fcecea: default sandbox 경로 실행 중 IPC hang으로 부모 유실·출력 미회수(result.json 미작성 0B·unit.log 11KB 중간 절단). 시작했던 runner·child 종료 확인(node.exe 잔존 0개 — hang 생존 아님). 원본 보존·덮어쓰기 0·PASS 미기록 |
+
+메모:
+
+- 정정 근거: PMQA-064 감사 audit.md F21(L654)·F26(L744) — 카운트다운·'오늘만'·'실제 할인' 표현은 실제 판매 기간/판매 근거 없는 허위 긴급·허위 할인 암시로 폐기, 취소 접수 ≠ 자동 환불 진행 오인 제거.
+- 해당 문구를 단정하는 spec 없음(rg tests/) — spec 수정 0.
+- NOT_RUN 유지: 브라우저·실DB·Integration·standard e2e·readonly 회귀·actual backend 취소 — 신규 브라우저/DB/Commit/Push 금지 준수.
+
+## 2026-10-13 PMQA-066 — 제품 화면군 구현 + 복귀 보존·더보기 가드 회귀 수정
+
+변경(코드 + spec 선택자 + 신규 DB-free unit — Backend·핸들러·서버 정책 0):
+
+| 파일 | 변경 |
+| --- | --- |
+| src/web/detail-resume.ts | 신규 — (계정,상품) 복귀 스냅샷 저장(saveDetailResume)·1회 소비(takeDetailResume)·stale 미소비(takeDetailResumeIfFresh)·판정(resolveDetailResume — OPTION_UNAVAILABLE/QTY_REDUCED 안내) |
+| src/web/review-pager.ts | 신규 — '리뷰 더 보기' 공용 실행기 createReviewPager(동기 잠금·연타 1회·stale 응답 목록/busy/error 무변경·실패 시 기존 목록 보존+오류 신호) |
+| src/web/screens/Reviews.tsx | 신규 — 전체 리뷰 전용 화면(F07 '/p/:id/reviews'·cursor API 전용·최신순만·뒤로=같은 상품) + pager 배선 + 재시도 세대 무효화 |
+| src/web/components/ReviewBits.tsx | 신규 — Stars(큰별 클러스터)·ReviewRow(flat 행+출처 칩) 공용 |
+| src/web/screens/Product.tsx | F04 정보 계층·F05 navSolid 임계(h-150 [Project] 임시)·'.optline' 썸네일 옵션 행·리뷰 패널 '.rev-cluster'+전체보기 링크·뷰어(F32)·복귀 보존 배선·리뷰 전용 revSeq 분리 |
+| src/web/App.tsx | 'reviews' 라우트·'/p/:id/reviews' 파싱 우선·goBack fallback reviews→같은 상품·Product userId prop |
+| src/web/styles.css | .optline/.opt-item/.stars/.rev-*/.viewer 블록 추가 · 미사용 .option-open/.review-rating/.review-star/.review-summary/.review-provenance 규칙 제거('.option-open' 클래스는 spec 훅으로 유지) |
+| tests/e2e/{t1-slice,core-journeys,t4-product-cart}.spec.ts | dialog '옵션 선택'→'옵션 한번에 보기' · 시트 'button.sort-item'→'button.opt-item' — 실행 NOT_RUN |
+| tests/unit/{detail-resume,review-pager}.test.ts | 신규 DB-free 배선 회귀(9+5 — 실제 저장소/실행기에 mock IO 주입) |
+
+검증(actual·ClaimWriter 경로·exit 확인):
+
+| 명령 | 결과 |
+| --- | --- |
+| 'node scripts/pmqa056-qa-run.ts check' | PASS exit 0 — run-1943bda3-7380-4ded-a0f9-c42edf021581 |
+| 'node scripts/pmqa056-qa-run.ts build' | PASS exit 0 — run-ff5de457-31a2-417e-8f45-95ceedbf7a98 |
+| 'node scripts/pmqa056-qa-run.ts unit' | PASS exit 0 — run-950807e0-b2c0-442b-8530-b1f104d000a7, tests 474 / pass 474 / fail 0(460 → 신규 detail-resume 9·review-pager 5 포함). exec require_escalated 승인 경로. 직전 run-e77ae04c는 sandbox IPC hang으로 result.json 0B·로그 절단 — NOT_COMPLETE 원본 보존·PASS 미합산 |
+
+메모:
+
+- 읽기 검토 지적 해소: ① Product→Reviews 라우트 리마운트로 선택·수량·스크롤 초기화 → (계정,상품) 스냅샷 복원 — 저장 옵션 품절·삭제는 기본 선택으로 조용히 교체하지 않고 안내, 수량은 재고 클램프+안내. Luna 추가 지적 — 언마운트 후 늦은 응답의 스냅샷 소비 → effect cleanup의 seq/revSeq 무효화 + takeDetailResumeIfFresh 이중 차단. ② Reviews 더보기 동기 잠금·오류·재시도·stale 가드 → review-pager 공용 실행기(Product도 같은 배선 공유).
+- 'createReviewPager'는 '{ loadMore }' 객체를 반환 — 모든 호출부 'pagerRef.current?.loadMore()'·단위 테스트 '{ loadMore } = createReviewPager(...)' 일치, tsc 통과로 확인.
+- NOT_RUN 유지: 실브라우저·실DB·standard e2e·Integration·Visual. F05 임계값·스크롤 복원 정확도는 브라우저 승인 단계 검증. 06C userVisual PENDING·07 대기.
+
+## 2026-10-13 PMQA-067 — 주문서 견적 출처 3종 + 늦은 응답 가드 + 검출기 회귀 수정
+
+변경(코드 + 계약 + spec 정정 + 신규 DB-free unit — 실DB·API·브라우저 실행 0):
+
+| 파일 | 변경 |
+| --- | --- |
+| src/contracts.ts | CheckoutSource/CheckoutTarget/CheckoutItemView(cart_item_id nullable)/CheckoutQuoteView(source·items·금액 필드·cart nullable) |
+| src/checkout.ts | 전면 재작성 — 견적 source는 CART_FULL/CART_SELECTED/DIRECT 3종(INVALID는 source가 아니라 frontend 실패 라우트)·v2 토큰 source별 대상 해석·v/source 없는 구형 카트 견적은 필수값 검증 후 CART_FULL 해석·공통 재검증·source별 카트 반영·DIRECT quantity number+safe integer 엄격 검증 |
+| src/cart.ts | getOrCreateCart/getCart db 파라미터 · cartView export + opts.itemIds 부분집합 |
+| src/actions.ts | SqlDb 타입 + runAction db 파라미터 주입 |
+| src/server.ts | POST /api/checkout/quote 추가 |
+| src/web/checkout-guard.ts | 신규 — OpCtx(seq+scope+target)·sameOpContext·createOpGuard(getScope,getTarget)·boundFor(unbound 미발급·미사용) — DB-free 순수 판정 모듈 |
+| src/web/screens/Checkout.tsx | target prop·견적 3원천 분기·Bound 견적/행동 키·guard.stale 적용·scope state 동기화·targetKeyRef·checkPending/retryPending 선검증 |
+| src/web/screens/Product.tsx | 하단 바 [카트 아이콘][N원 담기 ghost][구매하기 primary](Ref04)·onBuyNow·옵션 진입 .optline 행 |
+| src/web/screens/Cart.tsx | onCheckout(selectedIds|null)·선택 부분집합 합계·CTA 'N건 · N원 주문하기'·0건 disabled·주문 불가 안내 |
+| src/web/app.tsx | src=sel/src=direct 라우팅·INVALID 대응·DIRECT 뒤로가기→product |
+| src/web/styles.css | .detail-option-cta 제거 |
+| tests/unit/checkout-sources.test.ts | 신규 + Luna 재검수 MAJOR 수정 — cartWrites의 U+0008 backspace 오염 regex를 CART_TABLES 명시 substring 검출로 교체 + 검출기 자체 회귀 테스트 2건(타 테이블 0 검출 포함) |
+| tests/unit/checkout-guard.test.ts | 신규 — 세대·actor·target 판정·unbound·targetKey-only 변경 stale |
+| tests/e2e/t4-product-cart.spec.ts | 신계약 정정(부분선택→src=sel·항목 단정·'선택 N건'·0건 disabled·.option-open 훅) — 실행 NOT_RUN |
+| tests/integration/checkout.test.ts | q.data.cart nullable 대응 — 실행 NOT_RUN |
+
+검증(actual·신규 배타 run·exit 확인 — PM 승인 경로 'node scripts/pmqa056-qa-run.ts'):
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-2ba4c45d-25a3-4e8c-978b-399f1709d46b (테스트 파일 수정 후 재실행) |
+| build | PASS exit 0 — run-25ef1609-4ac8-4c80-82f1-0bb88af11afd (앱 코드 무변경 — 기존 run 재사용, PM 승인) |
+| unit | PASS exit 0 — run-ed0040a3-5407-4085-b050-b1104cfd8dd8, tests 517 / pass 517 / fail 0 — require_escalated 승인 경로 |
+
+중단 회수(보존): unit run-c8624892-2d93-4635-bc38-63f194d94716 — 알려진 sandbox IPC hang, result.json 0B·unit.log 11:38:15 절단(현재시각 11:42 대비 정지 확인), 부모 세션·child 종료(node.exe 잔존 0) → **NOT_COMPLETE 원본 보존·덮어쓰기 0·PASS 미합산**. 직전 snapshot의 run-4bad809d unit exit 0은 검출기 수정 이전 실행분으로 현재 스냅샷 유효 결과는 ed0040a3.
+
+메모:
+
+- Luna 최종정적QA 지적 MAJOR 해소: cartWrites regex의 4개 실제 backspace 제어문자(표시상 \b와 혼동)로 'DIRECT 카트 SQL 0' assertion 무력화 → substring 토큰 검출 + 자체 회귀 테스트로 assertion 무력화 재발 방지. U+0008 잔존 0 확인.
+- PM R2 재검수 반영: OpCtx에 target 포함(sameOpContext 비교)·createOpGuard 2인자 getTarget(targetKeyRef로 렌더 후 effect 이전 창 차단)·checkPending/retryPending 시작 전 scope·버킷 잔존 재검증.
+- PM 최종 판정(2026-10-13 통보): PM이 코드/테스트 SHA와 위 run 결과를 직접 대조 — **정적 및 DB-free 회귀 범위 PM·Luna PASS · 열린 BLOCKER/MAJOR 0 · 기존 보호 1311파일 변경/누락 0 재확인 · code067 15파일 freeze**. 실제 통합 검증·전체 READY 판정 아님. 'PM/Luna 재검수 대기·PASS 단정 아님'은 판정 이전 시점 이력으로 Superseded. 사고 원본 동결: shots/pmqa067-review/run-71a3fc81-62eb-4918-a0c1-b597f884082f/incident-browser-scope.md(미승인 headless Chromium·PNG4·API/DB접속0·덮어쓰기0 NOT_PROVEN).
+- NOT_RUN 유지: 실DB·실API·Playwright/브라우저·scratch·standard e2e·Integration·Visual 승인. 06C 최종 userVisual PENDING · 미커밋 — commit·Push 금지.
+
+## 2026-10-13 PMQA-068 — 전체 리뷰 정렬(F20, Ref127 팝오버) + 상품 배송정보 시트(F23, Ref093) + 시트 스코프 보완
+
+변경(코드 + 계약 + 공통 docs + 신규 DB-free unit — 실DB·API·브라우저 실행 0):
+
+| 파일 | 변경 |
+| --- | --- |
+| src/contracts.ts | `ReviewSort`("LATEST"\|"RATING_DESC"\|"RATING_ASC") + `ReviewsResult.sort` echo |
+| src/catalog.ts | getReviews에 sort — ORDER BY 상수 매핑(입력 원문 미삽입)·pagination 전 정렬·`Object.hasOwn` own-property 검증으로 상속키('toString'/'constructor'/'__proto__')·미지원 값 VALIDATION 거절·sort 생략은 LATEST 기본값 · `db` 파라미터(`Pick<typeof sql,"unsafe">`) 주입으로 DB-free 테스트 가능 |
+| src/server.ts | `/api/products/:id/reviews`에 `sort` 쿼리 파라미터 전달 |
+| src/agent.ts | `get_reviews` tool — `sort` properties/allowed/run 타입 추가 |
+| src/web/api.ts | `shipFeeLabel` 신규 — 0='무료배송'·양의 안전 정수=실금액·부재/NaN/음수/비정수='배송비 정보 없음' |
+| src/web/screens/Reviews.tsx | Ref127 우측 정렬 둥근 팝오버(`.rev-sort-*` — 바텀시트 아님)·스크림/ESC 닫기·정렬 변경 시 서버 재조회+seq 세대 무효화·'추천순'은 알고리즘 계약 부재로 제외(데이터 Gap) |
+| src/web/screens/Product.tsx | 배송 행 → '배송정보' BottomSheet 진입(`.ship-sheet` 스코프·본문 `.ship-scroll` 스크롤·확인 CTA flex 하단 고정·lockScroll 배경 잠금+언마운트 복원) · 배송비 표시를 `shipFeeLabel`로 통일(진입 행·가격 보조 행·시트) · 발송 안내 데모 행 미구현·gap 문구에 '실제 배송 약속 아님' 명시 · productId 변경 시 옵션/배송/뷰어 overlay 전부 리셋 |
+| src/web/components/BottomSheet.tsx | 선택적 `className`/`lockScroll` props 추가 — 다른 공용 시트(옵션·정렬)는 props 미전달로 영향 0 |
+| src/web/styles.css | `.rev-sort-*` 팝오버 블록 · `.ship-sheet`/`.ship-scroll`/`.ship-rows`/`.ship-row`/`.ship-k`/`.ship-v`/`.ship-gap`/`.sheet-cta` 배송 시트 블록 |
+| tests/unit/review-sort.test.ts | 신규 9건 — ORDER BY 매핑·VALIDATION 거절+쿼리 0회·상속키 거절·variant 조합·5행 mock 페이지네이션(slice/next_cursor/total_matching/sort echo·REAL/SYNTHETIC 유지 — 정렬 알고리즘은 mock에 복제하지 않고 실제 exported service 계약 검증) |
+| tests/unit/ship-fee-label.test.ts | 신규 3건 — 0/양수/부재·NaN·음수·비정수 |
+| tests/unit/review-pager.test.ts | fixture에 `sort` 계약 필드 보강 |
+| tests/e2e/t4-product-cart.spec.ts | mock 응답 2곳에 `sort` 필드 보강 — 실행 NOT_RUN |
+| docs/COMMERCE_UI_SPEC.md | PMQA-068 추가 계약 2건 — §99 '최신순만' Superseded 명기·추천순 Gap·배송 시트 shipFeeLabel/데모 라벨 Gap 계약 |
+| CORE_TASK_SCOPE.md | 제외 범위 표 아래 [2026-10-13 Superseded 부분 정정] — 찜은 설계·코드까지만 승인·저장 계약 승인 대기(기존 기록 삭제 대신 dated 메모, PM 지시) |
+| docs/IMPLEMENTATION_PROGRESS.md | PMQA-068 최신 섹션 + 시트 스코프 보완 정정 bullet |
+
+검증(actual·신규 배타 run·exit 확인 — PM 승인 경로 'node scripts/pmqa056-qa-run.ts', 최종 스냅샷은 BottomSheet/CSS 보완 이후 재실행본):
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-f2ac53b1-be41-450d-b8dc-f23c5e640f46 |
+| build | PASS exit 0 — run-103322d5-acab-48de-be08-f4f81e9f4029 |
+| unit | PASS exit 0 — run-1e917074-3666-45c7-a903-42ad5dcfbaed, tests 529 / pass 529 / fail 0 — require_escalated 승인 경로 |
+
+메모:
+
+- PM 선제 지적 해소 2건: ① `REVIEW_ORDER[sort]` 인덱싱은 상속키를 truthy로 통과시켜 깨진 ORDER BY가 실제 쿼리로 나가는 결함 → `Object.hasOwn` own-property 검사로 거절(거절 시 db.unsafe 호출 0회 단정). ② `fee>0?금액:'무료배송'`은 undefined/NaN/음수를 무료로 오표기 → `shipFeeLabel` 검증 함수로 3분기 구분 + 시트의 '발송 안내' 데모 행 제거(PRODUCT_META.delivery를 배송 조건으로 확장하지 않음 — 기존 진입 행 데모 표시는 gap 문구로 기록).
+- 직전 snapshot run(cbb703e5·521b54d5·4afeda50)은 시트 스코프 보완 이전 실행본 — 최종 스냅샷은 위 f2ac53b1·103322d5·1e917074가 유일 유효 결과.
+- 실제 SQL ORDER BY 동작·팝오버/시트 실DOM 렌더·배경 스크롤 잠금·픽셀 비교는 브라우저 승인 단계로 이관 — 실제 Reference pixel PASS 주장 아님.
+- PM/Luna scoped 정적 PASS는 최종 snapshot 대조 후 PM이 확정 — 대기 이력 유지(판정 미수신 상태로 기록).
+- NOT_RUN 유지: 실DB·실API·Playwright/브라우저·scratch·standard e2e·Integration·Visual 승인. 06C 최종 userVisual PENDING · 미커밋 — commit·Push 금지. 사고 원본 동결 유지: shots/pmqa067-review/run-71a3fc81-62eb-4918-a0c1-b597f884082f/incident-browser-scope.md.
+
+## C/069 — F09 최근 본 · F16 내 쇼핑 · F22 AI 준비중 게이트
+
+### Reference 근거 정정 (Gap)
+
+SCREEN_INVENTORY의 Recent Views 분류는 Ref45만 유효 근거다.
+
+- **Ref45** [Observed]: 최근 본 화면 3탭(장바구니 N·최근 본·찜) + 2열 상품 카드 — 유효.
+- **Ref46** [분류 불일치 Gap]: PM이 원본 이미지를 직접 열람한 결과 선택된 탭은 '찜'이다. 인벤토리의 'Recent Views — Item Removed' 분류와 원본이 충돌하므로 **최근본 삭제의 직접 관측 근거로 사용하지 않는다**. 인벤토리 원본은 freeze 유지, 본 문서에 불일치만 기록한다.
+- 최근본 화면의 개별 카드 X 삭제는 관측 근거 없는 프로젝트 유용성 결정 — 코드에 [Project]로 표기했다.
+
+### 구현
+
+- F09: `src/web/recent-viewed.ts`(계정별 {at,ids} 단조 revision 보관소), `src/web/screens/Recent.tsx`(Ref45 3탭+2열 그리드), `src/web/catalog-lookup.ts`(page 50 clamp 대응 cursor 조회 — missing/unread/error 구분), Product.tsx 성공 상세 시 `recordRecentView(userId, id)`.
+- F16: `src/web/screens/MyShop.tsx`(Ref078 — '내 쇼핑' 제목 + 최근본 thumb rail+전체보기 + '주문 목록'+전체보기 + 최근 주문 3개 가로 카드). 상단 IcUser·메뉴 '내 쇼핑' 진입점을 orders→myshop으로 변경.
+- F22: `src/web/agent-gate.ts` fail-closed(AGENT_TURN_ENABLED=false 시 post callback 0), 하단 네비 AI·메뉴 'AI 쇼핑 도우미' disabled+'준비중' 표시, AgentPanel send 경로를 게이트로 교체.
+- `src/web/request-gate.ts`: 리소스별 독립 세대 가드 — orders/products 병렬 로드가 서로를 무효화하지 않고 unmount/계정 전환 시 후행 응답 차단.
+- actor key: app.tsx에서 Product(userId:id)·Orders·Recent·MyShop에 key 부여 — 계정 전환 시 재마운트로 cleanup이 세대를 무효화, null actor는 읽기·쓰기 no-op.
+
+### 선제 검수 반영 (PM/Luna 지적 해소)
+
+1. `/api/products?limit=200`은 서버가 50으로 clamp — cursor 추종 `fetchProductsByIds`로 교체, 페이지 누락을 '판매 중단'으로 오표기하지 않도록 missing/unread/error 3분기.
+2. 전역 scope 바인딩 폐기 — 모든 storage 접근은 명시 userId 인자(마운트 순서·계정 전환으로 wrong bucket 읽을 경로 없음). null actor 읽기·쓰기 no-op.
+3. storage fallback 계약 — local 쓰기만 실패해도 session 최신본이 reload에서 선택되도록 {at,ids} 단조 revision + 전 계층 at 비교. local 복구 시 정본 이관 + session 사본 정리.
+4. MyShop orders/products가 같은 seq를 공유해 orders 영구 Loading 되는 결함 — 리소스별 독립 request gate + unmount kill.
+5. at 단조성 — Date.now()만으로는 같은 ms/clock 역행 시 tie가 나므로 기존 계층 최대 at+1을 하한으로 부여. at finite·양수 검증, id 중복·비문자열 정제.
+6. 삭제-로드 레이스 — Recent.removeId가 먼저 gate.begin()으로 진행 중 읽기 세대를 무효화하고 filterLookupRemove로 현재 결과를 갱신, 늦은 삭제-이전 응답이 카드를 되살리지 못한다(DB-free race test로 검증).
+7. 탭 라벨 '최근 본'(Ref45 문구 그대로). 찜 탭은 서버 설계 미승인 — '준비중' 명시, 빈 찜 목록·로컬 찜 금지.
+
+### 검증(actual · 신규 배타 run · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-dbe5e030-88dc-422a-8525-0b1b44261bf8 |
+| build | PASS exit 0 — run-0c11ed0a-6c4d-437c-9952-09bfdb08ed1a |
+| unit | PASS exit 0 — run-e72fbccd-3efa-4ddc-8726-ded40876d9c7, tests 556 / pass 556 / fail 0 — require_escalated 승인 경로 |
+
+신규 DB-free 단위 27개(529→556): recent-viewed(13) · catalog-lookup(7) · request-gate(4) · agent-gate(1) · recent-remove race(2) — storage stub·mock fetcher·spy·gate mock만 사용, 실DB/실네트워크 없음.
+직전 스냅샷 run-0ce2d6b7·61ff811f·4a337bfd는 Cart 탭 배선·MyShop 찜 진입 이전 실행본 — 위 3건이 최종 유효 스냅샷. run-f4e475aa(check exit 2)는 신규 테스트 타입 오류 시점 기록.
+
+### NOT_RUN / Pending
+
+- 실DB·실API·Playwright/브라우저·DOM 렌더·Visual 비교는 미실행 — 실제 화면 동작 주장 없음.
+- 찜 탭 서버 설계 승인 대기 — '준비중' 상태 유지.
+- agent-gate의 차단 검증은 핸들러 spy의 callback-0 단정에 한정된다 — 실브라우저 network-0의 증명으로 해석하면 안 된다(정적·브라우저 미검증).
+- A→B→A key 재마운트는 React unmount→cleanup→gate.kill 경로 — 코드 수준 검증, 실브라우저 계정 전환 동작은 NOT_RUN.
+- 미커밋 — commit·Push 금지 유지.
+
+## C/070 — 찜(Wishlist) 실구현 phase6 opt-in + 카트 actor 소유화 (2026-10-13)
+
+### 구현 범위
+
+- **Backend**: `db/migrations/004_wishlist_items.sql`(신규 — `scripts/migrations-manifest.ts`의 phase6에만 등록, 기존 `--phase<=4` setup은 skip, 적용은 `npm run db:migrate -- --phase=6` 명시 opt-in. 기존 001~003 파일 변경 0) · `src/wishlist.ts`(GET/SET — runAction 재사용·pre-validation no-write·users `FOR NO KEY UPDATE` actor 직렬화·products `FOR SHARE` active 후판정·READY 반대 saved OPERATION_IN_FLIGHT·active=false 새 저장 UNAVAILABLE/해제 허용) · `src/contracts.ts`(WishlistItemView/WishlistView/SetWishlistResult) · `src/server.ts`(GET /api/wishlist·PUT /api/wishlist/:id) · `scripts/migrate.ts`(phase 인자를 ensureDevDb/connect/lock 이전에 검증·planMigrations apply/skip/unknown) · `tests/helpers/testdb.ts`(복제본 맵 폐기→정본 requiredMigrations 재사용).
+- **API/Tool 노출**: REST GET/PUT만 추가 — **Agent Tool registry 미노출**(화면 API 전용, Brain 단계 별도 설계).
+- **Client**: `src/web/wishlist.ts`(명시 userId 키 버킷 스토어·계정에 민감한 intent·확정 상태를 적용하기 전에 `io.scope()===userId` 확인 ABORTED — 실패·READY 조기 반환은 계정 상태 미적용이라 재검사 불요 · GET 적용은 scope/fetchSeq+gen으로 보호·force는 구 inflight 미대기 실제 새 GET+소유 seq만 clear·PENDING_EXISTS·wishPendingError 형식/계정소속 검증·pending-writes 구독 재적재) · `src/web/pending.ts`(SET_WISHLIST kind 격리) · `src/web/components/WishButton.tsx`·`WishSavedSheet.tsx`(Ref06 core — 썸네일+안내+우측 파란 바로가기 한 행+하단 단일 닫기 CTA)·`WishProductCard.tsx` · `src/web/screens/`(Shopping·Search·Product `.detail-heart`·MyShop 실 count·Recent ?tab=wish 실구현·Cart 준비중 해소 배선).
+- **app 카트 actor 소유화 [069-06 정정 근거]**: `src/web/cart-scope.ts`({owner,v} 스냅샷 + 렌더 시점 `visibleCart` owner 필터) + app.tsx `cartState` 전환·userIdRef를 effect가 아니라 **렌더에서 즉시 갱신** — 계정 전환 첫 렌더에도 이전 actor 카트가 자식 props·배지에 누출되지 않는다(부모 effect clear만으로 '즉시 제거' 주장 금지 요구 반영).
+- **Ref124 배치 재검수 보정(PM 지적에 따라 Main SWE 수정)**: `.wish-x`/`.wish-bag` 기준을 `.wish-cell` 전체 → `.wish-visual`(이미지 aspect-ratio 1 영역)로 이동 — bag이 상품명·가격을 가리던 결함 해소. `.wish-visual`은 pointer-events:none·두 버튼만 auto — 빈 영역 클릭은 카드 본문으로 통과·nested button 0.
+
+### 선제 검수·재검수 반영
+
+1. testdb 복제본의 phase6 누락 결함 → `scripts/migrations-manifest.ts` 정본 재사용.
+2. migrate.ts의 --phase 인자를 ensureDevDb/connect/advisory lock **이전**에 검증 — invalid phase는 연결 0으로 실패.
+3. force ensure는 구 inflight를 기다리지 않고 실제 새 GET 시작 + inflight clear는 소유 seq만.
+4. 계정에 민감한 intent·확정 상태를 적용하기 전에 `io.scope()===userId` 확인 — 불일치 시 intent·스토어 변경 없이 ABORTED(원 계정 버킷 보존). GET 적용은 scope/fetchSeq/gen으로 보호(실패·READY 조기 반환은 계정 상태 미적용이라 재검사 불요).
+5. 목록 ready 전 하트는 토글 대신 명시 재조회만 — 반대 saved intent 생성 방지.
+6. 테스트 정적 QA 지적: mkDb가 `_p`를 버려 actor 바인딩 미검증 → `{q,p}` 수집으로 u-a/u-b GET·users/READY 잠금·items·count·action_requests의 actor 값 실증 + input의 `user_id` 주장 필드 무시(어떤 바인딩에도 유입 0) + 보호 테이블(carts/cart_items/orders/order_items/payments/shipments/cancel_requests/reviews/_migrations) 접촉 0·users/products/variants write 0 회귀.
+
+7. MAJOR070-PRICE(PM 최종 QA MAJOR — 동결 예외 승인 범위): `getWishlist`의
+   `min(v.unit_price_won)` 서브쿼리에 `v.active` 필터가 없어 비활성 옵션이 더
+   저렴하면 찜 최저가가 catalog(목록·상세의 `active = true` 정본)와 불일치했다.
+   `AND v.active = true` 추가로 정합 회복 — 활성 옵션 0개면 null(가격 미확인,
+   카드 가격 미표시). 제품 active=false 보존/해제 정책·품절 찜 정책은 불변.
+   회귀: 목록 SQL의 활성 필터 명시 + 활성 0개 null 매핑을 mock에서 단정.
+
+### 검증 (actual · 신규 배타 run · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-7d666a27-7139-4f5e-8661-05ac2b459c75 |
+| build | PASS exit 0 — run-600537df-eb65-43e3-ba7f-12897dd97540 |
+| unit | PASS exit 0 — run-ac0dfa48-0aa9-47be-820c-5d4803a76ff5, **tests 602 / pass 602 / fail 0** — require_escalated 승인 경로 |
+
+직전 run-b18c4dc2(check)·run-3135c206(build)·run-3c8bfbfc(unit 601/601)은
+MAJOR070-PRICE 가격 정정 **이전** 기록으로 보존한다 — 위 3건이 정정 후 최종 유효
+스냅샷이다(PM이 새 출력·로그를 직접 확인하고 070-PRICE 정적 PASS·frontend Luna
+6 SHA 그대로 통보).
+
+신규 DB-free 단위 46개(556→602): cart-scope(2)·migrations-manifest(4)·wishlist-web(23)·wishlist-service(17 — MAJOR070-PRICE 활성 variant 가격 정합 회귀 +1). mock WishlistIO·mock SqlDb·순수 함수만 사용 — 이 신규 배치는 실DB/실API/네트워크/브라우저를 호출하지 않는다. '네트워크 없음'은 이 wishlist Mock 범위 한정 표현이다 — 전체 Unit suite에는 기존 broker loopback IPC 경로가 포함된다.
+
+실행 승인 메타 [PM070 지시]: 각 run의 `result.json`에 적힌 '승인된 exec 경로' 문구는
+스크립트가 쓰는 **고정 캡션** — 권한 승인의 증거로 해석하지 않는다. 실제 상승 승인은
+native tool 실행 기록으로 분리해 판단한다. PM이 가격 정정 후 check/build exit0과
+unit 602/602 로그를 직접 확인했다.
+
+### PM 최종 판정 (2026-10-13 통보)
+
+- **PASS_STATIC_AND_DB_FREE_ONLY** — 열린 구현 BLOCKER/MAJOR 0. 불변 기록
+  `shots/pmqa070-final/run-4d7b54ed-2cb2-4194-aabe-a7f4eebc4dbe/`의
+  qa-verdict.json·source-freeze.json·preservation.json·next-scope.md.
+- 27 source/test+5 docs 스냅샷 · 기존 pin 24개 중 21개 동일 + 승인 PRICE 정정
+  2개·EOF 1개 · 1460 baseline 누락 0·승인 소스 변경은 `scripts/migrate.ts`만 ·
+  증거 손상 0. 실DB 지문은 재측정이 아니라 기존 증거 대조 · 실Migration/실API/
+  브라우저/Visual은 NOT_RUN 유지 — 이 판정이 Visual Fidelity 완료를 의미하지 않는다.
+- `src/web/wishlist.ts:7` 헤더 주석의 await 표현은 행동 변경 없는 선택적 MINOR
+  백로그로 PM 판정 — 현 source freeze를 풀 필요 없음. 069 route/actor 결함 해소
+  근거는 069 전체 검수와 별개다.
+
+### NOT_RUN / Gap
+
+- 실DB migration 004 적용·실API GET/PUT 왕복·실제 동시성 직렬화·트랜잭션 rollback·durability·브라우저 렌더·실계정 전환·픽셀 비교 — 전부 브라우저/통합 승인 단계 이관. mock 단위 증명은 SQL 잠금 문구·호출 절차·파라미터 바인딩·컨트롤러 상태 전이에 한정(docs/wishlist-design.md §9).
+- React 실효과 순서(자식 effect→부모 bindPendingUser)·force 경합 실타이밍·실계정 전환은 코드 계약+mock 증명 — 실브라우저 검증 NOT_RUN으로 분리.
+- 시각 Gap(PM이 Ref06/Ref124 원본을 view_image로 재확인 — 기능 Backend 실구현 완료와 별도 관리): Ref06은 원본에 generic '찜' 제목이 없고 추천 rail이 실존(구현 미구현) · Ref124 평점/할인/가격추이 보조·삭제 후 '다시 담기' Undo 실관측(미구현) — DTO 미포함을 구현 불가로 단정하지 않고 카탈로그 메타·합성 표시 계약 보완 가능성 별도 관리. 추천 rail·보조 메타·Undo는 후속 AB 기능군의 남은 P0/P1 Gap 후보로만 기록(무조건 08 MINOR 이관 아님) · bag 아이콘 픽셀 미대조 — docs/wishlist-design.md §8.
+- 찜은 화면 API 전용 — Agent Tool registry 미노출.
+- 070 preexisting 증거 자체의 변경/삭제 0 — '모든 보호 파일 무변경' 절대 표현은 쓰지 않는다: 승인된 소스 변경은 070 baseline1460의 `scripts/migrate.ts`와 065 baseline1312의 `scripts/migrate.ts`+`web/app.js`(Build 산출)에 한정되며, 이는 증거 손상이 아니다. 코드 SHA pin은 기존 24개 중 21개 동일 유지 + 승인된 PRICE 정정 2개(`src/wishlist.ts`·`tests/unit/wishlist-service.test.ts`)·EOF 1개(`src/web/styles.css`) 변경 — 최종 새 pin은 PM 기록에 위임 · 미커밋 — commit·Push 금지 유지.
+- **070 승인 상태**: 사용자가 찜 저장 설계·구현을 승인했고 본 배치가 구현·문서화·가격 정정을 완료했다. 실DB migration 004 적용·실API·브라우저 통합 실행은 미승인 — PM 최종 검수 판정 산출물 대기 중(070 독립 최종 PASS 미기재).
+- **후속 품질 항목(Luna strict pending 기록 — 구현 확장 없음)**: 같은 키 재시도 시
+  저장 intent의 payload object 전체 일치를 추가 검증하는 방안이 제안됐다. 현재 UI
+  동작 결함은 미확인 — 후속 품질 항목으로만 기록하고 이번 범위에서 구현하지 않는다.
+
+## 최신 — C/071 검색 필터 전용 화면(F01·F02, Ref103/105/106) (2026-10-13)
+
+### 범위
+
+- `src/web/search-filter.ts` 신규 — FilterDraft·PRICE_BANDS(라벨 [Observed]·경계
+  반개구간 [Project])·variant 단위 bandMatch·applySearchFilter(비변이).
+  PM 정정 반영: 좁힌 variant 집합 기준 availability 재계산(서버
+  productAvailability 동일 규칙)·'품절 제외'를 matched_variants로 판정·
+  minPriceSort로 필터된 최저가 stable 재정렬·SYNTHETIC 정가 메타의
+  '실제 할인' 오표현 금지 주석/정의 분리.
+- `src/web/screens/SearchFilter.tsx` 신규 — Ref105/106 전용 전체화면(BottomSheet
+  아님): 뒤로가기=폐기·선택 시 '초기화'·4탭+섹션 칩·'N개 상품 보기' 고정 CTA·
+  countState=loading/error/ready로 개수 상태 구분·미확정 시 미표시(초기 countReady:boolean은 3회차 정정으로 Superseded)·body overflow 잠금(lockScroll 동형).
+- `src/web/search-loader.ts` 신규 — 커서 추종 적재: has_more+next_cursor 부재·
+  반복 커서·SEARCH_PAGE_MAX 초과는 CONTRACT 오류 · 중복 product_id 첫 등장만 ·
+  stale 시 다음 요청/적용 중단. fetchPage/isStale 주입으로 mock IO 검증.
+- `src/web/screens/Search.tsx` — 툴바 Ref103 순서(필터→정렬→칩)·draft/applied
+  분리·결과 조회를 loadSearchPages로 교체·sugSeq/resSeq를 clear·미제출·
+  언마운트로 무효화 확장·필터 오픈 시 input blur·IcFilter·`.flt-*` 스타일.
+- `src/web/search-state.ts` 신규(3회차 정정) — `Owned{q,r}` 소유권: A 결과가
+  B 입력/제출 아래 표시·실행 차단 · `suggestState` loading/error/empty/items
+  (자동완성 실패를 '일치하는 상품명이 없어요'로 오표시 금지·재시도) ·
+  `filterCountState` loading/error/ready(실패를 영구 '확인 중'으로 표시 금지,
+  '다시 시도'+뒤로 경로, 미확정 개수 CTA 비활성) · 특징 '할인 상품만'에
+  사용자에게 보이는 데모 정가 기준 문구(SYNTHETIC 메타를 실제 가격 이력으로
+  오인시키지 않음).
+
+### 검증 (actual · 신규 배타 run · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-9baa3782-6293-467e-8ca2-c64d920cb760 |
+| build | PASS exit 0 — run-2be1d598-df3a-4eb4-b196-a7a2729550eb |
+| unit | PASS exit 0 — run-d084a4eb-07c2-4b31-920b-514fa031f53d, **tests 639 / pass 639 / fail 0** — 기존 보호 runner 실제 exit0; 실행 권한의 구체 옵션은 이 로그만으로 확인 불가 |
+
+신규 DB-free 단위 37개(602→639): search-filter 15 + search-loader 9 +
+search-state 13 — 이 신규 배치는 실DB/네트워크 미사용(전체 Unit suite에는
+기존 broker loopback IPC 경로가 포함되므로 '네트워크 0'으로 포괄 주장하지
+않는다). run-994717de·4c96908d·7f9126bd(626/626)은 3회차 정정 **이전 코드**
+기준으로 보존 — 최종 유효는 위 3건.
+
+### 사고 기록 (동결 링크)
+
+`shots/pmqa071-review/run-547f234c-df8c-446b-9d5a-5e1ed66ac02d/incident-file-writing.json`
+— tmp_refs에 ffmpeg -y로 Reference JPG 4장을 변환한 사고. 생성 전 manifest
+부재로 과거 파일 덮어쓰기 여부는 미확인 — 생성 JPG·로그·기존 증거는 동결
+보존, 해당 변환 재실행 금지.
+
+### PM 최종 판정 (2026-10-13 통보)
+
+PASS_STATIC_DB_FREE_SCOPE — `shots/pmqa071-final/run-9144ac67-e3cb-415b-a684-7e675e29426b/qa-verdict.json`
+(source freeze·보호 1488 무변경·639 로그 확인). Visual 승인·실DB/브라우저
+검증을 포함하지 않는 범위 판정이다.
+
+## 최신 — C/072 MAJOR069-07 카트 늦은 조회(read-gate) 수정 (2026-10-13)
+
+### 범위
+
+- `src/web/read-gate.ts` 신규 — `createReadGate`(start/invalidate/kill/
+  alive/current) + `guardedRead`: start generation이 적용 시점에도 current일
+  때만 apply 호출. stale/언마운트 응답은 반환하되 apply를 호출하지 않는다.
+- `src/web/screens/Cart.tsx` — reload를 guardedRead로 교체, 마운트 effect에
+  `g.kill()` cleanup 추가. 모든 조회 경로(마운트·재시도·쓰기 후 reload)의
+  언마운트 조회가 setRes/onCartLoaded/setLoading을 적용하지 못한다.
+  마운트·재시도는 `my = g.start()`를 선배정해 loading 해제도 같은
+  generation으로 가드. 쓰기 확정의 `invalidate()`(구 readSeq++) 계약 유지.
+- [Superseded — C/072-REWORK MAJOR072-01] 위 'my 선배정 loading 가드' 설명은
+  rework로 대체됐다 — 현재는 reload apply의 setLoading(false)(적용된 최신 응답이
+  loading 해제 인계) + 확정 쓰기 적용 경로의 setLoading(false). my 선배정·
+  .then 해제는 제거. 647 로그는 정정 이전 코드 기준 보존.
+- 보존: 확정 쓰기 결과 적용·pending/LOST 복구·선택 카트 계약·actor 소유권 —
+  쓰기 완료 콜백은 막지 않는다.
+
+### 검증 (actual · 신규 배타 run · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-f9976961-26b0-4c7e-82ff-ddaab487739f |
+| build | PASS exit 0 — run-1d20bce0-ae58-4bb4-9066-648f47f12753 |
+| unit | PASS exit 0 — run-be67a64c-6ecc-4a65-9cd0-f393493f469e, **tests 647 / pass 647 / fail 0** — 기존 보호 runner 실제 exit0; 실행 권한의 구체 옵션은 이 로그만으로 확인 불가 |
+
+신규 DB-free 단위 8개(639→647): 언마운트 후 apply 0·새/구 응답 순서·확정 쓰기
+후 구 read 차단·정상 current·실패 전달·재마운트·my 바인딩·stale loading 차단
+— deferred mock IO, 실DB/네트워크 미사용.
+
+### NOT_RUN / Gap
+
+- 실DB·실API·Playwright/브라우저·e2e·Integration·실 계정 전환·Visual 승인 —
+  전부 미실행(실제 재현은 코드 경로+mock 증명 한정).
+- PM/Luna 통합검수 대기 · 미커밋 — commit·Push 금지 유지.
+
+### 별도 기록 — MAJOR069-07 (수정 금지 유지)
+
+PM/Luna가 `Cart.reload 78-89`의 unmount 세대 무효화 부재를 정적 확인 — Cart
+조회→상세 이동→담기 확정→old Cart GET 복귀 시 `app.applyCart`가 동일 owner의
+과거 카트를 부모에 적용하고 current readSeq를 죽이는 정적 경로. 타인 정보/DB
+손상 입증 아님·실제 재현 NOT_RUN. 071과 별개 — Cart 파일 미수정, 071 동결 후
+다음 좁은 Main 수정 단위 예정(070 cross-actor 판정과 구분, 069 전체 PASS 보류).
+
+### NOT_RUN / Gap
+
+- F03(Ref104 스크롤 결과/카드 재배치) 미착수 · 특징 섹션은 실데이터 기반
+  2개만(할인=SYNTHETIC 메타·품절 제외) — OASIS·최저가 보상·베스트 랭킹·
+  도착보장·포인트 facet 미지원 · 선택 필터 칩 표시 방식은 [Project].
+- 실DB·실API·Playwright/브라우저·e2e·Integration·Visual 승인 — 전부 미실행.
+- PM/Luna 통합검수 대기 · 미커밋 — commit·Push 금지 유지.
+
+## 최신 — C/072-REWORK MAJOR072-01 카트 loading 인계 수정 (2026-10-13)
+
+### 범위
+
+- PM 승인 좁은 범위: Cart.tsx + read-gate 관련 unit + 공통 문서. F03 금지·
+  read-gate.ts API 변경 없음·기존 확정 쓰기/pending/actor/선택 계약 보존.
+- Luna 발견·PM 독립 코드 확인 — cart prop 상태에서 mount GET 진행 중 수량
+  write → mount GET 실패로 Error 화면 → 재시도(setLoading true) → 진행 중
+  write 성공(invalidate+최신 snapshot 적용) → retry GET 종료 시 current=false로
+  setLoading(false) 차단 → 영구 Loading (Cart.tsx 159/345/354-358).
+- 수정: loading 해제 책임을 '적용 권한'으로 이동 — reload apply의
+  setLoading(false)(적용되는 최신 응답 인계) + 확정 쓰기 적용 경로의
+  setLoading(false)(살아있는 화면에 최신 쓰기 적용 시 종료) + my 사전 바인딩
+  ·.then 해제 사장. stale·kill 응답은 apply 권한 없음 → loading 무건드림.
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-4465d608-6331-4fb5-b05f-511d26123319 |
+| build | PASS exit 0 — run-2c3616c4-c3e3-44f7-b2e5-e7b9cd62ae0a |
+| unit | PASS exit 0 — run-e5297774-c1ca-4ae6-9353-37f690a713a4, tests 651 / pass 651 / fail 0 |
+
+- 신규 DB-free 4개(647→651): kill 없는 invalidate+확정 쓰기 loading 해제·
+  새 조회 대체 시 최신 응답 해제·kill 후 apply/loading 0·정상/실패 경로 보존.
+
+### 별도 기록 — 미완결 run 보존 (PM 지시 정정)
+
+- 직전 unit run-842ca2d3-59ad-413b-b2e5-d34eaa700270: detail-resume 완료 후
+  evidence-broker 구간 정지 → result.json status:null, error 'command timeout
+  (bounded kill, wait=closed)' — PASS 합산·재사용 금지, 원본 보존.
+- 원인 확인(actual probe): 127.0.0.1 connect → EACCES(loopback 제한)·
+  fork → FORK_OK — evidence-broker 실채널 테스트의 환경 제약, Cart/read-gate
+  변경과 무관(read-gate.test.ts는 정지 지점 뒤 미도달).
+- 회수: 기존 승인된 DB-free Unit 범위의 정상 require_escalated 심사로 재실행
+  → run-e5297774 exit 0. approval 문구는 runner 고정 캡션 — 승인 증거 아님.
+- 한계: Unit 확정 쓰기 loading 해제 케이스는 Cart 콜백 형태 수동 미러 —
+  React 실재현 아님. React 경로는 PM/Luna 정적 delta PASS 범위
+  (shots/pmqa072-review/run-f0007fc9-90b7-4d34-a75a-569af3eade25/qa-static.json).
+- 검증 한계·승인 분리 [PM 정정]: 신규 4건은 createReadGate/guardedRead 적용
+  계약의 helper 검증 — Cart React runWrite 자체 실행 증명이 아니다. unit
+  재실행의 승인 근거는 정상 require_escalated 심사로 실행된 실제 native
+  기록(exec-c5da7a1a, PM 확인)으로 분리 — result.json approval 고정 문구는
+  단독 승인 증거로 사용하지 않는다.
+
+### NOT_RUN / Gap
+
+- 실DB·실API·Playwright/브라우저·e2e·Integration·Visual 승인 — 전부 미실행.
+- PM/Luna 통합 재검수 대기 · 미커밋 — commit·Push 금지 유지.
+
+## 최신 — C/073 F03 검색 결과 상품 카드 변형 (2026-10-13)
+
+### 범위
+
+- PM 승인: 검색 결과 카드 variant + 카드 표시·찜 스냅샷 한정 최소 nullable
+  helper + 공통 문서. Reference `search/103·104` 기준 anatomy — 오픈 배경
+  2열 · 정사각 라운드 이미지(페이드 없음) · 이미지 안 좌상단 `N% 특가` 배지
+  · 이미지 안 우하단 흰 쇼핑백 윤곽(장식 aria-hidden) · 상품명 위 다크
+  최저가 배너 `지금 30일 내 최저가예요`+데모 · 상품명 2줄 → `N% 가격` →
+  `★ 평점 (수)` → 지원 칩.
+- 제외 스코프: 히어로 카드·'다른 사람들이 많이 구매한 상품' rail(별도
+  스코프) · 실제 카트 쓰기 · Backend 정책 · 전역 minPriceOf 계약 변경.
+
+### 변경 (미커밋)
+
+- src/web/display-meta.ts — `cardMinPriceOf` 추가(카드 한정 nullable,
+  minPriceOf 전역 계약 불변).
+- src/web/components/ProductCard.tsx — `variant?: "search"` + search
+  anatomy + `가격 정보 없음` truthful fallback.
+- src/web/components/WishProductCard.tsx — variant 전달 + null 스냅샷.
+- src/web/screens/Search.tsx — 결과 그리드 `variant="search"`.
+- src/web/screens/Shopping.tsx — 찜 스냅샷 2곳(:461,:510) cardMinPriceOf.
+- src/web/styles.css — `.product-card.search`·`.thumb-cart`·
+  `.search-lowest`·`.price-none`.
+- tests/unit/product-signals.test.ts — cardMinPriceOf 1건(null·min·전역 계약).
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-6709ffd4-8bad-471e-8671-a67006120e1d |
+| build | PASS exit 0 — run-27f4b535-babd-44cf-98bb-23048d1070b5 |
+| unit | PASS exit 0 — run-02f2cc0f-26b6-4e36-8169-2272b02253fa, tests 652 / pass 652 / fail 0 |
+
+- unit은 샌드박스 loopback 제한(connect EACCES 확인 이력)으로 정상
+  require_escalated 심사 경로로 실행 — result.json approval 문구는 runner
+  고정 캡션이며 단독 승인 증거로 사용하지 않는다.
+
+### NOT_RUN / Gap
+
+- 실DB·실API·Playwright/브라우저·e2e·Integration·Visual 승인 — 전부 미실행.
+  실제 검색 화면의 Reference 대비 시각 비교는 후속 승인 필요.
+- 히어로·DealCard의 minPriceOf 표시 경로는 빈 matched_variants 도달 시
+  Infinity 표시 가능 — F03 범위 밖(전역 계약 유지 방침), 별도 Gap으로 기록.
+- PM/Luna 통합 재검수 대기 · 미커밋 — commit·Push 금지 유지.
+
+## 최신 — C/073-FIX MAJOR073-01 검색 카드 Dark 토큰 재배선 (2026-10-13)
+
+### 발견·수정
+
+- PM 사전 delta QA MAJOR073-01: `.product-card.search`가 카드 전용 라이트
+  토큰(--ptext #1d1f24·--psub·--pchip)을 유지 → 다크 페이지 --bg 위 텍스트
+  거의 검정, 읽기성 회귀. 경로: .product-name/.product-price/.meta-star/.muted.
+- 수정(styles.css만): `.product-card.search` 스코프 토큰 재선언 —
+  --ptext→--text · --psub→--text-2 · --pchip→--chip · --pline→--line ·
+  --cartline→--text-2. 홈 기본 토큰·스타일 불변. 별점은 원본 노랑
+  [Observed search/103] 근사로 .meta-star만 var(--star) 최소 조정.
+- truthfulness 기록: 검색은 views 행 미렌더 → orphan 합성 지표 없음.
+  `N% 특가` 배지는 PRODUCT_META.original_price_won(표시용 선언 메타) 파생으로
+  홈과 동일 — 실가격 이력 표기·신규 benefit 없음. 최저가 배너만 데모 표기 유지.
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-08bd8c72-0d76-4303-a591-4eaf69643df9 |
+| build | PASS exit 0 — run-e5f82806-2ff4-43ca-823f-673214617eca |
+| unit | 이전 실행 범위 유지 — run-02f2cc0f-26b6-4e36-8169-2272b02253fa (652/652) |
+
+- 신규 동작 helper 없음(CSS·토큰만) — 직전 unit이 동일 소스의 helper 계약을
+  증명하는 범위로 유지. 직전 check run-6709ffd4·build run-27f4b535는
+  **수정 전 소스** 기준으로 분리 보존 — 최신 소스 증거로 사용하지 않는다.
+
+### NOT_RUN / Gap
+
+- 실DB·실API·Playwright/브라우저·e2e·Integration·Visual 승인 — 전부 미실행.
+  다크 테마 실제 렌더 대비 미검증.
+- PM/Luna 통합 재검수 대기 · 미커밋 — commit·Push 금지 유지.
+
+## 최신 — C/073-FIX2 MAJOR073-02 검색 결과 할인 출처 안내 (2026-10-13)
+
+### 발견·수정
+
+- Luna 독립 검수·PM 동일 경로 MAJOR073-02: 검색 변형이 views 행을 숨겨
+  카드별 데모 표기가 lowest 배너에만 남음 — price history 없는 상품(p-b 등,
+  서버가·표시 정가 차이로 N% 특가)은 검색 카드 데모 표시 0 → 합성 정가 기반
+  할인율이 실제 가격 이력으로 오인 가능.
+- 수정(Search.tsx + styles.css만): 결과 영역에 rateOf(p) > 0인 카드가
+  하나라도 있을 때만 한 줄 안내 — '할인율·특가 표시는 데모 정가 기준이며
+  실제 가격 이력이 아니에요'. 카드별 표기 없이 결과 영역 한 번 고지.
+  서버 가격·계산·신호 계약 변경 없음, 신규 benefit 없음.
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-405689d9-3037-4596-b50c-de56f51faeae |
+| build | PASS exit 0 — run-12da1065-3ab3-4534-ac17-54931d3769e4 |
+| unit | PASS exit 0 — run-ccef265e-2e40-40fa-a3ad-86520912df6e, tests 652 / pass 652 / fail 0 |
+
+- JSX-only 변경(신규 helper 없음) — 전수 652 유지. unit은 기존 승인된
+  DB-free 범위의 정상 require_escalated 심사 경로 — result.json approval
+  문구는 고정 캡션. 직전 check run-08bd8c72·build run-e5f82806은
+  **수정 전 소스** 기준으로 분리.
+
+### NOT_RUN / Gap
+
+- 실DB·실API·Playwright/브라우저·e2e·Integration·Visual 승인 — 전부 미실행.
+  안내 문구의 실제 화면 배치 미검증.
+- PM/Luna 통합 재검수 대기 · 미커밋 — commit·Push 금지 유지.
+
+## 최신 — C/073 최종 판정 (2026-10-13)
+
+- PM/Luna 통합 재검수 **PASS_STATIC_DB_FREE_SCOPE** — 판정
+  `shots/pmqa073-final/run-32069213-0822-4dbe-9d02-cec266e8667c/qa-verdict.json`.
+- MAJOR073-01(다크 토큰 재배선)·MAJOR073-02(할인 출처 안내) 해소 확인.
+  기존 1553 증거 변경·누락 0. 홈 Shopping 3 치환 검증, query/filter/price/
+  stock/backend 계약 유지. 실제 DOM/Visual NOT_RUN — 별도 승인 대상.
+
+## 최신 — C/074 F30 시즌 홈 섹션 경계 (2026-10-13)
+
+### 범위
+
+- PM 승인: SeasonView 섹션 경계 + DealCard 빈 variants 최소 보호 + 공통
+  문서. Reference `home/50_seasonal_home.png` — 추천 행 그룹 + 경계선 +
+  별도 특가 행 그룹 구조. F31/F29/F17/F33은 다음 단위.
+
+### 변경 (미커밋)
+
+- src/web/screens/Shopping.tsx — SeasonView를 추천 그룹(데모 큐레이션 칩)
+  + `.sec-div` 경계 + 특가 그룹(데모 특가 칩, PRODUCT_META sections
+  flash-sale만, truthful Empty)으로 재구성. DealCard minPriceOf→
+  cardMinPriceOf(null → '가격 정보 없음').
+- src/web/styles.css — `.sec-div` 추가(border-top 8px var(--field)).
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-c0027592-3e68-4833-94a3-4b8b8870773e |
+| build | PASS exit 0 — run-2a79357c-4232-4d81-9932-6c89c983d9ca |
+| unit | PASS exit 0 — run-a2d031a6-03e9-40ee-99a1-91cacba9b508, tests 652 / pass 652 / fail 0 |
+
+- 신규 helper 없음(cardMinPriceOf 기존 테스트 커버) — 전수 652 유지.
+  unit은 기존 승인된 DB-free 범위의 정상 require_escalated 심사 경로.
+
+### NOT_RUN / Gap
+
+- 실DB·실API·Playwright/브라우저·e2e·Integration·Visual 승인 — 전부 미실행.
+  시즌 홈 실제 렌더 대비 미검증.
+- hero 표시 경로(Shopping.tsx hero-price)는 minPriceOf 유지 — F30 범위 밖,
+  빈 variants 도달 시 Infinity 표시 가능 Gap은 F03 기록 그대로 유지.
+- PM/Luna 통합 재검수 대기 · 미커밋 — commit·Push 금지 유지.
+
+## 최신 — C/075 구매 화면 묶음 잔여 gap 정정 (2026-10-13)
+
+### 범위
+
+- PM 승인 — 장바구니·주문서·주문완료·주문상세·취소시트 잔여 gap 7건
+  (F10·F11·F24·F25·F13·F14·F15) + 관련 테스트 소스 정적 보정 + 공통 문서.
+  기능 계약·Backend·금액 계산·HMAC 변경 없음.
+- PM 진행 중 diff 독립 QA 반영: Checkout/OrderComplete에 추가됐던
+  PRODUCT_META.delivery('오늘출발'/'내일도착') 행은 서버 근거 없는 배송
+  약속이라 전부 제거 — '데모' 표기가 새 약속을 허용하지 않음. 인라인 가격은
+  unit_price_won(단가) 정본 — 합계를 단가처럼 오표시 금지.
+
+### 변경 (미커밋)
+
+- src/web/screens/Cart.tsx — F10 스텝퍼 compact pill · F11 요약 중복 행
+  제거(단일 견적 토글만) · F24 빈 카트 열린 블록(CTA 없음) +
+  onOpenShop prop 제거.
+- src/web/screens/Checkout.tsx — F25 accent '…님에게 배송' 헤드라인 +
+  '이름 (연락처)' 보조 행 · 상품 행 옵션 인라인 병합 + '단가 · N개'.
+- src/web/screens/OrderComplete.tsx — F13 '주문 상품 N건' 제목·중첩 목록
+  제거 → 품목별 flat `.oc-item` 카드 · 배송지 수취인→주소→연락처 계층.
+- src/web/screens/OrderDetail.tsx — F14 하단 고정바의 disabled
+  'AI 주문 문의 · 준비 중' CTA 제거(카드 내 ghost와 중복) → '목록' ghost만.
+- src/web/components/CancelSheet.tsx — F15 사유 단계 환불 예정 미리보기
+  제거 → 견적은 사유 선택 시 백그라운드 조회(다음 CTA 게이트·confirm 단계
+  데이터), 사유 단계에는 견적 실패·불가 안내만 표시 [Ref087→088 계층 분리].
+- src/web/app.tsx — Cart onOpenShop callsite 제거.
+- src/web/styles.css — .qty-ctrl.sm compact · .cart-empty ·
+  .checkout-item-qty · .oc-item · .od-actions flex · .ship-to accent 등.
+- 테스트 소스 정적 보정(실행 NOT_RUN): t3-cancel·mock-cancel — 사유 단계
+  환불 예정 미노출 기대(count 0) + 확인 단계 `.pay-row.cancel-refund` 금액 ·
+  readonly-orders — askBtns 2→1 · core-journeys·checkout-t2 — AI 문의
+  한정자 .order-card · t4 — cart-summary-count 단정 제거 · nav·t1-complete·
+  t4 — 빈 카트 문구 '비었어요'.
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-b794eeb2-400f-4da1-869b-27263d4f3b9c |
+| build | PASS exit 0 — run-14496965-cbfb-42d7-8409-042de1890043 |
+| unit | PASS exit 0 — run-f28e1319-7e0e-4c4f-9687-6734d17dd97c, tests 652 / pass 652 / fail 0 |
+
+- 신규 unit 없음 — UI·테스트 소스 정정만. unit은 기존 승인된 DB-free 범위의
+  정상 require_escalated 심사 경로 — result.json approval 문구는 runner
+  고정 캡션.
+
+### NOT_RUN / Gap
+
+- 실DB·실API·Playwright/브라우저·e2e·mock-cancel·readonly·Integration·
+  Visual 승인 — 전부 미실행. 수정 spec의 실제 실행 검증 아님.
+- PM/Luna 통합 재검수 대기 · 미커밋 — commit·Push 금지 유지.
+
+## 최신 — C/075-FIX F13·F15 잔여 정정 (2026-10-13)
+
+### 발견·수정
+
+- PM 추가 최소 보정(F15) — 사유 단계 견적 블록 제거와 함께 `quote==null`
+  조회 중 안내가 사라져 다음 CTA 비활성 사유가 사용자에게 보이지 않던 gap.
+  성공 금액·견적 카드 없이 `muted sm` 한 줄 '환불 예정액을 확인하는 중…'
+  복원. 조건 `reason && !pending && !quote` — 사유 미선택·미해결 intent
+  복구 중 미표시, 정상 준비 후 Reference 기본문구 '취소 내용 확인' 유지.
+  REJECTED 초기화 주석의 인용 문구만 복원 문구와 동기화.
+- Luna/PM 독립 재검수 F13 잔여 MAJOR1 — OrderComplete 배송지가 공통
+  `.checkout-block` 회색 카드를 사용해 Ref077의 카드 없는 넓은 flat 섹션과
+  불일치. `.oc-sec` 전용 wrapper로 교체 + `.oc-screen` 스코프 CSS로
+  배경·border·radius 제거(세로 구획 26px [Project]). 공통
+  `.checkout-block` 규칙 미변경 — 다른 화면 영향 0. `.oc-addr-name`
+  font-weight 규칙 신설(의도된 '수취인 굵게'가 규칙 없이 평문 렌더되던
+  잠재 gap 해소). 미지원 ETA/배송메모/주소변경 추가 없음,
+  address_snapshot·모의결제 안내·CTA·success guard 유지.
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-467ff668-eb3d-46de-bd72-6145120aab02 |
+| build | PASS exit 0 — run-44adb352-4f84-4614-b527-c083b4d91d7a |
+| unit | 재실행 없음 — JSX/CSS 전용 정정·신규 helper 없음. 직전 run-f28e1319-7e0e-4c4f-9687-6734d17dd97c(652/652)는 본 정정 이전 소스 기준으로 구분 |
+
+- 둘 다 최종 UI 정정 이후 소스 기준. 이전 check run-b794eeb2·build
+  run-14496965·unit run-f28e1319는 **정정 전 소스** 기준으로 분리 보존 —
+  최신 소스 증거로 합산 사용하지 않는다.
+- 코드 동결 식별자: HEAD `75f2eefb284b62e4e01150923b17f60086948bc6` +
+  src/tests/scripts 작업트리 diff 해시
+  `f1664c7f712d4a558d15a296df24020e6c3a8147`(`git diff HEAD -- src tests
+  scripts | git hash-object --stdin` — `git stash create`는 .git
+  index.lock 쓰기 권한으로 실패해 diff 해시로 대체).
+- PM073 baseline 1553 증거 비교는 PM 확인 이력 — `shots/pmqa075-review/
+  run-6003c01e-4258-4d65-b835-56dc888de9e9/baseline-comparison.json`
+  (SHA 변경·누락 0, 현DB 검증 아님).
+
+### 동결 매니페스트 — 075 실제 변경 파일별 SHA256 (마감 시점)
+
+- diff 해시는 tracked 변경만 커버하므로 untracked 포함 파일별 해시로 동결을
+  증명한다(PM 지시). 문서 파일은 이 항목 기록 자체로 값이 변하므로 제외.
+
+```text
+04AEE542ED657C60B5A5C1B558CC752D7EFF4C88E7E3FF73DC9272686C926E55  src/web/screens/Cart.tsx
+DE5EB8A5C2EDE84B6EEFFD8FA4451B34A673B22D8BA26063BAAE001AB10930B7  src/web/screens/Checkout.tsx
+CDA7A086AEDAEAFCDEF97999937DD150F774C979E984A61F4DEC50A3DD8FCE4F  src/web/screens/OrderComplete.tsx
+72C2E29A32ECC3A4807285C3FA858797730B6F7FEC4BE4C706E99018441E32BC  src/web/screens/OrderDetail.tsx
+BC89D50F92C9CEB73A7DA9614CDFD8F9EC8B7838C3F7357A02AB6FF0AA0CEA1E  src/web/components/CancelSheet.tsx
+67DEF29B201C2B155EFCDA76A57B5A5DC570709C90B50407221D8AC5AA162231  src/web/app.tsx
+04FC57DE9EE5AB28163429EB70387BA418CDC6694135EA41183C0E2189EE53D0  src/web/styles.css
+8216DCA2AA73EC4408603B493E8C647E7FEE2B8772AA2502F57728255D790E39  tests/e2e/t3-cancel.spec.ts
+E4D5A8925A804C8F96B2B5721D5503E3B16BF5A8EAF019793DC770E57D24B09B  tests/e2e/t4-product-cart.spec.ts
+810083A0112D438E5FFF1DF2502FBFD68F7AEE23A2F3B0AAE33E1660F3A9F9A2  tests/e2e/readonly-orders.spec.ts
+6E77CEDDFFB40BE8789D042F2ED12B8F35BA4E3E275E380B27550CE518831E83  tests/e2e/core-journeys.spec.ts
+E6D97E4FF3FD7522B3FBBD8DA9D75CF58F992AAD88C4B72C2FBE8D8676C9B284  tests/e2e/checkout-t2.spec.ts
+B67F0DACD5F35564CCCA6357221F3D78A119D23B422146277CB662056E5D4346  tests/e2e/nav.spec.ts
+1EBB70C7A139E2D89EF4E7C7D8E67C85BEED723B46D98770BB56653EB94D1067  tests/e2e/t1-complete.spec.ts
+B251C64225497E4EE4AA45B71E151DB0F5C612ABE6593B42B671713B69477933  tests/e2e/mock-cancel.spec.ts  (untracked)
+```
+
+### NOT_RUN / Gap
+
+- 실DB·실API·Playwright/브라우저·e2e·mock-cancel·readonly·Integration·
+  Visual 승인 — 전부 미실행. 배송지 flat 배치·로딩 안내의 실제 렌더
+  미검증.
+- Luna 읽기전용 delta 재검수 → 075 static 판정 예정 · 미커밋 — commit·Push
+  금지 유지.
+
+## 최신 — C/076 탐색 화면 묶음 (2026-10-13)
+
+### 범위·수정
+
+- PM 승인 pmqa073 sidecar-gaps 4건 + Hero 잔여 + 레거시 AI spec 2건.
+- F31: `.list-head` 전용 헤더(←·그룹명▾→카테고리 브라우저·검색·장바구니)
+  + `.shop-tabs` 리스트 뷰 미렌더 + `.float-nav` 차단 + ListView 로컬
+  `.list-tabs`(추천+SUBCATS, `sub=all` 센티널, recommended 우선 정렬) +
+  goBack shop fallback(sub→그룹, 최상위→카테고리 브라우저).
+- F29: 식품 추천 우측 '전체보기'→`food/all` + `.prod-rail` 가로 레일.
+- F17: `.sale-tabs` sticky top:0·z-21·bg·padding-right:90px [Project
+  오프셋 — 승인된 브라우저 검증 필요].
+- F33: sale `sub=campaign` 기획전 그룹(CAMPAIGN_GROUPS 시즌·뷰티) +
+  더보기(시즌→season, 뷰티→beauty/all) + 첫 탭 '하루 특가' 라벨.
+- Hero: `cardMinPriceOf` 전환 + '가격 정보 없음' null fallback.
+- spec: t1-slice A01·t1-complete compare — AI disabled/패널 0/agent
+  요청 0으로 재작성(과거 stub 검증 미이관).
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-777ce2cf-c2bd-42af-8df2-f999ad10b8c3 |
+| build | PASS exit 0 — run-e3b648e8-dfec-42ec-9a25-051986b9946a |
+| unit | PASS exit 0 — run-19f1309e-9950-4cc4-94a5-b8e56ad2a27e · tests 652 / pass 652 / fail 0 |
+
+- unit은 승인된 DB-free 범위의 require_escalated 경로 — result.json
+  approval 문구는 runner 고정 캡션.
+- 코드 동결 식별자: HEAD `75f2eefb284b62e4e01150923b17f60086948bc6` +
+  src/tests/scripts diff 해시
+  `f676317da7641098801556648aadc178bea15cd5`(`git diff HEAD -- src tests
+  scripts | git hash-object --stdin`).
+
+### 동결 매니페스트 — 076 변경 파일별 SHA256
+
+```text
+a01dc7f47cc8608a57031d6f500d71306c3d4259bef0ab5549d4233339da42a3  src/web/app.tsx
+d2f1bc5c66d89aef482887e3d016263c59004db14bf861dea53bfd6b28feeb22  src/web/screens/Shopping.tsx
+b1ca931273196822b371dcd1cf5a1709ef0b1095c6480a0d1c419f5680dd02f7  src/web/styles.css
+a1a1c6728859a7232b4c19d0a8eec74a4f27fec5d372ad4e6224b1d9d12c9c1d  src/web/display-meta.ts
+d91d7ea00b18eeab8839f99dce04ac3086f4cdff219581d4be03bdf3813fea06  tests/e2e/t1-slice.spec.ts
+d69e0b363b814e30c2fd49a8dc578ecf165f08831374f48634fad5cb60266ffb  tests/e2e/t1-complete.spec.ts
+```
+
+### NOT_RUN / Gap
+
+- 실DB·실API·브라우저·Playwright·e2e·Integration·Visual 승인 전부 미실행.
+  `.list-head` 렌더·로컬탭 전환·가로 레일·sticky 서브탭 오프셋·기획전
+  서브탭·뒤로가기 fallback의 실제 동작 미검증.
+- 시즌 기획전 더보기는 season 화면으로 이동 — 그룹 내용과 season 전체
+  큐레이션은 동일하지 않음(알려진 한계).
+- 미커밋 — commit·Push 금지 유지. PM/Luna delta 재검수 대기.
+
+## 최신 — C/077-A C 구매·찜 계약 회귀 테스트 소스 준비 (2026-10-13)
+
+### 범위·작성 소스
+
+- PM 승인 C 구매·찜 계약 회귀 테스트 **소스 준비** — 실DB/API·브라우저·
+  Playwright·e2e·Integration 실행·commit 금지. 실행은 승인된
+  launcher/runner 경로가 열릴 때까지 NOT_RUN.
+- `tests/integration/checkout.test.ts` — `PMQA-077-A 구매 계약 —
+  DIRECT·CART_SELECTED·토큰` describe 추가(7 tests · 자체 before
+  ensureTestDb(3)+cleanUserData로 fixture 재설정, 파일 레벨 after 직전):
+  - DIRECT 견적 무상태·confirm 원자성·카트 무접촉 — orders/stock/cart
+    불변 + 카트 행 id·수량·version 보존.
+  - same-key replay·다른 토큰 IDEMPOTENCY_CONFLICT·getActionResult 복구.
+  - 비정형 입력 거절(문자 qty·0·빈 값·kind 누락→VALIDATION, v-none→
+    NOT_FOUND).
+  - CART_SELECTED 견적 후 미선택 행 mutator 변경은 무효화하지 않음 —
+    선택 행만 주문·미선택 행 보존·cart version +1.
+  - 빈/중복/타인 행 거절.
+  - confirm 시점 가격 변경→STALE_QUOTE · 재고 부족→OUT_OF_STOCK 재검증
+    (수동 원복).
+  - 토큰 변조 — 미서명→VALIDATION · 유효 HMAC+모순 대상(테스트가
+    `config.sessionSecret`로 사설 sign 재구현)→STALE_QUOTE+REJECTED
+    기록 · 타인 토큰→VALIDATION.
+  - helper 추가: stockOf·cartItemOf·quoteSign·quotePayload·
+    signedQuoteToken.
+- `tests/integration/wishlist.test.ts` 신규(8 tests · ensureTestDb(6)
+  스키마 게이트 — 004_wishlist_items.sql 미적용 시 의도된 throw):
+  저장/목록/해제·same-key replay·반대 saved CONFLICT·getActionResult·
+  actor 격리·사전검증 no-write+REJECTED 기록·비활성 상품 저장 거절
+  (active=false 임시 변경, finally 원복)·같은 키 동시 요청 unique 수렴·
+  반대 방향 최종 단일 상태.
+- `tests/e2e/checkout-c.spec.ts` 신규(3 tests · source-only — 헤더에
+  playwright.config.ts 'not-ready' 명시): DIRECT commit+응답 유실→카트
+  보존·같은 키 재전송 / 미도착→결과 확인 NOT_FOUND→재전송 /
+  CART_SELECTED UI 선택 주문·미선택 p-b 보존 — 06a 헬퍼(login·
+  clearCartApi·addVariant·orderCount·interceptWrite·payCta) 재사용.
+- `tests/e2e/wishlist.spec.ts` 신규(2 tests · source-only): 저장→
+  상세/홈 카드/찜 탭 동기화→새로고침 유지→해제 / 계정별 격리(독립
+  browser context + finally API 해제 정리). 스토어 'ready' 전 클릭은
+  저장하지 않는 계약이라 wishlist GET 결정적 대기 포함. 최근 본
+  (localStorage)과 서버 찜은 별개 저장소로 명시.
+- 취소 복구(cancel-recovery)는 기존 자산 재사용으로 확정 — integration
+  cancel-recovery/cancel-confirmation/cancel-race + unit
+  cancel-flow/cancel-recovery가 REQUESTED→COMPLETED/CANCELLED·
+  PENDING→REFUNDED·재고/환불 1회·오류 상태를 이미 커버. 신규 작성
+  없음.
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-fd6963f6-b729-4077-b289-c5d44f68cd1c |
+| unit | PASS exit 0 — run-ab233a15-67fa-4a3c-91be-7ebdb4872d29 · tests 652 / pass 652 / fail 0 |
+
+- unit은 승인된 DB-free 범위의 require_escalated 경로 — result.json
+  approval 문구는 runner 고정 캡션.
+- 신규 4개 파일은 `tests/unit/*.test.ts` glob 밖 — unit PASS는 기존
+  DB-free 표면 회귀(신규 소스의 실행 검증 아님).
+- 코드 동결 식별자: HEAD `75f2eefb284b62e4e01150923b17f60086948bc6` +
+  src/tests/scripts diff 해시
+  `bc760f4ec53bf166bc3c0b88df124f292c7a6c53`(`git diff HEAD -- src tests
+  scripts | git hash-object --stdin` — untracked 신규 3파일은 아래
+  매니페스트로 동결).
+
+### 동결 매니페스트 — 077-A 변경 파일별 SHA256
+
+```text
+19f985f22345faba79ba441960532880df34f1f947aa626c588cf708a65883d5  tests/integration/checkout.test.ts
+7d85a52347b81a507ab92c7116a11999b440473abcab3f3ae34d744256f80af0  tests/integration/wishlist.test.ts
+72553a868d2efae57be41a8c11e85f8ffa0470f7f5e3801ec327249312210cdc  tests/e2e/checkout-c.spec.ts
+fbbd433221654633a44fbcde2d43f9145b6a367d170cdfa8a82cf6bb6bfb4aeb  tests/e2e/wishlist.spec.ts
+```
+
+### NOT_RUN / Gap
+
+- 실DB·실API·브라우저·Playwright·e2e·Integration 승인 전부 미실행 —
+  작성 시나리오의 실제 PASS/FAIL 미검증.
+- wishlist 실DB suite는 commerce_test에 phase6(004_wishlist_items.sql)
+  미적용 시 ensureTestDb(6) 사전 조회가 throw — migrate 승인 전까지
+  실행 불가.
+- e2e specs는 playwright.config.ts 'not-ready' — 승인된 launcher
+  경로 부재.
+- 미커밋 — commit·Push 금지 유지. PM/Luna 재검수 대기.
+
+## 최신 — C/077-A-R1 정정 (2026-10-13, source-only · 미커밋)
+
+### 범위·수정
+
+- PM/Luna 독립 소스 QA 반영 — 같은 077-A 승인 스코프의 최소 정정만 수행
+  (실DB·API·브라우저·e2e·Integration 실행 금지 유지).
+- `tests/e2e/wishlist.spec.ts` 계정 격리 spec 재작성:
+  `browser.newContext()` ×2는 test fixture의 `use.baseURL`을 상속하지
+  않아 `goto("/")`가 실패하고, 독립 context는 같은 브라우저 저장소의
+  계정 교체 회귀를 검증하지 못한다 → 같은 context 안에서 기존 session
+  API(DELETE→쿠키 Max-Age=0 → login goto 재로드)로 A→B→A 전환.
+  로그인 후 동기화는 서버 GET /api/wishlist 완료 기준으로 대기.
+  - A 버킷 pending fixture를 실제 생산자 계약으로 정정 —
+    wishlist.ts의 SET_WISHLIST는 uiKey=key·payload={product_id,saved,
+    idempotency_key:key}이고 wishPendingError가
+    payload.idempotency_key===uiKey·path/product_id 일치를 요구한다
+    (카트 계열의 'ui-' 접두 관례와 별개 계약). 이전 fixture는
+    product_id 누락·키 불일치로 복구 불가능한 형태였음.
+    fixture 유효성 근거는 UI 노출이 아니라 계약 일치로 기록.
+  - 정리 실패를 `catch(()=>{})`로 숨기지 않고 일반 실패로 기록 —
+    A 세션 복귀 후 A의 찜 행 해제 + A 버킷 pending 키 제거.
+  - 독립 context 모델로 같은 브라우저 계정 교체 커버 완료로 기록하지 않음.
+- `tests/e2e/checkout-c.spec.ts` 단정 보강 (PM 지시 — '같은 키 재전송'
+  제목만으로 실제 단정이 없던 결함 해소):
+  - `interceptWrite`에 onRequest 훅(t4 헬퍼 동형)으로 최초 confirm의
+    `{quote_token, idempotency_key}` 캡처 → '다시 결제하기' 재전송을
+    waitForResponse로 잡아 두 값의 완전 일치를 실제 단정.
+  - 견적 발급 전 기준선(orders·cartRows·stockMap) → 견적 발급 후 완전
+    일치(무상태) → commit 후 주문 +1·구매 옵션만 stock-수량·카트 완전
+    일치 → retry 후 주문 불변·재고 추가 차감 0.
+  - 새 order_id로 GET /api/orders/:id — 품목 cardinality·variant·수량·
+    단가(180,000 정본 fixture)·line_total·shipping 3,000·total·
+    payment PAID·paid_amount=total 정합 단정.
+  - 미도착(drop) 흐름에도 카트·재고 불변 단정 추가.
+  - CART_SELECTED — 미선택 행의 cart_item_id·variant·수량·
+    variant_version 사전 스냅샷 대비 완전 일치.
+- `tests/integration/checkout.test.ts` (7 tests 유지 — 단정 보강):
+  - helper 추가: cartSnapOf(행 id·variant·qty·variant_version·cart
+    version 전체) · tableCount · bizSnap(orders/order_items/payments/
+    shipments 건수 + 대상 stock + 카트 — REJECTED action_requests는
+    정상 기록이라 대상 제외).
+  - DIRECT: 견적 후·confirm 후 카트 행 전 필드 불변 + order_items 1·
+    payments 1(paid 183,000)·shipments 1 cardinality·금액 단정.
+  - CART_SELECTED 재검증 테스트에 '선택 행 자체를 견적 후 mutator로
+    변경(수량)' → STALE_QUOTE REJECTED + bizSnap 불변 케이스 추가
+    (mutator 후 상태가 baseline — 변경분은 수동 원복).
+  - 토큰 위변조 테스트 — 거절 3건(무서명 위조·유효HMAC 대상 모순·
+    타인 토큰) 전후 bizSnap 완전 일치.
+- `tests/integration/wishlist.test.ts`:
+  - PM 발견 실버그 — 반대 방향 경합 테스트가
+    `ORDER BY completed_at DESC`로 '마지막 커밋'을 판정했으나
+    actions.ts의 completed_at=now()는 트랜잭션 시작 시각이라 lock
+    대기·커밋 순서를 표현하지 못해 올바른 구현도 false-FAIL 가능.
+    타임스탬프를 커밋 순서로 쓰지 않는 판정으로 교체: 두 의도의 action
+    행 정확히 2건·두 행 모두 SUCCEEDED 단정(READY·미실행·REJECTED를
+    수렴으로 세지 않음)·키별 payload_saved 정확('op-on'→true,
+    'op-off'→false)·행 상태↔성공 의도 일관성·PK 불변(≤1)·경합 직후
+    단독 op의 결정적 상태 반전으로 desired-state 커버.
+    커버 한계 명시: 경합 승자의 커밋 순서 자체는 관측하지 않는다.
+  - 실행 게이트 주석 정정 — 'commerce_test에 phase6 적용 필요' 표현을
+    '현 helper는 commerce_test 고정 → 격리(owned scratch) 연결 보완
+    승인 + 별도 실행 승인 필요'로 분리(보호 DB 변경 미승인).
+  - 공통 문서의 테스트 수 7→8 정정(실제 test() 8건 — PM 지적).
+- `tests/e2e/checkout-c.spec.ts`·`wishlist.spec.ts` 헤더의
+  commerce_test 실행 경로 문구도 동일하게 '미승인 + 격리 보완 승인 필요'로
+  정정.
+- 077-R1 독립 recheck(PM+Luna) — 전 항목 해소 확인·MINOR 1건:
+  DIRECT 첫 테스트에 confirm 후
+  '(await testOrders()).length === ordersBefore.length + 1' 단정
+  누락 지적 → 해당 1행 보완(동일 행동은 e2e checkout-c의
+  prequote/commit/replay 카운트 단정으로 이미 커버). 이 보완이
+  R1 소스 범위 마감.
+
+### 검증 (actual · 보호 runner · exit 확인)
+
+| 명령 | 결과 |
+| --- | --- |
+| check | PASS exit 0 — run-b2fde8d1-2e95-4d17-b613-a9a77d9fa411 |
+
+- unit 미재실행 — 변경은 테스트 소스뿐이고 신규 4파일은
+  `tests/unit/*.test.ts` glob 밖이라 기존 unit 652가 이 변경을 커버하지
+  않는다(PM 지시 — 검증 범위 정확 기록). 직전 unit 652/652/0
+  (run-ab233a15)는 본 정정 이전 소스 기준.
+- 코드 동결 식별자: HEAD `75f2eefb284b62e4e01150923b17f60086948bc6` +
+  src/tests/scripts diff 해시
+  `d8fc9a579feac66d0a652ec7fbfa93349ff88682`(077-R1 MINOR 보완 반영 · untracked 3파일은 아래
+  매니페스트로 동결).
+
+### PM 최종 정적 source QA 링크 (077-A 종결)
+
+- PASS 확정: shots/pmqa077-final/run-61d4c4e4-43cd-4232-a302-bf8ee8342049/qa-verdict.json · source-freeze.json — 마지막 first-confirm count+1 단정 직접 확인, 공개 source B/M0.
+- 위 check run-b2fde8d1은 마지막 1행 추가 이전 실행 — 1행 포함 typecheck은 078 다음 check에 묶어 검증(별도 unit 652 재실행 없음).
+
+### 동결 매니페스트 — 077-A-R1 파일별 SHA256
+
+```text
+454e38acec770e22d3d45c00c53db14239cd22d001a7e701f9448f163ae5b50b  tests/integration/checkout.test.ts
+e1fb4313d004b3fbdce2ed79f432b79554f7225ce0e3d355f7c8f639f5159e84  tests/integration/wishlist.test.ts
+842108ed1e7318c381fbd319664900f03ddfe43394141e0ebce2afee3b4b0e6a  tests/e2e/checkout-c.spec.ts
+89cef893f811bcd9403cdfac0a03a8ef047d03df738b52199f8cad993c215039  tests/e2e/wishlist.spec.ts
+```
+
+### NOT_RUN / Gap
+
+- 실DB·실API·브라우저·Playwright·e2e·Integration 전부 미실행 — 작성·
+  수정된 시나리오의 실제 PASS/FAIL 미검증.
+- wishlist suite 실행 게이트는 'commerce_test 고정 helper → 격리 연결
+  보완 승인 필요'로 기록 — 보호 DB migration 승인 아님.
+- e2e specs는 playwright.config.ts 'not-ready' — 승인된 launcher 경로
+  부재(078에서 owned-scratch 최소 연결 보완 진행).
+- 경합 커밋 순서는 관측 불가(completed_at=txn 시작 시각) — post-race
+  단독 op 반전으로 desired-state를 대신 검증하는 한계 명시됨.
+- 미커밋 — commit·Push 금지 유지. PM/Luna 독립 recheck 완료(077-R1, MINOR 보완 반영됨) — 소스 범위는 078 사용자 승인 기록의 격리 연결 보완 스코프에 포함. actual 실DB·API·브라우저·Integration 실행 승인은 계속 pending.
+
+## 2026-10-13 · PMQA-078 제한 재개 — checkout 캡처 거부 준수
+
+- **권한 경계**: 사용자는 `commerce_demo_verify`를 재생성하거나 모의 주문을 다시 만들 캡처 실행을 명시적으로 거부했다. 과거 PMQA-035 실행 권한은 REVOKED 상태다. 기존 코드를 유지하고, 해당 DB 접속·생성·삭제, 주문/카트 API write, 브라우저/Playwright 캡처 및 대체 scratch 실행을 하지 않았다. 이 상태의 실제 캡처 증거는 **BLOCKED**다.
+- **안전한 DB-free 검증(actual)**:
+
+| 실행 | 결과 |
+| --- | --- |
+| `npm run check` | PASS · exit 0 (`tsc --noEmit`) |
+| `node --test tests/unit/isolated-entry.test.ts tests/unit/isolated-prepare.test.ts` | PASS · 41/41 · fail 0 · DB-free mocked executor |
+
+- **불완전 실행**: 전체 unit 보호 runner `run-8b19245e-b9e4-4384-af41-6030c657d9ae`는 `result.json` 0 byte이며 완료 요약/종료 코드가 없어 NOT_COMPLETE다. `unit.log` 출력 일부만 존재하며 PASS로 합산하지 않았다. 직전 check runner `run-313c3c02-66de-450b-ab96-fed03e06f9b0`는 exit 0; 같은 소스 기준으로 현재 `npm run check`도 재확인했다.
+- **아직 검증하지 않은 것**: PostgreSQL/current DB, scratch lifecycle, migrations, API runtime, Integration, E2E, browser/visual, 전체 unit suite, eval. `demo-seed.test.ts` 5건 및 legacy capture 증거 worker는 실행하지 않았다. 정적 E2E inventory는 실행/수집 건수 증거가 아니다.
+- **판정**: 격리 경계의 DB-free 단위 계약은 41/41 PASS, source typecheck PASS. 실제 checkout 미완 상태 캡처와 런타임 검증은 BLOCKED/NOT_RUN로 유지한다. 미커밋이며 stage·commit·Push하지 않았다.
+
+## 2026-10-14 · PMQA-078 안전 정정 마감 — DB-free 검증 + fail-close 계약
+
+- **범위**: 소스 준비만. 실PG·scratch CREATE/DROP·API·Playwright·Integration/E2E 실행 없음. commit·Push 없음.
+- **반영 정정**: ① 부모 wx 자식 로그 prePG 예약 ② PW workdir 부모 runId prePG 예약 + run-owner marker{runId,nonce,pwWorkdir,evidenceDir} + exec 계획 정적 prePG·동적 CREATE 시점 ③ checkPins 주입 제거(고정 PINS+048 audit private gate) ④ 실제 runNode 실패 주입으로 child 중단 계약 검증 ⑤ projects baseline→addition dependency 실행 순서 고정 + checkout-t2 loginClean 카트 정리 ⑥ runner 첫 평가 신규 outputDir·worker TEST_WORKER_INDEX·종료 result.json 재평가 거부 ⑦ 로그 마감 게이트 + cleanup intent [PM 최종 2-item] — `closeLogs`를 cleanup 필수 게이트로 승격(finish 후 close 없음·close 오류 시 DROP 전 중단·finally 잔여 실패도 FAIL) + `cleanup.json`을 DROP 완료 선언이 아닌 실행 전 의도(`intent:"owned-drop-requested"`) submit으로 재배치 — submit 실패 시 owned DROP 미실행.
+
+| 실행 | 결과 |
+| --- | --- |
+| `node scripts/pmqa056-qa-run.ts check` | PASS · exit 0 (신규 UUID/wx run 로그) |
+| `node scripts/pmqa056-qa-run.ts build` | PASS · exit 0 (신규 UUID/wx run 로그) |
+| `node --test tests/unit/isolated-suite.test.ts` | PASS · 15/15 (mock 오케스트레이션 11 + runNode 실패 주입 4) — PM이 전체 출력 회수 |
+| `node --test tests/unit/*.test.ts` (직접 glob, 과거 이력) | NOT_COMPLETE 원본 보존 — 기본 sandbox 실행 ~6.5분 무출력·자가 session SIGINT·terminal 회수. 원인은 해당 로그에서 미확인 — 이력상 자식 IPC hang 의심으로만 구분(escalated 완주와 일치하나 rootcause 확정 아님). 로그 `.unit-run-p3v5f92j.log` 보존·삭제 금지·PASS 미계산 |
+| `node scripts/pmqa056-qa-run.ts unit` | PASS · exit 0 — run-8321f681-8d2a-487f-b637-8e96051e3853(승인 require_escalated DB-free 회귀 — 자식 IPC 위해 sandbox 밖 실행, 실PG/API/browser 없음): tests 680 / pass 680 / fail 0 / skipped 0 · suites 109 · ~20.9s. 동일 glob COMPLETE — 위 NOT_COMPLETE는 과거 sandbox 시도 이력으로만 유지 |
+| `node node_modules/typescript/bin/tsc --noEmit --pretty false` | PASS · TSC_EXIT=0 (`playwright.isolated.config.ts`를 include에 추가 후 재검증) |
+
+- **파일별 SHA256(앞 16자)**: isolated-suite.ts 51A760F087F6A37E · playwright.isolated.config.ts FB7F4211A3339559 · isolated-suite.test.ts 7E085406AFECEABB · checkout-t2.spec.ts 27E90BF930F87DA8 · tsconfig.json E8186441CF19D3E4.
+- **잔여**: actual 실행 승인 pending — runner 소스 준비 상태로 유지. `tests/unit/zz-debug078.test.ts`(untracked 디버그) 삭제. post-failure before/after DB 조회 근거는 runner 미실행(소스 준비) 한계로 미확보 — 실PG 승인 후 생성.
+
+## 2026-10-14 · PMQA-079 source 최소 preview 연결 + DB-free 검증
+
+- **범위**: isolated API loopback bind와 isolated prepare의 `seedRead` passthrough만 구현; DB-free mock 검증과 문서 기록. 실제 PG·scratch·migration 적용·API server·browser/E2E·Integration 미실행, commit·Push 없음.
+- **변경**: isolated 모드에서만 `server.listen(port, "127.0.0.1", callback)`; 일반 start는 기존 `listen(port, callback)`. `PrepareDeps.seedRead`를 기존 `seedBase(q, phase, {read})`에 넘겨 owned verify 이후 동일 transaction에서 preview 전용 base+demo JSON reader를 쓸 수 있게 함. 기본 reader와 phase 4·6 fixture 계약 불변. `SuiteDeps.evidenceSnapshot`은 DB-free mock 주입점이며 기본 CLI의 private `collectEvidenceSha`와 실제 전체 evidence 범위는 그대로다.
+- **Unit evidence 간섭 진단**: protected full Unit runner run `run-fdbc6c3c-a554-4985-9788-27d965efc5c3` 및 `run-11686f1d-1fae-4ab7-a70c-a52642ebfdd6`는 각각 tests 682 · pass 681 · fail 1 · exit 1. 진단 run `run-5a1419df-7793-44ee-9cb4-4d152fb057fd`도 같은 실패를 관측하고 stage=`evidence-after`, scratch=`retained-owned`, drift=`shots/pmqa056-runs/run-5a1419df-7793-44ee-9cb4-4d152fb057fd/unit.log` SHA 변경을 출력했다. `SUITE_EVIDENCE_DIRS`에는 `shots`가 포함되고 mock broker는 `run-x/`를 제외 대상으로 주므로, 부모 runner가 기록 중인 unit.log를 mock 실행 전후 snapshot 사이에 읽은 증거 간섭임을 확인했다. 실제 runtime collector·allowlist·PINS를 축소하거나 수정하지 않았다.
+- **최소 분리 및 재검증**: mock 테스트에 고정 before/after evidence snapshot을 주입하고, 별도 drift 1건이 `evidence-after` 실패·retained-owned·owned DROP 0으로 막히는지 검증.
+
+| 실행 | 결과 |
+| --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit --pretty false` | PASS · exit 0 |
+| `node --test tests/unit/isolated-entry.test.ts tests/unit/isolated-prepare.test.ts` | PASS · 43/43 · fail 0 |
+| `node --test tests/unit/isolated-suite.test.ts` | PASS · 16/16 · fail 0 |
+| `node scripts/pmqa056-qa-run.ts check` | PASS · exit 0 · 신규 UUID/wx evidence |
+| `node scripts/pmqa056-qa-run.ts build` | PASS · exit 0 · 신규 UUID/wx evidence |
+| `node scripts/pmqa056-qa-run.ts unit` | PASS · run `run-2140fc9a-a670-4ea5-a438-df3c544acd4d` · exit 0 · tests 683 / pass 683 / fail 0 / skipped 0 · suites 109 |
+
+- **Preview 상태**: actual preview 및 캡처는 승인 대기/NOT_RUN. inventory는 baseline 68 + new 5 = source상 73, Integration 74, legacy capture 1 NOT_READY, demo-seed 5 제외. Runtime NOT_RUN은 freeze 승인 게이트이지 source blocker가 아니다. Phase 4 기본 migration은 001–003, 명시 Phase 6은 004를 추가한다.
+- **최종 SHA256(앞 16자)**: `src/server.ts` 9738B0A955B7F14B · `tests/helpers/isolated-prepare.ts` 98099EA9801B20C9 · `scripts/isolated-suite.ts` 26DE7A0CA03FECEE · `tests/unit/isolated-entry.test.ts` CF58C3158AD6E292 · `tests/unit/isolated-prepare.test.ts` 993F181BEA4A1B84 · `tests/unit/isolated-suite.test.ts` 0CEEC0B8740523FD.
+
+## [Superseded as current status] 2026-10-14 · PMQA-079 승인 후 실행 선행조건 보완 (당시 기록 보존)
+
+- **승인과 독립 검수**: 사용자가 PMQA-079 실행 패키지를 선행 조건부로 일괄 승인했다. PM의 기존 소스 QA는 해당 시점의 핵심 파일 8개 SHA 일치 및 Unit 683/683 PASS였다. 이후 폰트 CDN 보완과 shell 테스트를 포함해 PM/Luna가 `index.html` SHA `FB563477C32E9BE5347B8491F093FC96B69798501CDD7D6F86AE23BE01A6720C`, `tests/unit/index-shell.test.ts` SHA `F518D563EB38DA074F11BD40B8505D9A38AA3AC6A1A1175A598BAD388B2B6861`을 확인하고 정적 QA PASS했다. `/web/styles.css`는 `src/server.ts`의 정적 파일 매핑으로 `src/web/styles.css`를 제공하므로 별도 `web/` 디렉터리가 없다는 것은 결함이 아니다. 이 검수는 실제 브라우저의 외부 요청 0건을 입증하지 않는다.
+- **외부 폰트 제거**: `index.html`의 Pretendard CDN `<link>`를 제거했다. 로컬 폰트 자산은 추가하지 않았고 기존 CSS 시스템 폰트 fallback을 유지한다. `tests/unit/index-shell.test.ts`는 실제 `/` shell route가 로컬 CSS/JS만 참조하고 외부 `href`/`src`가 없음을 확인한다. 테스트는 먼저 CDN link 때문에 실패(RED)했고, 수정 후 1/1 PASS(GREEN)했다. 현재 `index.html` SHA256 앞 16자 `FB563477C32E9BE5`, 테스트 SHA256 앞 16자 `F518D563EB38DA07`.
+- **DB-free 검증**:
+
+| 실행 | 결과 |
+| --- | --- |
+| `node scripts/pmqa056-qa-run.ts check` · `run-585047b4-d4e8-4c79-84e6-b6e73b39fce8` | PASS · exit 0 |
+| `node scripts/pmqa056-qa-run.ts build` · `run-af3e885d-62e9-4719-ab17-232aa666cb6b` | PASS · exit 0 |
+| 전체 Unit · `run-343c2703-3659-4f44-b2b4-ab1dabbe9ef7` | PASS · 684/684 · fail 0 · skipped 0 · exit 0 |
+| 앞선 전체 Unit 시도 · `run-06043481-dbd9-4603-836e-17b43f90b3a8` | NOT_COMPLETE · `result.json` 0 byte, `unit.log`은 중간 테스트까지만 기록; 이 세션이 해당 자식 실행을 수동 중단(exit 1). 최종 PASS와 별개 이력으로 보존 |
+
+- **Docker/PostgreSQL 경계**: Docker Desktop을 숨김 모드로 시작하고 기존 컨테이너 `codyssey_final-db-1`을 1회 시작했다. Inspect는 기존 컨테이너 ID `6f8801d712351c30cbf5e509079ade7f9b3ce0665485530246eb2c0686eb166b`와 기존 named volume `codyssey_final_pgdata` 연결을 확인했으며 새 컨테이너/볼륨 생성이나 volume 초기화는 없었다. 컨테이너 start 뒤 PostgreSQL 실제 접속 및 SQL 실행은 0회다. start 전 TCP probe는 `ECONNREFUSED`였고 SQL은 실행되지 않았다.
+- **BLOCKED 범위**: start 후 inspect에서 5432가 `0.0.0.0` 및 `[::]`에 게시된 사실을 확인해, 승인 문서의 loopback-only 요구와 충돌한다. 기존 포트 예외 여부 질문은 이미 사용자에게 전달되어 답변 대기 중이므로 중복 질문하지 않는다. 그 답변 전 PostgreSQL 접속/보호 DB snapshot/scratch 생성/migration/API/browser/E2E/Integration은 모두 미실행이다. `commerce_demo_verify`는 접속·생성·삭제하지 않았다. API 포트는 사전 점유 확인 당시 모두 비어 있었지만 어떤 서버도 시작하지 않았다.
+- **판정**: PMQA-079 source/DB-free 상태는 check·build·Unit 기준 통과. 실제 DB baseline/보호 DB 불변성 감사는 실행되지 않아 PASS가 아니며, Preview와 통합 검증은 현재 loopback gate에서 BLOCKED다. Docker Desktop/기존 PG 서비스 기동 사실과 실제 PostgreSQL 연결 0회를 별도 상태로 구분한다. Commit/Push는 하지 않았다.
+
+## [Superseded as current status] 2026-10-14 · PMQA-079 읽기 전용 DB·네트워크 사전검증 (당시 기록 보존)
+
+- **허용 범위**: 사용자는 기존 Docker PostgreSQL 전역 host bind 예외를 읽기 전용 사전검증으로만 허용했다. 컨테이너·Compose·포트·방화벽 설정은 변경하지 않았고, 신규 API/Preview/test 서버는 loopback-only 조건을 유지한다.
+- **실제 DB 식별(읽기 전용 transaction)**: `.env` 연결에서 `SELECT current_database()` 결과 `commerce`(OID 16384), `commerce_test`(OID 16516). 두 DB의 current_user/owner는 `commerce`, `transaction_read_only=on`, `default_transaction_read_only=on`. 서버 PostgreSQL 17.11, container address `172.18.0.2`, port 5432. public schema의 기대 테이블 13개 존재만 확인. 테이블 행·주문/취소/환불/재고 데이터는 읽지 않았으며 13-table protected snapshot, 77-row 기준, independent 36-record 기준은 **NOT_RUN**. Scratch DB 조회/생성/삭제 없음.
+- **호스트 노출**: 기존 `codyssey_final-db-1`(ID `6f8801d712351c30cbf5e509079ade7f9b3ce0665485530246eb2c0686eb166b`)은 기존 volume `codyssey_final_pgdata`를 사용하며 `0.0.0.0:5432` 및 `[::]:5432`에 publish됨. Windows Firewall inbound Allow `com.docker.backend.exe`는 Private/Public profile, local port Any, remote address Any에 적용된다. 모든 firewall profile은 enabled이고 기본 inbound는 Block. 활성 Ethernet은 Public, LAN 주소 `192.168.0.138/24`. LAN 접근은 설정상 가능성이 높으나 능동 probe 없이 미확인; WAN 접근성 UNKNOWN. 외부 probe 없음. 따라서 PG 노출 안전성은 PASS가 아니며 현재 loopback-only actual integration gate는 **BLOCKED**.
+- **격리 서버 포트**: 확인 시점에 3104, 3105, 3997, 3998, 3999 listener 없음. API/Preview/Integration/E2E는 실행하지 않음.
+- **실행·변경 집계**: 이번 preflight의 application DB write 0, scratch 생성 0, PostgreSQL 재시작 0, container/Compose/firewall 변경 0, API/Preview 실행 0, Integration/E2E 0.
+- **관련 정적 검증 (기존 실행 결과, 재실행 아님)**:
+  - Source/Luna static review: `index.html` SHA256 `FB563477C32E9BE5347B8491F093FC96B69798501CDD7D6F86AE23BE01A6720C`; `tests/unit/index-shell.test.ts` SHA256 `F518D563EB38DA074F11BD40B8505D9A38AA3AC6A1A1175A598BAD388B2B6861`. Static PASS; actual browser external-request count NOT_VERIFIED.
+  - Check PASS exit 0: `run-585047b4-d4e8-4c79-84e6-b6e73b39fce8`.
+  - Build PASS exit 0: `run-af3e885d-62e9-4719-ab17-232aa666cb6b`.
+  - Unit PASS 684/684, exit 0: `run-343c2703-3659-4f44-b2b4-ab1dabbe9ef7`.
+  - Earlier unit attempt `run-06043481-dbd9-4603-836e-17b43f90b3a8` remains NOT_COMPLETE (empty result file, partial log, exit 1); not replaced or counted as PASS.
+- **Evidence**: `shots/pmqa079-review/run-5d0be388-7bae-41f6-92e6-a097ffefe81e/readonly-preflight.json` stores sanitized facts (SHA256 `2A424CB5C48CBB8CF73F357F892B15459ADDC34E69801A0F046BADBCC49047B1`); credentials and application-row contents are absent. Approval and prior pinned evidence were verified by SHA in the same record.
+- **Next gate**: before actual DB-backed integration, prepare a read-only change proposal to publish the existing PostgreSQL only on loopback, including impact and rollback while retaining the volume; obtain separate approval before changing/recreating any container. Do not create/init a new PG volume. No commit or push.
+
+## [Superseded as current status] 2026-10-14 · PMQA-079 credential 결정 대기 (당시 기록 보존)
+
+- **승인 이력**: 사용자는 PostgreSQL loopback 제한과 원래 PMQA-079 owned 통합 패키지를 선행조건부로 승인했다(Main 직접 메시지 `01a136a0-566f-71f0-8188-421e9b36d4d6`). 프로젝트 사용자 승인은 이미 있었지만, 해당 자동 실행 검토 입력에 최신 승인 원문이 누락돼 메타데이터 범위만 허용된 것으로 판정·거부됐다. 이후 Main 채팅에서 사용자의 직접 확인 답변을 받고 정상 도구 심사를 거친 read-only native 실행 `exec-e50e8216-ef4d-4198-b5e3-8e502ff96963`은 exit 0으로 완료됐다. 이 단일 거부는 백업 dump나 Compose 교체가 거부된 근거가 아니다.
+- **보호 상태와 백업**: `shots/pmqa079-network-review/run-83e56fe9-55ff-4a57-a239-87768c8556e2/preflight.json`은 두 보호 DB의 13개 테이블 지문, DB identity 및 writer gate를 통과했고 `commerce_test`의 보호 77행·독립 36건도 기준과 일치한다고 기록한다. 새 backup manifest `run-0fac42df-3112-4056-8a29-fde13d8ebb9d/backup-manifest.json`과 전체 decode 결과 `run-71f9d74f-d9c5-47bd-a288-88c65a5909c3/decoded-backup-validation.json`은 크기/SHA·전체 decode·행 수·제약조건 검증 PASS다. 실제 restore는 **NOT_RUN**이며, 실패한 별도 wx run은 덮어쓰지 않고 보존했다.
+- **Review gate**: PM 및 저장소 파일을 직접 검토한 Zeno의 조건부 사전변경 PASS는 `run-ff3298f0-15a9-47ec-b4cb-46c4554d74fb/prechange-qa.json`에 기록됐다. 별도 Main-Luna 스레드의 credential 관련 MAJOR와 PM의 영향검토는 `shots/pmqa079-network-review/run-14dd2591-f7b0-4e9b-a48a-ef5339ae9a27/credential-review.json`에 연결한다. 해당 별도 스레드는 다른 프로젝트 경로에서 검토했다. 기존 도구 출력에 HEAD 추적 로컬 개발 Compose의 DB 인증값이 포함된 지침 위반은 확인됐지만, 외부 접근·유출은 확인되지 않았고 SESSION/LLM 키 노출 근거도 없다. credential 원문은 기록하지 않는다. 사용자 선택은 **대기 중**이다.
+- **실행 경계**: 현재 container/Compose는 변경되지 않았고 기존 전체 인터페이스 포트 게시가 유지된다. DB write, scratch 생성, migration, API/Preview, E2E/Integration 실행은 **NOT_RUN**이다. Commit/Push/Freeze는 승인되지 않았다. 사용자 credential 선택 전 Loopback 교체와 통합 실행은 HOLD한다.
+- **증거 manifest**: 원본 manifest 1,553개 중 보호 대상 1,499개(기준 `shots/` 1,322 + 외부 177)는 SHA 변경 0·누락 0으로 재확인됐다. 현재 `shots/` 전체 1,493개는 기준 파일 1,322개와 신규 171개를 포함하는 별도 범위다. 실제 실행 직전에 새로운 전체 manifest를 다시 만들어 사후 대조해야 한다.
+
+## [Superseded as current status] 2026-10-14 · PMQA-079 보호 DB read-only 스냅샷 실제 실행 — PASS · 이전 인증 게이트 사용자 결정 대기 (당시 기록 보존)
+
+- **실행 경로**: 부모가 `reserveEvidenceRun`으로 새 run을 예약한 뒤 자식 `node scripts/pmqa079-ro-snapshot.ts --execute`를 실행하고 stdout·result를 그 run에만 기록했다(기존 파일 덮어쓰기 없음). 스크립트는 `DOCKER_*`/`COMPOSE_*` 대상 override env가 non-empty면 값 출력 없이 key 이름만으로 Docker 호출 전 fail-closed하고, `docker context show`로 기존 선택 context를 확인 후 고정 컨테이너 `6f8801d712351c30cbf5e509079ade7f9b3ce0665485530246eb2c0686eb166b`·image `sha256:b0f9560a…`·실행 상태·`codyssey_final_pgdata`(`/var/lib/postgresql/data`) mount를 제한된 inspect 출력으로 대조한다. 일치 시 동일 context+고정 ID로 `docker exec -i … psql`을 실행한다(Compose service 해석 미사용). SQL은 `SET SESSION default_transaction_read_only=on` → `BEGIN … REPEATABLE READ READ ONLY` → identity/OID·current_user/owner·session+transaction readonly 설정·13개 테이블 count+MD5·writer/unreadable PID 집계 → `COMMIT`.
+- **결과**: `commerce`(OID 16384, role/owner `commerce`)와 `commerce_test`(OID 16516, role/owner `commerce`) 모두 pinned baseline(`shots/pmqa079-network-review/run-83e56fe9-55ff-4a57-a239-87768c8556e2/preflight.json`, 파일 SHA256 `D9F7FB2D05A9C093ED54FAD4937727D22095FBB1ABADDF81CF930FC9A32A1551` 일치)의 13개 테이블 count·MD5와 완전 일치, writers 0·unreadable 0, `match=true` → **PASS**(exit 0). 증거 `shots/pmqa079-ro-snapshot/run-38ec0d8a-7c59-4530-ab57-c8faeea85e27/` — `snapshot-output.json`, `result.json`.
+- **해석 경계**: 이 실행은 이전 preflight의 77행/36건 확인 이후 두 보호 DB의 13개 테이블 본문에 변화가 없다는 **전이 근거**다. 77행/36건을 직접 재수집한 것이 아니며, 모든 외부 접근 경로 차단이나 역할 인증 상태까지 주장하지 않는다.
+- **준비·검수 이력**: 신규 2파일 — `scripts/pmqa079-ro-snapshot.ts`(SHA `45E47B474861E47C59CDA89860CCF1EA265CE04D74866C72D212D5C8AE035329`), `tests/unit/pmqa079-ro-snapshot.test.ts`(SHA `D10134EB9F1B00B403FD3E7AB6FC32BD6144AA9F1FB0E05807419856F2E7159E`). DB-free fake 단위 **7/7 PASS**, `npm run check` exit 0. PM 준비 QA `shots/pmqa079-pm-audit/run-c33b9963-93b7-406c-9ae4-f9fd41ffe63b/snapshot-prep-qa.json` PASS, Luna 정적 PASS(SQL/readonly + 대상-override MAJOR 수정 후 재검수 PASS), runtime RO 독립 QA PASS. 초기 Unit 690 PASS는 직전 17파일 배치 기준이며 이번 2파일 추가 이후 전체 unit 재실행은 하지 않았다(신규 테스트 파일만 실행).
+- **변경/보존**: 행 내용·비밀·환경 전체 조회 0, DB mutation 0, 컨테이너·Role·포트 런타임 변경 0(`compose.yaml` 소스 보완은 승인된 범위의 파일 수정이며 런타임에는 미적용). 기존 동결 17파일 drift 0(현재 소스 동결 기준 19파일). PM 후검증에서 기존 보호 evidence 1,499개 SHA 변경 0·누락 0 재확인.
+- **미실행·대기**: 이전 `POSTGRES_PASSWORD` 조회는 미승인으로 확정(Superseded), 재시도 없음. 이전 인증(old-credential) 전용 거부 확인은 **NOT_RUN** — 새 인증 성공+무작위 오암호 거부로 대체하지 않았고, 기존 패키지의 해당 게이트 조정은 사용자 단일 결정 대기 중(PM 제출). Loopback 교체·Role 암호 교체·scratch·migration·API/Preview·E2E·Integration·Commit·Push·Freeze는 전부 **NOT_RUN**.
+
+## 2026-10-14 · PMQA-079 인증·Loopback·보호 게이트 실제 실행 PASS + Preview lifecycle 수정 완료·DB 없는 PM/Luna 독립 QA PASS·실행 권한 대기
+
+- **Loopback 실제 적용**: 기존 PostgreSQL의 게시 포트를 `127.0.0.1:5432`로 제한하는 변경이 실제 적용됐다 — 전역(`0.0.0.0`/`[::]`) 게시 해제. 동일 image·`codyssey_final_pgdata` 볼륨 유지, 새 컨테이너 `ee5503b5…`(구 `6f8801d…` 종료). 구 컨테이너는 postgres `shut down at 05:17:10 UTC` 마커(recovery 없음)로 정상 종료 확인 — Docker 실제 signal은 미확인이다.
+- **인증 게이트(actual · PASS)**: `credentialFromFile: true` 파일 기반 자격으로 `commerce`(OID 16384)·`commerce_test`(OID 16516) 양쪽 fresh TCP 접속 성공. wrong-password·missing-password 모두 SQLSTATE `28P01`로 거부됐다. 기존 `POSTGRES_PASSWORD` 조회와 old-credential 전용 거부 확인은 미승인 확정대로 **NOT_RUN** 유지다.
+- **보호 DB 지문(간접 연속성)**: 두 DB의 13개 테이블 count·MD5가 pinned preflight(`shots/pmqa079-network-review/run-83e56fe9-55ff-4a57-a239-87768c8556e2/preflight.json`, SHA `D9F7FB2D05A9C093ED54FAD4937727D22095FBB1ABADDF81CF930FC9A32A1551`)와 일치, owner `commerce`. 77행/36건 연속성은 직접 재수집이 아니라 지문 대조의 간접 근거다 — 실행 거부 이후 새 DB 조회 0건.
+- **PM·Luna 런타임 판정**: `shots/pmqa079-pm-audit/run-a1305331-9f08-4585-80d2-3664b1629c86/auth-runtime-qa.json` PASS. TCP 증거 `shots/pmqa079-tcp-audit/run-54942c22-7dd9-4914-bdd9-f05e2de7a6e6/result.json`, 실행 증거 `shots/pmqa079-exec/run-1c2522c5-870a-4fcc-808e-1b4288d60171/`(normal-stop·fix-round2·fix-round3·preview-glue-v2 등). 코드 검증 일관점 `shots/pmqa056-runs/run-29e3b7b0-5315-41a4-ae28-4b2d4b1b32e8` — unit **697/697**·check·build exit 0. 동결 소스 19파일 drift 0.
+- **증거 manifest**: 기존 manifest 2,203개 재해시 변경·누락 0. 백업 오타는 신규 `recheck.want`(`backup-recheck-corrected.json` 대조 과정)에 한정되고 원본 manifest는 정상 — 수정 전 TCP run은 이력 보존이며 최종 근거로 사용하지 않는다.
+- **Preview 소스 — 사용자 승인 최소 수정 완료 · DB 없는 PM/Luna 독립 QA PASS · 실행 권한 대기**: `scripts/preview-isolated.ts`(현재 SHA256 `E5A792AA4165CF01E7DD067B33CD3E972CCF73C567A8ACD8212BE8BFCDD312AF`)에 Luna MAJOR ①②가 최소 수정으로 반영됐다 — ① `watchChild`(exit/error/**close**) 등록을 spawn 직후 모든 실패 가능 작업 앞으로 이동하고 `startPreviewChild`가 pipe 실패를 throw 대신 `pipeError`로 반환해 childDone/childClosed를 caller가 보유하게 했다. ② `result.json`은 준비 판정(READY/FAIL)만 담고, `shutdown.json`은 `childTerminationStatus`(clean/abnormal)+`stdioClosed`만 기록 — 최종 runner PASS는 shutdown 기록 성공·writer.close 성공·native exit 0으로만 판정된다(close 전 PASS 파일 없음). 자식 `close`(stdio drain) 완료 전 writer.close 금지, close 미도착은 bounded timeout(기본 2s) 후 abnormal로 분류한다. 수정 중 발견된 추가 결함도 함께 정정했다 — `Promise.race`에서 `once(exit)`의 error-reject 리스너가 `once(error)`보다 먼저 등록되면 'error' emit 시 `done`이 raw error로 reject하는 순서 버그를, `once(error)` 우선 등록 + reject→error outcome 매핑으로 해결했고, watchChild.closed는 once() 헬퍼 대신 child.once('close')를 직접 등록해 'error' 자동 reject가 실제 close 없이 closed를 해소하지 않게 했다.
+- **검증(실제 명령 결과)**: `npm run check` exit 0 · `npm run build` exit 0 · `node --test tests/unit/preview-isolated.test.ts` **16/16 PASS** — spawn/error/exit·pipe 단계 실패·정상/signal 종료·준비 실패·shutdown 기록 실패·close 실패·close 순서·stdio drain timeout을 fake spawn/stream으로 검증(DB/API/browser 접속 0). 테스트 소스 `tests/unit/preview-isolated.test.ts`(SHA256 `A1B6C00BD8443D99533539937A731567EB7B5FE6234C8118EF50835C36E22008`)는 보존 파일로 재현 가능하다. PM 중간 검수 지적(shutdown 기록 전 finalStatus 명칭·stdio drain 순서·close 미관측 성공 미간주)도 반영 완료. 이전 SHA `9B490400…`의 mock 35/35 증거는 구 버전 기준이며 재현 한계가 이미 명시됐다. 실제 Preview·Suite·Integration·E2E는 여전히 **NOT_RUN** — `node scripts/preview-isolated.ts --execute`의 자동 승인 거부(`trusted user authorization ... not established ... untrusted history`) 상태 유지, 재시도 0. PM은 실제 check, unit 16/16, build 출력과 exit 0을 직접 확인했다 — 증거 shots/pmqa079-pm-audit/run-d23b9f5e-d385-47b7-a939-d6e278d35ef3/native-command-evidence.json · 최종 QA shots/pmqa079-pm-audit/run-d404fc5a-8c96-4d9d-95fc-8924be03aa7d/preview-lifecycle-qa.json. Luna 원본 출력 기준 정적 2-MAJOR 범위 최종 PASS — 이 PASS는 DB·API·browser 무접속 범위로 한정된다.
+- **실행 거부 정확 기록**: `tools.exec_command` `require_escalated`로 `node scripts/preview-isolated.ts --execute`가 자동 검토에서 거부됐다 — 거부 근거는 DB 생성·migration 적용·지속 preview 서버 기동을 수반한다는 점과 `trusted user authorization ... not established ... untrusted history` 문구다. **실행 전 거부, 재시도 0.** 기존 사용자 패키지 승인과 실제 tool approval은 별개다 — 재실행은 사용자 도구 승인 재획득 후에만 가능하다.
+- **관측 범위·근거 한계**: 신규 scratch 총 0 확인은 실행 거부 전 관측 시점 한정이며 거부 후 새 DB 조회는 0건이다. `scripts/_preview-static-check.ts`는 이번 턴 생성·실행·삭제된 일회성 파일로 기존 manifest 미등재다 — 35-mock 증거는 남지만 소스가 없어 재현이 불충분하다.
+- **미실행/미승인**: 실제 Preview·Suite·Integration·E2E **NOT_RUN**, Preview 주소 없음, Commit·Push·Commerce Freeze 미승인. 09 Commerce Freeze 목표는 유지한다.
+## 2026-10-14 · Commerce WIP checkpoint / fixed Suite actual result
+
+- Branch checkpoint/commerce-20261014 starts at main HEAD 75f2eefb284b62e4e01150923b17f60086948bc6. This is an implementation checkpoint, not a feature-completion or full-suite PASS claim.
+- Fixed Suite run shots/isolated-suite/run-4a9d070d-80ef-44c9-84d3-00fad1cd0a74/result.json: E2E 52 passed, 5 failed, 16 did not run (73 collected); child exit 1 at e2e. Integration was not started (**NOT_RUN**); cleanup was not attempted and the owned failure DB scratch_307187680bdc451e (OID 41226, owner 10) was retained.
+- E2E failures: checkout-t2.spec.ts:107; core-journeys.spec.ts:43 and :54; nav.spec.ts:14; t4-product-cart.spec.ts:820. Full output: shots/isolated-suite/run-4a9d070d-80ef-44c9-84d3-00fad1cd0a74/e2e.stdout.log.
+- Scratch cap is 2/2: Preview DB scratch_cd2043674f254b82 (OID 40961, owner 10) plus the retained failed Suite DB above. The Preview launcher/server is currently off; no new DB, seed, or migration was run after this Suite attempt.
+- PM independently compared 1,499 pre-existing PM073 protected evidence artifacts: content SHA drift 0, missing 0. This count covers that protected baseline only, not all current workspace files or current code/document edits.
+- Visual acceptance for Product Card and the connected buyer journey remains pending. Existing PMQA-079 new-file-credential connection and wrong/missing-password rejection evidence does not establish the separate old-password-only rejection check, which remains **NOT_RUN**.
+
+## 2026-10-14 · WIP checkpoint source and staged-manifest review
+
+- PMQA-056 fixed runner: `check` exit 0; `build` exit 0. The full `unit` run has not completed and remains **IN_PROGRESS/NOT_COMPLETE**; do not report it as PASS. Five DB-free auth/startup cases in `db-password-flow.test.ts` are individually PASS in the partial unit log. No database/API/browser/E2E/Integration action was performed for this verification.
+- PM independently reviewed the explicit 135-file staged manifest: excluded paths 0, canonical secret/token/private-key hits 0, missing relative imports 0, worktree-index drift 0. No credential value or hash was emitted.
+- `git diff --cached --check` reports only five new blank lines at EOF (`src/web/cart-scope.ts`, `src/web/components/WishButton.tsx`, `src/web/components/WishProductCard.tsx`, `src/web/components/WishSavedSheet.tsx`, `src/web/wishlist.ts`). Recorded as Minor; no code correction was made in this checkpoint.
+- The existing user approvals for the previously reviewed 04-C/04-E/05/06-A/06-B versions remain in force. Only subsequent changed Product Card/purchase views need affected-surface re-review; 06-C final Visual confirmation and whole-journey approval remain pending. Commerce Freeze remains an active roadmap goal and is not complete.

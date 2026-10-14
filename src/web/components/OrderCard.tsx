@@ -32,6 +32,7 @@ export function OrderCard({
   totalWon,
   deliveryLine,
   onCancel,
+  onCancelRecovery,
   onItemClick,
   refundLabel,
   orderId,
@@ -50,6 +51,7 @@ export function OrderCard({
   totalWon?: number;            // 다품목일 때만 '외 N건'과 별도로 보여주는 주문 총액
   deliveryLine?: string | null; // "무료배송"/"배송비 N원" — null이면 미표시
   onCancel?: () => void;        // 제공 시에만 '취소하기' 버튼
+  onCancelRecovery?: () => void; // 미해결 취소 intent의 복구 진입 — '취소하기'와 독립 [MJ060-1]
   onItemClick?: (it: OrderCardItem) => void; // 없으면 onOpenDetail로 대체
   refundLabel?: string | null;   // 서버 refund_status 라벨 — 실데이터 있을 때만 별도 표시
 }) {
@@ -149,6 +151,13 @@ export function OrderCard({
         {onCancel && (
           <button className="btn ghost oc-btn" onClick={onCancel}>
             취소하기
+          </button>
+        )}
+        {/* execute commit 뒤 cancel_eligible=false로 '취소하기'가 숨어도,
+            미해결 intent가 남아 있으면 복구 통로를 별도 노출한다 [MJ060-1]. */}
+        {onCancelRecovery && (
+          <button className="btn ghost oc-btn" onClick={onCancelRecovery}>
+            취소 요청 결과 확인
           </button>
         )}
         {/* CS Brain 미구축 — 클릭 가능한 문의 CTA를 약속하지 않고 준비 중 상태로

@@ -83,6 +83,10 @@ const replay = <T>(row: Row, hash: string, trace_id: string): ActionResult<T> =>
     };
 };
 
+// DB 핸들 — begin(트랜잭션)+unsafe(읽기) 최소 계약. 실제 연결은 db.ts의 sql이고,
+// DB-free 검증은 같은 형태의 mock을 마지막 인자로 주입한다 [PMQA-067].
+export type SqlDb = Pick<postgres.Sql, "begin" | "unsafe">;
+
 // kind에 따라 잠글 대상이 다르다. 카트는 cart 행, 취소/결제는 order 행(Phase 3+).
 // fn(q)은 q 트랜잭션 안에서 비즈니스 검증·변경을 수행하고 ToolResult를 반환한다.
 export async function runAction<T>(
@@ -91,11 +95,12 @@ export async function runAction<T>(
   idempotencyKey: string,
   payload: unknown,
   fn: (q: Q) => Promise<ToolResult<T>>,
+  db: SqlDb = sql,
 ): Promise<ActionResult<T>> {
   const trace_id = crypto.randomUUID();
   const hash = payloadHash(payload);
   try {
-    return await sql.begin(async (q) => {
+    return await db.begin(async (q) => {
       const rows = await q.unsafe<Row[]>(
         "SELECT * FROM action_requests WHERE actor_user_id=$1 AND kind=$2 AND idempotency_key=$3 FOR UPDATE",
         [ctx.actorUserId, kind, idempotencyKey],
@@ -124,7 +129,7 @@ export async function runAction<T>(
   } catch (e) {
     // 동시에 같은 키가 들어오면 unique 위반으로 직렬화된다. 커밋된 첫 결과를 읽는다.
     if ((e as { code?: string }).code === "23505") {
-      const rows = await sql.unsafe<Row[]>(
+      const rows = await db.unsafe<Row[]>(
         "SELECT * FROM action_requests WHERE actor_user_id=$1 AND kind=$2 AND idempotency_key=$3",
         [ctx.actorUserId, kind, idempotencyKey],
       );

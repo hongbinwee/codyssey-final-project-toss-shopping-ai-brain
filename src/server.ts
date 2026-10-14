@@ -4,11 +4,12 @@ import { pathToFileURL } from "node:url";
 import { extname, join, normalize, sep } from "node:path";
 import { build } from "esbuild";
 import { config } from "./config.ts";
-import { connectDb, sql } from "./db.ts";
+import { connectDb, sql, type Q } from "./db.ts";
 import { ensureDevDb } from "./devdb.ts";
 import { contextFromRequest, signSession } from "./session.ts";
 import { getProduct, getReviews, searchProducts } from "./catalog.ts";
 import { addToCart, getCart, removeCartItem, updateCartQuantity } from "./cart.ts";
+import { getWishlist, parseWishlistPut, setWishlist } from "./wishlist.ts";
 import { checkoutQuote, confirmCheckout } from "./checkout.ts";
 import { getOrder, getShippingStatus, listOrders } from "./orders.ts";
 import {
@@ -17,6 +18,12 @@ import {
 import { getActionResult } from "./actions.ts";
 import { runAgentTurn } from "./agent.ts";
 import { getProvider } from "./llm.ts";
+import {
+  isolatedEnvTouched,
+  planIsolatedConnect,
+  verifyOwnedTransaction,
+  type IsolatedContract,
+} from "../tests/helpers/isolated-db.ts";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -36,10 +43,38 @@ const STATIC: Record<string, string> = {
   "/web/styles.css": "src/web/styles.css",
 };
 
-async function health() {
+export function isolatedStartContract(
+  env: Record<string, string | undefined> = process.env,
+): IsolatedContract | null {
+  if (!isolatedEnvTouched(env)) return null;
+  const plan = planIsolatedConnect(env);
+  if (!plan.ok) throw new Error("isolated API startup 거부: " + plan.reason);
+  if (env.DATABASE_URL !== undefined && env.DATABASE_URL !== plan.contract.dbUrl)
+    throw new Error("isolated API startup 거부: DATABASE_URL이 contract와 다름");
+  return plan.contract;
+}
+
+export async function health(exec: Q = sql, isolated: IsolatedContract | null = null) {
   try {
-    await sql.unsafe("select 1");
-    return { code: 200, body: JSON.stringify({ ok: true, db: "connected" }) };
+    if (isolated) {
+      // 실제 업무 pool의 한 연결에서 identity와 marker를 함께 확인한다.
+      // URL/암호는 응답에 포함하지 않는다.
+      if (!("begin" in exec) || typeof exec.begin !== "function")
+        throw new Error("isolated health requires a transaction");
+      const owned = await verifyOwnedTransaction(
+        exec as unknown as Parameters<typeof verifyOwnedTransaction>[0], isolated,
+      );
+      if (!owned.ok) throw new Error("isolated health identity mismatch");
+    } else {
+      await exec.unsafe("select 1");
+    }
+    return { code: 200, body: JSON.stringify({
+      ok: true, db: "connected",
+      ...(isolated ? { isolated: {
+        dbName: isolated.dbName, dbOid: isolated.dbOid,
+        dbOwner: isolated.dbOwner, runId: isolated.runId,
+      } } : {}),
+    }) };
   } catch {
     return { code: 503, body: JSON.stringify({ ok: false, db: "down" }) };
   }
@@ -78,10 +113,36 @@ const reqCtx = (req: IncomingMessage) =>
     config.sessionSecret,
   );
 
-export async function start(port = config.port) {
-  await ensureDevDb();
-  connectDb(process.env.DATABASE_URL!);
-  await build({
+export type ServerStartDeps = {
+  env?: Record<string, string | undefined>;
+  ensureDevDb?: typeof ensureDevDb;
+  connectDb?: typeof connectDb;
+  build?: typeof build;
+  createServer?: typeof createServer;
+};
+
+export async function start(port = config.port, deps: ServerStartDeps = {}) {
+  const env = deps.env ?? process.env;
+  const ensure = deps.ensureDevDb ?? ensureDevDb;
+  const connect = deps.connectDb ?? connectDb;
+  const buildBundle = deps.build ?? build;
+  const createHttpServer = deps.createServer ?? createServer;
+  const isolated = isolatedStartContract(env);
+  if (isolated) {
+    const pool = connect(isolated.dbUrl);
+    const owned = await verifyOwnedTransaction(
+      pool as unknown as Parameters<typeof verifyOwnedTransaction>[0],
+      isolated,
+    );
+    if (!owned.ok) {
+      await pool.end();
+      throw new Error("isolated API startup 소유권 거부: " + owned.reason);
+    }
+  } else {
+    await ensure();
+    connect(env.DATABASE_URL!);
+  }
+  await buildBundle({
     entryPoints: ["src/web/app.tsx"],
     bundle: true,
     outfile: "web/app.js",
@@ -91,12 +152,12 @@ export async function start(port = config.port) {
   });
   const provider = getProvider();
 
-  const server = createServer(async (req, res) => {
+  const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://local");
     const p = url.pathname;
     try {
       if (p === "/health") {
-        const h = await health();
+        const h = await health(sql, isolated);
         res.writeHead(h.code, { "content-type": "application/json" });
         return res.end(h.body);
       }
@@ -173,6 +234,7 @@ export async function start(port = config.port) {
           product_id: decodeURIComponent(m[1]),
           variant_id: url.searchParams.get("variant_id") ?? undefined,
           query: url.searchParams.get("query") ?? undefined,
+          sort: url.searchParams.get("sort") ?? undefined,
           cursor: url.searchParams.get("cursor") ?? undefined,
           limit: url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined,
         }));
@@ -213,6 +275,24 @@ export async function start(port = config.port) {
         }, ctx, "ui-" + b.idempotency_key));
       }
 
+      // 찜 — UI 전용(Agent Tool registry에 없다). GET은 읽기 전용,
+      // PUT은 saved 엄격 boolean + idempotency_key 필수. actor는 세션뿐.
+      if (p === "/api/wishlist" && req.method === "GET")
+        return send(res, await getWishlist(ctx));
+      m = p.match(/^\/api\/wishlist\/([^/]+)$/);
+      if (m && req.method === "PUT") {
+        // strict 검증 — null/array body·비boolean saved·비정상 key 거절.
+        // body의 actor 주장 필드는 읽지 않는다(실행 주체는 세션뿐).
+        const parsed = parseWishlistPut(await body(req));
+        if (!parsed.ok)
+          return json(res, 400, { ok: false, error: { code: "VALIDATION", message: parsed.error } });
+        return send(res, await setWishlist(
+          { product_id: decodeURIComponent(m[1]), saved: parsed.saved },
+          ctx,
+          "ui-" + parsed.idempotency_key,
+        ));
+      }
+
       // 실행 요청 결과 조회 (응답 유실 복구용. Agent Tool 아님)
       m = p.match(/^\/api\/actions\/([^/]+)$/);
       if (m && req.method === "GET")
@@ -226,6 +306,17 @@ export async function start(port = config.port) {
       // W04 견적/확인 — UI 전용. Agent Tool registry에 없으므로 A01이 호출할 수 없다.
       if (p === "/api/checkout/quote" && req.method === "GET")
         return send(res, await checkoutQuote(ctx));
+      // 선택 주문/바로 구매 견적 [PMQA-067]. source 필드는 서비스가 검증한다 —
+      // 생략·알 수 없는 값은 전체 카트로 추정하지 않고 거절한다.
+      if (p === "/api/checkout/quote" && req.method === "POST") {
+        const b = (await body(req)) as Record<string, unknown> | null;
+        return send(res, await checkoutQuote(ctx, {
+          kind: b?.source,
+          cart_item_ids: b?.cart_item_ids,
+          variant_id: b?.variant_id,
+          quantity: b?.quantity,
+        }));
+      }
       if (p === "/api/checkout/confirm" && req.method === "POST") {
         const b = (await body(req)) as { quote_token?: string; idempotency_key?: string };
         if (!b.quote_token || !b.idempotency_key)
@@ -286,11 +377,15 @@ export async function start(port = config.port) {
 
       res.writeHead(404);
       res.end("Not found");
-    } catch (e) {
-      json(res, 500, { ok: false, error: { code: "INTERNAL", message: String(e).slice(0, 200) } });
+    } catch {
+      json(res, 500, { ok: false, error: { code: "INTERNAL", message: "요청을 처리하지 못했습니다" } });
     }
   });
-  await new Promise<void>((resolve) => server.listen(port, resolve));
+  await new Promise<void>((resolve) =>
+    isolated
+      ? server.listen(port, "127.0.0.1", resolve)
+      : server.listen(port, resolve),
+  );
   return server;
 }
 

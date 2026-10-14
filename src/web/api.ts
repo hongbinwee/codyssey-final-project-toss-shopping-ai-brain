@@ -76,6 +76,16 @@ export const AMBIGUOUS_CODES = new Set([
 
 export const fmtWon = (n: number) => n.toLocaleString("ko-KR") + "원";
 
+// 배송비 표시 — 정확히 0이면 '무료배송', 양의 안전 정수면 실제 금액,
+// undefined/NaN/음수/비정수 등 부재·비정상 값은 '배송비 정보 없음'으로
+// 구분한다 [PMQA-068 — >0 비교만으로는 NaN·음수·부재를 무료로 오표기].
+export const shipFeeLabel = (fee: number | null | undefined): string => {
+  if (fee === 0) return "무료배송";
+  if (typeof fee === "number" && Number.isSafeInteger(fee) && fee > 0)
+    return "배송비 " + fmtWon(fee);
+  return "배송비 정보 없음";
+};
+
 // 어느 Brain과 대화할지. 서버는 user:brain 단위로 Tool 목록과 히스토리를 나눈다.
 export type AgentBrain = "shopping" | "cs";
 

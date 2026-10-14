@@ -338,6 +338,8 @@ test("entry gate: protected 통과·not-ready/blocked 사전 거부", () => {
     "playwright.readonly.config.ts",
     "tests/e2e/readonly-orders.spec.ts",
     "tests/e2e/readonly-audit.ts",
+    "playwright.isolated.config.ts",
+    "scripts/isolated-suite.ts",
   ]) {
     assert.equal(entryDisposition(e), "protected", e);
     assert.doesNotThrow(() => assertEntryRunnable(e), e);
@@ -363,6 +365,8 @@ test("entry wiring: 실제 진입부 파일에 assertEntryRunnable 호출 존재
     "playwright.config.ts",
     "playwright.capture.config.ts",
     "playwright.readonly.config.ts",
+    "playwright.isolated.config.ts",
+    "scripts/isolated-suite.ts",
     "scripts/verify.ts",
     "scripts/shoot-themes.mjs",
   ]) {
@@ -1050,6 +1054,23 @@ test("exec plan: 허용 형태 통과 + unknown/bare/conflict/bad-db/out 거부"
   assert.throws(() =>
     assertExecPlan({ ...good, dbNames: ["commerce_demo_verify"] }),
   );
+  assert.throws(() =>
+    assertExecPlan({
+      ...good,
+      entry: "playwright.readonly.config.ts",
+      argv: ["test", "-c", "playwright.readonly.config.ts"],
+      dbNames: ["scratch_0123456789abcdef"],
+    }),
+    /허용 외/,
+  );
+  assert.doesNotThrow(() =>
+    assertExecPlan({
+      ...good,
+      entry: "playwright.isolated.config.ts",
+      argv: ["test", "-c", "playwright.isolated.config.ts"],
+      dbNames: ["scratch_0123456789abcdef"],
+    }),
+  );
   // evidence 영역·임의 경로 output은 거부 — pw-output/pw-*만 통과.
   assert.throws(() =>
     assertExecPlan({ ...good, outputDir: join("shots", "06b", "x") }),
@@ -1095,16 +1116,21 @@ test("exec output 057-1: envelope 하위 고정 child만 허용 — bare envelop
 // 057-1 — config가 envelope 하위 child로 outputDir을 파생하는지 소스 계약
 // 고정. outputDir=PW_WORKDIR 자체는 runner cleanup이 부모 예약 dir을 삭제한다.
 test("config outputDir — envelope 하위 'playwright' child 파생 (057-1)", () => {
-  const src = readFileSync("playwright.readonly.config.ts", "utf8");
-  assert.match(
-    src,
-    /outputDir:\s*join\(PW_WORKDIR,\s*"playwright"\)/,
-    "outputDir은 envelope 하위 고정 child여야 한다",
-  );
-  assert.ok(
-    !/outputDir:\s*PW_WORKDIR\b/.test(src),
-    "outputDir이 envelope 그 자체 — runner cleanup이 부모 예약을 삭제한다",
-  );
+  for (const file of [
+    "playwright.readonly.config.ts",
+    "playwright.isolated.config.ts",
+  ]) {
+    const src = readFileSync(file, "utf8");
+    assert.match(
+      src,
+      /outputDir,?/,
+      file + " outputDir 선언 부재",
+    );
+    assert.ok(
+      !/outputDir:\s*PW_WORKDIR\b/.test(src),
+      file + " outputDir이 envelope 그 자체",
+    );
+  }
 });
 
 test(

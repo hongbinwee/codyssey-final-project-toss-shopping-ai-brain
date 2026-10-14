@@ -48,6 +48,26 @@ export const ENTRY_TABLE: Readonly<
     disposition: "protected",
     note: "PMQA-056 — 부모 runner spawn 대상 (env·marker 정합 요구)",
   },
+  "tests/e2e/mock-audit.ts": {
+    disposition: "protected",
+    note: "PMQA-062 — mock parent launcher (DB 0, claim+channel 재사용)",
+  },
+  "tests/e2e/mock-cancel.spec.ts": {
+    disposition: "protected",
+    note: "PMQA-062 — mock worker (가상 origin catch-all, 부모 submit)",
+  },
+  "playwright.mock.config.ts": {
+    disposition: "protected",
+    note: "PMQA-062 — mock runner spawn 대상 (env·marker 정합 요구)",
+  },
+  "playwright.isolated.config.ts": {
+    disposition: "protected",
+    note: "PMQA-078 — fixed E2E suite, owned scratch contract only",
+  },
+  "scripts/isolated-suite.ts": {
+    disposition: "protected",
+    note: "PMQA-078 — owned scratch runner, fixed E2E + integration lists",
+  },
   "scripts/verify.ts": {
     disposition: "not-ready",
     note: "연쇄 동작 미보호 — 사전 거부",
@@ -104,7 +124,13 @@ export function assertExecPlan(opts: {
       "exec argv 허용 형태 외: " + JSON.stringify(a),
     );
   for (const d of opts.dbNames ?? [])
-    if (!EXEC_DB_ALLOW.has(d))
+    if (
+      !EXEC_DB_ALLOW.has(d) &&
+      !(
+        opts.entry === "playwright.isolated.config.ts" &&
+        /^scratch_[0-9a-f]{16}$/.test(d)
+      )
+    )
       throw new Error("exec 대상 DB 허용 외: " + d);
   if (opts.outputDir !== undefined) {
     // PMQA-057-1 — 실제 outputDir은 부모 예약 envelope의 고정 하위

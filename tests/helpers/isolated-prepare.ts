@@ -24,6 +24,7 @@ import {
   verifyOwnedExec,
 } from "./isolated-db.ts";
 import { seedBase, type SeedExec } from "../../scripts/base-seed.ts";
+import { requiredMigrations } from "../../scripts/migrations-manifest.ts";
 
 // 격리 DB 준비에 적용하는 고정 canonical migration — db/migrations에서
 // 파일 본문을 읽어 sha256을 계산한다. _migrations 기존 행의 sha와 다르면
@@ -44,6 +45,16 @@ export type SqlClient = {
 
 export type PrepareDeps = {
   connect?: (url: string, opts?: { max?: number }) => SqlClient;
+  seedRead?: (f: string) => unknown;
+};
+
+// PMQA-078 — 명시적 phase6 준비 경로. 기본 4는 기존 3-migration smoke
+// 계약을 그대로 유지하고, 명시 6만 canonical requiredMigrations(6)
+// (004_wishlist_items.sql 포함)를 적용한다. 다른 phase는 거부 — 부분
+// 스키마는 테스트 간 암묵적 의존을 만든다. fixture 파일은 phase4·6이
+// 동일(users·catalog·reviews·scenarios — seedBase phase 매핑 기준).
+export type PrepareOpts = {
+  phase?: 4 | 6;
 };
 
 export type PrepareResult = {
@@ -61,7 +72,14 @@ export type PrepareResult = {
 export async function prepareIsolatedDb(
   sourceEnv: Record<string, string | undefined>,
   deps: PrepareDeps = {},
+  opts: PrepareOpts = {},
 ): Promise<PrepareResult> {
+  const phase = opts.phase ?? 4;
+  if (phase !== 4 && phase !== 6)
+    throw new Error(
+      "isolated 준비 거부: phase는 4(기본) 또는 6(004 opt-in)만 지원 — " +
+        String(opts.phase),
+    );
   // 1) 연결 결정 — 형식·strict·opt-in이 어긋나면 connect 호출 0건으로 거부.
   const plan = planIsolatedConnect(sourceEnv);
   if (!plan.ok) throw new Error("isolated 준비 거부: " + plan.reason);
@@ -98,7 +116,9 @@ export async function prepareIsolatedDb(
       await q.unsafe(
         "CREATE TABLE IF NOT EXISTS _migrations (name text primary key, sha256 text not null, applied_at timestamptz not null default now())",
       );
-      for (const f of ISOLATED_MIGRATIONS) {
+      const migrationFiles =
+        phase === 6 ? requiredMigrations(6) : [...ISOLATED_MIGRATIONS];
+      for (const f of migrationFiles) {
         let body: string;
         try {
           body = readFileSync("db/migrations/" + f, "utf8");
@@ -126,7 +146,7 @@ export async function prepareIsolatedDb(
 
       // 5) base fixture — seed.ts base 경로와 같은 seedBase를 같은
       //    트랜잭션 안에서 실행한다(executor 주입이 유일한 차이).
-      const s = await seedBase(q, 4);
+      const s = await seedBase(q, phase, { read: deps.seedRead });
       return s.seeded;
     });
     return {

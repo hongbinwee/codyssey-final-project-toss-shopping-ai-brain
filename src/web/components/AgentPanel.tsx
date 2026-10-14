@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { apiSafe, fmtWon, newActionKey, type AgentBrain } from "../api.ts";
 import type { CompareCard } from "../../contracts.ts";
+import { sendAgentTurn } from "../agent-gate.ts";
 
 export interface AgentReply {
   role: "user" | "ai";
@@ -87,22 +88,24 @@ export function AgentPanel({
     setBusy(true);
     const next = [...messages, { role: "user" as const, text }];
     setMessages(next);
-    const r = await apiSafe<{
+    // F22 — 게이트가 닫힌 동안 post는 한 번도 호출되지 않는다 [C/069 fail-closed]
+    const r = await sendAgentTurn<{
       message: string;
       evidence_refs: { products: string[]; variants: string[]; reviews: string[] };
       compare?: CompareCard;
       tool_calls: { name: string; ok: boolean; code?: string }[];
       limit_reached?: boolean;
       error?: string;
-    }>("/api/agent/turn", {
-      method: "POST",
-      body: JSON.stringify({
+    }>(
+      {
         user_message: text,
         page_context: pageContext,
         client_action_id: newActionKey(),
         brain,
-      }),
-    });
+      },
+      (path, body) =>
+        apiSafe(path, { method: "POST", body: JSON.stringify(body) }),
+    );
     setBusy(false);
     if (!r.ok) {
       setMessages([...next, { role: "ai", text: "호출에 실패했어요: " + r.error.message, error: true }]);

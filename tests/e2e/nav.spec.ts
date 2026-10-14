@@ -169,7 +169,7 @@ test("direct #/p entry → cart → back → back ends at shop, never exits app"
     await page.goto("/#/cart");
     const del = page.getByRole("button", { name: "삭제", exact: true });
     await expect(
-      del.first().or(page.getByText("장바구니가 비어 있어요")),
+      del.first().or(page.getByText("장바구니가 비었어요")),
     ).toBeVisible();
     for (let i = 0; i < 5; i += 1) {
       const n = await del.count();
@@ -177,7 +177,7 @@ test("direct #/p entry → cart → back → back ends at shop, never exits app"
       await del.first().click();
       await expect(del).toHaveCount(n - 1);
     }
-    await expect(page.getByText("장바구니가 비어 있어요")).toBeVisible();
+    await expect(page.getByText("장바구니가 비었어요")).toBeVisible();
   }
 });
 

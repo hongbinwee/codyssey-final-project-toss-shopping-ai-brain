@@ -4,6 +4,7 @@ import {
   ok, fail, err,
   type Availability, type MatchedVariant, type ProductDetail,
   type ProductSummary, type ReviewsResult, type SearchResult,
+  type ReviewSort,
   type ToolResult,
 } from "./contracts.ts";
 import type { RequestContext } from "./session.ts";
@@ -216,22 +217,44 @@ export async function getProduct(input: {
   );
 }
 
-export async function getReviews(input: {
-  product_id: string;
-  variant_id?: string;
-  query?: string;
-  cursor?: string;
-  limit?: number;
-}): Promise<ToolResult<ReviewsResult>> {
+// 리뷰 정렬 — ORDER BY는 이 상수 매핑에서만 가져오고 입력 원문은 절대
+// 삽입하지 않는다. Ref127의 3종만 지원하고 '추천순'은 순위 알고리즘
+// 계약이 없어 제공하지 않는다(sort 생략은 LATEST, 지원하지 않는 값은 VALIDATION) [PMQA-068].
+const REVIEW_ORDER: Record<ReviewSort, string> = {
+  LATEST: "written_at DESC, id",
+  RATING_DESC: "rating DESC, written_at DESC, id",
+  RATING_ASC: "rating ASC, written_at DESC, id",
+};
+
+export async function getReviews(
+  input: {
+    product_id: string;
+    variant_id?: string;
+    query?: string;
+    sort?: string;
+    cursor?: string;
+    limit?: number;
+  },
+  db: Pick<typeof sql, "unsafe"> = sql,
+): Promise<ToolResult<ReviewsResult>> {
   const trace_id = crypto.randomUUID();
   const { limit, offset } = page(input);
   if (offset < 0) return fail(err("VALIDATION", "invalid cursor"), trace_id);
-  const [p] = await sql.unsafe("SELECT id FROM products WHERE id = $1", [
+  // own-property 검사 — 'toString'/'constructor'/'__proto__' 같은 상속키가
+  // truthy로 통과해 ORDER BY에 들어가는 결함을 차단한다 [PMQA-068].
+  const sortKey = input.sort ?? "LATEST";
+  if (!Object.hasOwn(REVIEW_ORDER, sortKey))
+    return fail(
+      err("VALIDATION", "지원하지 않는 리뷰 정렬입니다"),
+      trace_id,
+    );
+  const orderBy = REVIEW_ORDER[sortKey as ReviewSort];
+  const [p] = await db.unsafe("SELECT id FROM products WHERE id = $1", [
     input.product_id,
   ]);
   if (!p) return fail(err("NOT_FOUND", "상품을 찾을 수 없습니다"), trace_id);
   if (input.variant_id) {
-    const [v] = await sql.unsafe(
+    const [v] = await db.unsafe(
       "SELECT id FROM product_variants WHERE id = $1 AND product_id = $2",
       [input.variant_id, input.product_id],
     );
@@ -242,11 +265,11 @@ export async function getReviews(input: {
       );
   }
   const q = (input.query ?? "").trim();
-  const rows = await sql.unsafe<ReviewRow[]>(
+  const rows = await db.unsafe<ReviewRow[]>(
     `SELECT * FROM reviews WHERE product_id = $1
       AND ($2::text IS NULL OR variant_id = $2)
       AND ($3 = '' OR body ILIKE '%' || $3 || '%')
-      ORDER BY written_at DESC, id`,
+      ORDER BY ${orderBy}`,
     [input.product_id, input.variant_id ?? null, q],
   );
   const sliced = rows.slice(offset, offset + limit);
@@ -267,6 +290,7 @@ export async function getReviews(input: {
       returned_count: sliced.length,
       next_cursor: has_more ? encCursor(offset + limit) : null,
       has_more,
+      sort: sortKey as ReviewSort,
     },
     trace_id,
   );

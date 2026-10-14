@@ -6,10 +6,17 @@ import { IcClose } from "../icons.tsx";
 export function BottomSheet({
   title,
   onClose,
+  className,
+  lockScroll,
   children,
 }: {
   title: string;
   onClose: () => void;
+  // 스코프 선택지 — 배송 시트처럼 본문 스크롤+고정 CTA가 필요한 시트만
+  // className으로 scoped override를 받는다. lockScroll은 배경 스크롤을
+  // 잠그고 언마운트 시 기존 값으로 복원한다(다른 시트는 기본 미적용) [PMQA-068].
+  className?: string;
+  lockScroll?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -18,10 +25,19 @@ export function BottomSheet({
     return () => removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    if (!lockScroll) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [lockScroll]);
+
   return (
     <div className="sheet-overlay" onClick={onClose}>
       <div
-        className="sheet"
+        className={"sheet" + (className ? " " + className : "")}
         role="dialog"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}

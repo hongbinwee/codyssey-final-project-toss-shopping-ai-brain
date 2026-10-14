@@ -33,25 +33,24 @@ test("t1 complete: cart quantity update -> remove -> empty state", async ({
 
   // 삭제 -> Empty
   await page.getByRole("button", { name: "삭제" }).click();
-  await expect(page.getByText("장바구니가 비어 있어요")).toBeVisible();
+  await expect(page.getByText("장바구니가 비었어요")).toBeVisible();
 });
 
-test("compare card: tool-derived products, evidence, limitations", async ({
+// [076] 비교 카드는 Brain Tool 결과 — Brain 미배포이므로 AI 진입이 차단되고
+// 패널·compare-card·/api/agent 요청이 모두 없어야 한다 [F22].
+// 과거 stub 카드 검증은 이관하지 않는다.
+test("compare card: AI disabled — no panel or tool traffic", async ({
   page,
 }) => {
   await login(page);
-  await page.getByRole("button", { name: "AI", exact: true }).click();
-  await page.getByPlaceholder("조건이나 요청을 입력하세요").fill("개발용 모니터 비교해줘");
-  await page.getByRole("button", { name: "보내기" }).click();
-
-  // 서버가 Tool 결과로 조립한 비교 카드 (모델 텍스트가 아님)
-  const card = page.locator(".compare-card");
-  await expect(card).toBeVisible({ timeout: 15000 });
-  await expect(card.locator(".compare-row")).toHaveCount(3);
-  // stub은 첫 상품(p-a)의 리뷰만 조회 -> 나머지는 근거 부족 한계가 표시돼야 한다
-  await expect(card.getByText("리뷰 근거가 부족한 상품이 있어요")).toBeVisible();
-
-  // 카드에서 W02 원문으로 이동
-  await card.getByRole("button", { name: "상품 보기" }).first().click();
-  await expect(page.getByRole("heading", { name: "옵션" })).toBeVisible();
+  const agentReqs: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/agent/")) agentReqs.push(r.url());
+  });
+  await expect(
+    page.locator("button.nav-item", { hasText: "AI" }),
+  ).toBeDisabled();
+  await expect(page.locator(".agent-panel")).toHaveCount(0);
+  await expect(page.locator(".compare-card")).toHaveCount(0);
+  expect(agentReqs).toHaveLength(0);
 });

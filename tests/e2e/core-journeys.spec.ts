@@ -25,8 +25,8 @@ test("soldout option is disabled on product detail", async ({ page }) => {
   await page.getByText("코드뷰 모니터 A").first().click();
   // v-a-27(27인치)은 stock 0 — BottomSheet 안에서 비활성 + 품절 표시
   await page.locator(".option-open").click();
-  const sheet = page.getByRole("dialog", { name: "옵션 선택" });
-  const soldout = sheet.locator("button.sort-item", { hasText: "품절" });
+  const sheet = page.getByRole("dialog", { name: "옵션 한번에 보기" });
+  const soldout = sheet.locator("button.opt-item", { hasText: "품절" });
   await expect(soldout).toBeVisible();
   await expect(soldout).toBeDisabled();
   await expect(soldout).toContainText("27인치");
@@ -61,7 +61,8 @@ test("주문 상세 AI 문의 CTA는 '준비 중' 비활성 — CS 진입 차단
   // 같은 상품명의 다른 주문과 섞이지 않도록 정확한 data-order-id로 진입한다.
   await page.locator('.order-card[data-order-id="ord-b-none"] .order-item-body').click();
   // CS Brain 미구축 — 클릭 가능한 문의 CTA를 약속하지 않고 비활성으로 둔다 [MJ053-2].
-  const cta = page.locator(".bottom-bar").getByRole("button", { name: "AI 주문 문의 · 준비 중" });
+  // 하단 고정바의 중복 AI CTA는 제거됐고 카드 내 비활성 버튼만 남는다 [PMQA-075 F14].
+  const cta = page.locator(".order-card").getByRole("button", { name: "AI 주문 문의 · 준비 중" });
   await expect(cta).toBeVisible();
   await expect(cta).toBeDisabled();
   // DOM click + 실제 키보드 입력을 각각 시도 — disabled 버튼은 이벤트를 발생시키지

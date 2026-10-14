@@ -9,6 +9,39 @@ async function login(page: Page) {
   await expect(page.getByPlaceholder("상품 검색")).toBeVisible();
 }
 
+// e2e-c의 서버 측 카트는 앞선 스펙(checkout-c의 CART_SELECTED 보존 행 등)의
+// 잔여가 남을 수 있다 — 본 스펙의 금액 전제(149,000+3,000=152,000)는 빈
+// 카트에서만 성립한다. checkout-c.spec.ts의 clearCartApi 패턴을 재사용해
+// 단독 재실행도 항상 같은 전제에서 시작한다 [Luna fixture order 검토].
+async function clearCartApi(page: Page) {
+  for (;;) {
+    const r = await page.context().request.get("/api/cart");
+    const j = await r.json();
+    const it = j.data?.items?.[0];
+    if (!it) return;
+    const d = await page.context().request.delete(
+      "/api/cart/items/" + it.cart_item_id,
+      {
+        data: {
+          expected_cart_version: j.data.version,
+          idempotency_key: crypto.randomUUID(),
+        },
+      },
+    );
+    if (!(await d.json()).ok) throw new Error("clearCartApi delete failed");
+  }
+}
+
+async function loginClean(page: Page) {
+  await login(page);
+  await clearCartApi(page);
+  // 이전 테스트의 미확정 intent 흔적이 남지 않게 이 사용자의 pending도 비운다.
+  await page.evaluate(() => {
+    for (const k of Object.keys(localStorage))
+      if (k.startsWith("pending-writes-v1:")) localStorage.removeItem(k);
+  });
+}
+
 // 첫 테스트가 결제로 확정한 주문 id — 목록/CS 검증을 같은 주문으로 한정한다.
 // 이름이 같은 다른 주문(06a 등 이전 실행 잔여)과 섞이지 않게 하기 위함이다.
 let createdOrderId = "";
@@ -26,7 +59,7 @@ async function preparingOrderId(page: Page) {
 test("checkout: cart -> quote -> mock pay -> order detail PREPARING", async ({
   page,
 }) => {
-  await login(page);
+  await loginClean(page);
 
   // 모니터 B 24인치 149,000원 + 배송비 3,000 = 152,000
   await page.getByPlaceholder("상품 검색").fill("모니터");
@@ -78,7 +111,7 @@ test("주문 상세 AI 문의 CTA는 '준비 중' 비활성 — 클릭·/api/age
   page.on("request", (r) => {
     if (r.url().includes("/api/agent/turn")) agentCalls.push(r.url());
   });
-  await login(page);
+  await loginClean(page);
   await page.getByRole("button", { name: "내 쇼핑" }).click();
   // 이전 테스트가 만든 같은 id의 주문을 연다 — 같은 상품명의 다른 주문과 섞이지 않는다.
   const oid = createdOrderId || (await preparingOrderId(page));
@@ -86,8 +119,8 @@ test("주문 상세 AI 문의 CTA는 '준비 중' 비활성 — 클릭·/api/age
   await expect(page.getByRole("heading", { name: "주문 상세 내역" })).toBeVisible();
 
   // CS Brain 미구축 — 주문 화면의 문의 진입은 비활성 상태로만 노출한다 [MJ053-2].
-  // 카드의 ghost 버튼과 동명이므로 하단 primary CTA로 한정한다.
-  const cta = page.locator(".bottom-bar").getByRole("button", { name: "AI 주문 문의 · 준비 중" });
+  // 하단 고정바의 중복 AI CTA는 제거됐고 카드 내 비활성 버튼만 남는다 [PMQA-075 F14].
+  const cta = page.locator(".order-card").getByRole("button", { name: "AI 주문 문의 · 준비 중" });
   await expect(cta).toBeVisible();
   await expect(cta).toBeDisabled();
   // DOM click + 실제 키보드 입력을 각각 시도한다 — disabled 버튼은 포커스·활성화가

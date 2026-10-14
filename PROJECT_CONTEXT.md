@@ -1,10 +1,31 @@
 # 프로젝트 컨텍스트 — 목표·방향·로드맵
 
-## 현재 프로젝트 방향 (2026-10-07 확정) — 최상위 Source of Truth
+## 최신 결정 (2026-10-14 · Commerce checkpoint 기준) — 최상위 우선
 
-> 이 절이 다른 오래된 문서와 충돌하면 이 절을 따른다. 아래 '주제 선정 배경'은 2026-10-03의 역사 기록이다.
+> 이 블록이 아래의 2026-10-07 절을 포함한 모든 오래된 문서보다 우선한다.
 
-**최상위 목표:** 현실적인 Commerce 환경에서 동작하는 Shopping Brain / CS Brain을 구현·검증한다. 토스쇼핑 복제 자체가 목적은 아니다. Brain이 실제 서비스 수준의 쇼핑 환경 위에서 상품 탐색·조건별 추천·리뷰 비교·옵션 선택·장바구니 조작·주문 조회·배송 설명·취소 지원을 수행해야 하므로, **충실한 Commerce Environment를 먼저 구축하고 그 위에 Brain을 결합한다.**
+### 현재 체크포인트 상태 (2026-10-14)
+
+> 이 상태 블록은 아래 로드맵의 과거 `04-C/04-E 완료`·`06 진행` 표기와 예전 검증 이력보다 우선한다.
+
+- 현재 작업은 `checkpoint/commerce-20261014` 브랜치의 WIP 통합 체크포인트다. Commerce 구매자 UI와 API는 구현 변경이 누적됐지만 전체 통합 검증과 사용자 Visual 승인은 끝나지 않았다.
+- 최신 고정 Suite `shots/isolated-suite/run-4a9d070d-80ef-44c9-84d3-00fad1cd0a74/` 결과: E2E 73개 중 52 PASS, 5 FAIL, 16 미실행. Integration은 E2E 실패로 시작하지 않아 **NOT_RUN**이며 전체 Suite PASS가 아니다.
+- Preview는 이전에 `READY` 응답을 냈으나 현재 서버는 꺼져 있다. Preview DB와 실패한 Suite DB는 보존 중이며 scratch 생성 상한 2/2를 사용했다. 새 scratch 생성·재시드·migration 재실행은 허용하지 않는다.
+- 이전 PMQA-079 인증 판정은 새 파일 기반 자격의 양쪽 DB 연결 및 wrong/missing-password 거부를 확인한 범위다. **기존 암호 전용 거부 검증은 NOT_RUN**이다.
+- 과거에 명시적으로 승인된 04-C/04-E/05/06-A/06-B 화면은 당시 승인 상태를 유지한다. 이후 Product Card·구매 화면 변경분은 영향을 받는 최신 화면만 재확인이 필요하며, 이는 기존 승인을 일괄 취소한다는 뜻이 아니다. 06-C 최종 확인은 보류 중이고 전체 구매 여정 Visual QA는 아직 승인되지 않았다.
+
+- **1단계 — Toss Shopping 구매자 UX/UI·핵심 쇼핑 기능의 충실한 재현이 최우선.** `reference/toss-shopping/` 실제 캡처를 최우선 Reference로 IA·콘텐츠 밀도·컴포넌트·Interaction을 유사하게 재현한 Commerce Environment를 먼저 완성한다.
+- **2단계 — 그 위에 Shopping Brain / CS Brain을 결합한다.** Brain 자체가 목적이 아니라, 실제 Commerce 환경 위에서 동작하는 Brain의 검증이 목적이다.
+- **현재 위치**: 06 진행 중. 09 Commerce Environment Freeze는 유지 중인 로드맵 목표이며 아직 완료되지 않았다. 10~13(Brain Architecture → 배포·실사용자)은 이후 단계다.
+- 일반 핵심 쇼핑 기능은 Reference 충실 재현을 위해 **구현이 기본**이다 — 단순화·생략은 명시 승인이 필요하다.
+- 허위 혜택·배송 약속 금지 — 근거 없는 적립·최저가·도착 예정·판매량·조회수 등을 만들지 않는다.
+- 실DB·실API·브라우저·e2e·Integration·commit·Push 등 실제 실행은 건별 별도 승인이 필요하다. **보존 문서의 일반적인 push 허용 문구는 이후 특정 승인('commit/Push 금지')을 해제하지 않는다.**
+
+## 현재 프로젝트 방향 (2026-10-07 확정) — (일부 Superseded: 최상단 '최신 결정' 블록이 우선)
+
+> 이 절이 다른 오래된 문서와 충돌하면 이 절을 따른다. (Superseded — 2026-10-13 '최신 결정' 블록이 이 절을 포함한 모든 문서보다 우선한다) 아래 '주제 선정 배경'은 2026-10-03의 역사 기록이다.
+
+**최상위 목표:** 현실적인 Commerce 환경에서 동작하는 Shopping Brain / CS Brain을 구현·검증한다. 토스쇼핑 복제 자체가 목적은 아니다(단, 1단계에서 구매자 UX/UI의 충실한 재현은 최우선이다 — 최상단 '최신 결정'). Brain이 실제 서비스 수준의 쇼핑 환경 위에서 상품 탐색·조건별 추천·리뷰 비교·옵션 선택·장바구니 조작·주문 조회·배송 설명·취소 지원을 수행해야 하므로, **충실한 Commerce Environment를 먼저 구축하고 그 위에 Brain을 결합한다.**
 
 ### 방향 변경 배경
 
@@ -72,8 +93,15 @@
                                        🟡 진행 중 — 06-A ✅ 완료 (PMQA-047-D 커밋 ca35a43 → PM 단건 Push·원격 일치 확인 → PMQA-047-E PM 최종 확정)
 (커밋 ca35a43, PMQA-06A-034/035 + CAPTURE-037 + 040 보정 + PMQA-047 B1/B2/B3/D/E) — **사용자 06A 최종 Visual QA 승인(PMQA-041) 유지**
                                        PM 독립 판정 06A 로컬 기술 QA PASS → PM Push 검증 후 06A 전체 완료 확정. 이전 "36/1/32 FAIL"은 PMQA-047로 Superseded된 이력
-                                       · 06-B 주문목록/주문상세/배송 — 구현 완료·기술 scoped PASS(readonly 22/22)·커밋 5755f27+97aa7ce PM Push·원격 일치. **사용자 Visual 승인 유지(PM 확정)** · 06-C 취소단계/환불 착수 금지
-                                       · PMQA-054~057 QA·테스트 안전 인프라 — 사용자 조건부 승인·정확 33파일(코드 29+문서 4) explicit staged·PM staged diff 검수 후 별도 commit 지시 대기. readonly 22 실DB PASS·unit 399는 **커밋 전 시점 증거** — 커밋 후 재검증은 별도 승인·NOT_RUN. 전체 mutation pipeline READY 아님
+                                       · 06-B 주문목록/주문상세/배송 — 구현 완료·기술 scoped PASS(readonly 22/22)·커밋 5755f27+97aa7ce PM Push·원격 일치. **사용자 Visual 승인 유지(PM 확정)**
+                                       · 06-C 취소 단계/환불 — 코드 구현 + Luna correction#2 반영 완료(PMQA-060): DB-free unit 회귀 454/454·tsc·build exit 0. 실DB write·브라우저·Visual·표준 e2e·Integration·commit/Push 미실행 — PM/Luna 한정 판정: 소스+DB-free 근거 한정 PASS·actual UI/DB/Visual 미완료(이전 '06-C 착수 금지'는 승인 전 상태 이력)
+                                        → PMQA-062 Mock 브라우저 검증 run-f5233cb1 **12/12 PASS**(네트워크 위반 0 · PMQA-061 readonly와 별도 검증) · PM 최종 분리 Visual 판정(run-d4210889) **FAIL — MJ062-VIS1 MAJOR**(Ref087/088/089 전용 fullpage 위계↔가변 시트)·**MN062-VIS1 MINOR**(상품 가격·수량 미표기) · Luna 별도 Visual MINOR · userVisual **PENDING**·Environment NOT_READY — UI 보정은 최신 승인 범위 밖이라 사용자 판단 대기(PM next-scope.md) · actual 취소/환불·standard69·integration NOT_RUN 유지
+                                        → PMQA-063 취소 3화면 Visual Correction(사용자 승인 범위): CancelSheet를 `.cancel-overlay`/`.cancel-sheet` 전용 fullpage flex column으로 재작성(`.cancel-top` 표시줄·`.cancel-body`·`.cancel-cta` 단일 CTA — Backend·핸들러·상태머신·서버 정책 0, styles `.cancel-*` scoped 블록) + itemRows '단가 · 수량' 복원 + done '취소요청' 배지 · Mock 재검증 run-d827de0d **12/12 PASS**(네트워크 실패 17 = CDN 차단 11 + 주입 6, 위반·실서버 forward·PG 0) · check run-7737564b·build exec-9def9·unit run-26cb36bc **460/460** · 증거 baseline 1177/1177 SHA 동일 · 비교본 shots/pmqa063-compare/run-9e10ec79… · **PM 최종 한정 QA PASS(코드·Mock·구조 Visual PM/Luna 모두 PASS — MJ062-VIS1·MN062-VIS1 해소·open BLOCKER/MAJOR 0, 062 판정은 Superseded 이력)** · **userVisual PENDING**(사용자 최종 Visual 판단 대기) · MINOR 2건(MN063-1 LOST 하단 안내·MN063-2 미세 보정)은 08 이관 · actual Backend 취소/환불·standard69·integration·최신 readonly selector 회귀 NOT_RUN 유지 · 미커밋(commit/Push 금지 — PM 지시 대기)
+                                        → **PMQA-065 A0 — 감사 P1 카피 정정 2건(2026-10-13, 구현·문서·DB-free 검증 완료 · PM 한정 PASS 확정 — 증거 1311/Backend18 불변)**: F21 특가 탭 허위 긴급 표현 폐기 — 자정 카운트다운·'오늘만 이 가격'·'실제 할인 상품만 모았어요' 제거 → '데모 특가' 표기로 실제 판매/기간 할인 암시 차단(Shopping.tsx) · F26 취소 안내 오인 문구 정정 — '접수되면 …환불 처리가 진행돼요' → '요청 접수는 취소·환불 완료가 아니에요. 취소 처리가 완료되면 환불 상태를 확인할 수 있어요'(+견적 유효 시각, CancelSheet.tsx · 서버 transition 자동화 추가 없음) · check run-5d1a9668 · build run-685b4150 · unit run-83f68c01 **460/460** exit 0(직전 run-d28ae0b3는 알려진 sandbox IPC hang으로 NOT_COMPLETE 원본 보존) · COMMERCE_UI_SPEC L41·§7-4 실구현 정합 정정 · 기존 승인 상태 유지(06C userVisual PENDING 그대로) · 미커밋(commit/Push 금지)
+                                        · PMQA-054~057 QA·테스트 안전 인프라 — 커밋 75f2eef + PM Push·원격 검증 완료 · post-75 readonly22 PASS(PMQA-059 run-b7b6fe59, 22/22·drift 0) · **060 변경 반영 후 재검증 완료 — PMQA-061(run-61d8a457) 기존 readonly22 22/22 PASS**(두 DB 13테이블 동일·보호77/독립36·기존 증거1044→1064 신규는 readonly 산출20만·고정 source16 SHA 불변·Luna 독립 PASS — 06C Mock12인 PMQA-062와 별도 검증. 이전 '재검증 NOT_RUN'·'33파일 staged·commit 지시 대기' 기록은 Superseded). 전체 mutation pipeline READY 아님
+                                        → **PMQA-066 제품 화면군 구현 + 읽기 검토 회귀 2건 수정(2026-10-13, DB-free 검증·미커밋 · 현재 단계: 06C/Fidelity 보완 중 · 07 대기)**: F04 정보 계층·F05 nav solid 임계·F18/F19 '옵션 한번에 보기' 시트·F08 리뷰 클러스터·F07 전체 리뷰 화면('/p/:id/reviews')·F32 이미지 뷰어 + 복귀 보존 'detail-resume'(계정·상품 스코프·isStale 미소비·OPTION_UNAVAILABLE/QTY_REDUCED 안내 — 조용한 교체 금지)·더보기 'review-pager' 공용 실행기(동기 잠금·stale 무변경·실패 보존) · spec 제목/선택자만 신규 계약 정정(실행 NOT_RUN) · check run-1943bda3·build run-ff5de457·unit run-950807e0 **474/474**(신규 detail-resume 9·review-pager 5 포함) · 실브라우저·실DB·standard e2e·Integration·Visual NOT_RUN · 미커밋(commit/Push 금지 — PM 회수 대기)
+                                        → **PMQA-067 주문서 견적 출처 3종 + INVALID 실패 라우트 + 늦은 응답 가드(2026-10-13, DB-free 검증·미커밋 · PM 최종 판정: 정적+DB-free 한정 PASS)**: 견적 source는 CART_FULL(legacy 전체)/CART_SELECTED(선택 부분집합 Ref073)/DIRECT(바로구매 Ref04) 3종 — INVALID는 source가 아니라 frontend 파싱 실패 라우트 · POST /api/checkout/quote·v2 토큰 source 정합·v/source 없는 구형 카트 견적은 필수값 검증 후 CART_FULL 해석·DIRECT는 carts/cart_items SQL 0 · 상세 하단 바 [카트][담기 ghost][구매하기 primary]로 재구조·옵션 진입은 .optline 행 · checkout-guard 신규(OpCtx seq+scope+target·boundFor unbound 미발급·늦은 응답=상태/intent/이동 불변·intent 보존) · checkPending/retryPending 선검증 · Luna 정적 MAJOR 해소(cartWrites regex U+0008 오염 → 토큰 검출 + 자체 회귀 테스트) · check run-2ba4c45d·build run-25ef1609·unit run-ed0040a3 **517/517**(run-c8624892 hang = NOT_COMPLETE 보존) · **PM 최종 판정(2026-10-13): 코드/테스트 SHA·run 결과 PM 직접 대조 → PM·Luna 정적 및 DB-free 회귀 범위 PASS·열린 BLOCKER/MAJOR 0 · 기존 보호 1311파일 변경/누락 0 재확인 · code067 15파일 freeze** · 실DB·API·브라우저·standard e2e·Integration·Visual 전부 NOT_RUN(실제 통합 검증·전체 READY 판정 아님) · 06C 최종 userVisual PENDING · 미커밋(commit/Push 금지) · 사고 기록: shots/pmqa067-review/run-71a3fc81-62eb-4918-a0c1-b597f884082f/incident-browser-scope.md(원본 동결 — 미승인 headless Chromium 실행·PNG4 생성·API/DB접속0·덮어쓰기0은 NOT_PROVEN) · 이전 'PM/Luna 재검수 대기·PASS 단정 아님'은 판정 통보 이전 시점 이력으로 Superseded
+→ **PMQA-070 찜(Wishlist) 실구현(2026-10-13, 코드·migration 004 작성 완료 · DB-free unit 602/602 · 미커밋)**: GET/PUT /api/wishlist·찜 탭/하트/저장 시트·cart actor 소유화 — 실DB 적용·실API·브라우저 통합·Visual 미검증. 설계 docs/wishlist-design.md · 진행 IMPLEMENTATION_PROGRESS §C/070 · **PM 최종 판정: 정적+DB-free 한정 PASS**(shots/pmqa070-final/run-4d7b54ed-… — 열린 B/M 0·실DB/브라우저/Visual NOT_RUN 유지)
                                        · 미검증 유지: Integration NOT_RUN·실DB rollback 오류 주입·09용 non-portable infra — PM049 추가: Integration/verify/eval은 보존 commerce_test 실행 불가(seed upsert·비구분 clean·TEST_DB_URL 고정), 09 전 테스트 격리/보호 지문/rollback fault 검증 해소 필수
 07 Full Buyer Journey QA
 08 Frontend Final Visual Polish
