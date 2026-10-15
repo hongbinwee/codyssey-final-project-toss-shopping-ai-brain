@@ -31,6 +31,7 @@ import {
 } from "../../scripts/isolated-smoke.ts";
 
 const ADMIN = "postgres://commerce:secret@localhost:5432/postgres";
+const PG18_ADMIN = "postgres://commerce:secret@localhost:5433/postgres";
 const sha = (s: string | Buffer) =>
   createHash("sha256").update(s).digest("hex");
 
@@ -49,6 +50,8 @@ const GLOBAL_KEYS = [
   SMOKE_OPTIN_ENV,
   SMOKE_STRICT_ENV,
   SMOKE_ADMIN_ENV,
+  "SCRATCH_DB_TARGET",
+  "SCRATCH_PROTECTED_ADMIN_URL",
   ...SMOKE_BLOCKED_ENV_KEYS,
 ] as const;
 function setGlobal() {
@@ -70,10 +73,48 @@ function setGlobal() {
 }
 
 describe("planSmokeEnv — connect 전 게이트", () => {
-  test("정상 env는 adminUrl을 돌려준다", () => {
+  test("기본 env는 PG17 scratch와 protected snapshot 경로를 유지한다", () => {
     const p = planSmokeEnv(env());
     assert.equal(p.ok, true);
-    if (p.ok) assert.equal(p.adminUrl, ADMIN);
+    if (p.ok) assert.deepEqual(p, {
+      ok: true,
+      adminUrl: ADMIN,
+      protectedAdminUrl: ADMIN,
+      target: "pg17",
+    });
+  });
+
+  test("PG18 scratch는 5433, protected snapshots는 명시된 PG17 5432를 사용한다", () => {
+    const p = planSmokeEnv(env({
+      SCRATCH_DB_TARGET: "pg18",
+      SCRATCH_ADMIN_URL: PG18_ADMIN,
+      SCRATCH_PROTECTED_ADMIN_URL: ADMIN,
+    }));
+    assert.deepEqual(p, {
+      ok: true,
+      adminUrl: PG18_ADMIN,
+      protectedAdminUrl: ADMIN,
+      target: "pg18",
+    });
+  });
+
+  test("PG18 mode는 protected URL 누락·잘못된 포트·알 수 없는 target에서 fallback하지 않는다", () => {
+    const base = env({ SCRATCH_DB_TARGET: "pg18", SCRATCH_ADMIN_URL: PG18_ADMIN });
+    assert.equal(planSmokeEnv(base).ok, false);
+    assert.equal(planSmokeEnv(env({
+      SCRATCH_DB_TARGET: "pg18",
+      SCRATCH_ADMIN_URL: ADMIN,
+      SCRATCH_PROTECTED_ADMIN_URL: ADMIN,
+    })).ok, false);
+    assert.equal(planSmokeEnv(env({
+      SCRATCH_DB_TARGET: "pg22",
+      SCRATCH_ADMIN_URL: ADMIN,
+    })).ok, false);
+    assert.equal(planSmokeEnv(env({
+      SCRATCH_DB_TARGET: "pg18",
+      SCRATCH_ADMIN_URL: PG18_ADMIN,
+      SCRATCH_PROTECTED_ADMIN_URL: PG18_ADMIN,
+    })).ok, false);
   });
 
   test("flags·admin 형식·외부 주입 env는 거부 — reason에 credential 0", () => {

@@ -25,12 +25,12 @@ import type { DbSnap } from "../e2e/readonly-db.ts";
 const SCRATCH_DB = "scratch_0123456789abcdef";
 // contractFromScratch는 UUID runId + localhost postgres URL을 요구한다.
 const SCRATCH_RUN_ID = "11111111-2222-3333-4444-555555555555";
-const SCRATCH_URL =
-  "postgres://commerce:commerce@localhost:5432/" + SCRATCH_DB;
 const ENV_KEYS = [
   "SCRATCH_DB_TESTS",
   "ISOLATED_STRICT",
   "SCRATCH_ADMIN_URL",
+  "SCRATCH_DB_TARGET",
+  "SCRATCH_PROTECTED_ADMIN_URL",
   "DATABASE_URL",
   "TEST_DB_URL",
   "ISOLATED_DB_URL",
@@ -82,6 +82,9 @@ type Rec = {
   marker?: OwnerMarker;
   pwId?: string;
   pwDir?: string;
+  connectUrls?: string[];
+  scratchUrl?: string;
+  scratchTarget?: string;
 };
 
 // 실제 승인 파일을 읽기 전용으로 baseline을 만든다 — checkPins 주입은
@@ -108,6 +111,7 @@ function mockConnect(
   let calls = 0;
   return ((url: string) => {
     const db = new URL(url).pathname.slice(1);
+    (rec.connectUrls ??= []).push(url);
     rec.events.push("connect:" + db);
     calls++;
     const snap = db === "commerce_test" ? BASELINE.after : BASELINE.afterDev;
@@ -160,10 +164,12 @@ function makeDeps(rec: Rec, snapshots?: SourceShaMap[]): SuiteDeps {
       return broker;
     }) as unknown as NonNullable<SuiteDeps["reserveBrokerRun"]>,
     createOwnedScratchDb: (async (
-      _a: string,
-      d: { events?: (e: unknown) => Promise<void>; guard?: () => void },
+      adminUrl: string,
+      d: { target?: string; events?: (e: unknown) => Promise<void>; guard?: () => void },
     ) => {
       rec.events.push("scratch.create");
+      rec.scratchTarget = d.target;
+      rec.scratchUrl = adminUrl.replace(/\/postgres$/, "/" + SCRATCH_DB);
       await d.events?.({
         stage: "planned",
         dbName: SCRATCH_DB,
@@ -179,7 +185,7 @@ function makeDeps(rec: Rec, snapshots?: SourceShaMap[]): SuiteDeps {
       return {
         dbName: SCRATCH_DB,
         runId: SCRATCH_RUN_ID,
-        dbUrl: SCRATCH_URL,
+        dbUrl: rec.scratchUrl,
         createdIdentity: { oid: 99001, owner: 10 },
         cleanup: async () => {
           rec.events.push("scratch.cleanup");
@@ -250,6 +256,35 @@ function makeDeps(rec: Rec, snapshots?: SourceShaMap[]): SuiteDeps {
 }
 
 describe("PMQA-078 suite orchestration (mock)", () => {
+  test("PG18 mode keeps owned scratch on 5433 and protected snapshots on PG17 5432", async () => {
+    const previous = new Map(
+      ["SCRATCH_DB_TARGET", "SCRATCH_ADMIN_URL", "SCRATCH_PROTECTED_ADMIN_URL"]
+        .map((k) => [k, process.env[k]] as const),
+    );
+    process.env.SCRATCH_DB_TARGET = "pg18";
+    process.env.SCRATCH_ADMIN_URL = "postgres://commerce:commerce@localhost:5433/postgres";
+    process.env.SCRATCH_PROTECTED_ADMIN_URL =
+      "postgres://commerce:commerce@localhost:5432/postgres";
+    try {
+      const rec: Rec = { events: [], slots: [], spawns: [] };
+      const r = await runIsolatedSuite(makeDeps(rec));
+      assert.equal(r.ok, true, r.stage);
+      assert.equal(rec.scratchTarget, "pg18");
+      assert.equal(new URL(rec.scratchUrl!).port, "5433");
+      assert.ok(rec.envs?.every((e) => new URL(e.DATABASE_URL!).port === "5433"));
+      const protectedPorts = rec.connectUrls!
+        .filter((u) => ["commerce", "commerce_test"].includes(new URL(u).pathname.slice(1)))
+        .map((u) => new URL(u).port);
+      assert.ok(protectedPorts.length > 0);
+      assert.ok(protectedPorts.every((port) => port === "5432"));
+    } finally {
+      for (const [k, v] of previous) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
   test("prePG 사전조건·run-owner workdir·지문·정상 drop 순서", async () => {
     const rec: Rec = { events: [], slots: [], spawns: [] };
     const r = await runIsolatedSuite(makeDeps(rec));

@@ -51,7 +51,9 @@ const NAME_RE = /^scratch_[0-9a-f]{16}$/;
 // adminUrl은 명시 로컬 postgres admin 컨텍스트만 허용한다. 보호 DB에 붙는
 // admin 경로 자체를 차단한다(대상 CREATE 이름 보호와는 별개의 게이트).
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
-const ADMIN_PORT = "5432";
+export type ScratchTarget = "pg17" | "pg18";
+export const SCRATCH_PG18_SYSTEM_IDENTIFIER = "7696770435959939111";
+const ADMIN_PORT: Record<ScratchTarget, string> = { pg17: "5432", pg18: "5433" };
 const ADMIN_PATH = "/postgres";
 
 // 단계별 소유 이벤트 — runner가 evidence에 wx 기록한다 [PMQA-052].
@@ -73,6 +75,7 @@ export type DropPlan = { ok: true } | { ok: false; reason: string };
 export function planScratchConnect(opts: {
   optin: string | undefined;
   adminUrl: string;
+  target?: ScratchTarget;
 }): { ok: true } | { ok: false; reason: string } {
   if (opts.optin !== "1")
     return {
@@ -96,8 +99,14 @@ export function planScratchConnect(opts: {
     return { ok: false, reason: "adminUrl 프로토콜 불일치" };
   if (!LOCAL_HOSTS.has(u.hostname))
     return { ok: false, reason: "adminUrl 로컬 호스트 외 거부" };
-  if (u.port !== ADMIN_PORT)
-    return { ok: false, reason: "adminUrl 포트 불일치 — " + ADMIN_PORT + "만" };
+  const target = opts.target ?? "pg17";
+  if (target !== "pg17" && target !== "pg18")
+    return { ok: false, reason: "scratch target은 pg17 또는 pg18만 허용" };
+  if (u.port !== ADMIN_PORT[target])
+    return {
+      ok: false,
+      reason: "adminUrl 포트 불일치 — " + ADMIN_PORT[target] + "만",
+    };
   if (u.pathname !== ADMIN_PATH)
     return { ok: false, reason: "adminUrl 경로 불일치 — " + ADMIN_PATH + "만" };
   return { ok: true };
@@ -200,6 +209,20 @@ type SqlLike = {
 };
 type Connect = (url: string, o?: { max?: number }) => SqlLike;
 
+export async function assertScratchTargetCluster(
+  client: { unsafe: (q: string) => PromiseLike<unknown> },
+  target: ScratchTarget,
+): Promise<void> {
+  if (target === "pg17") return;
+  if (target !== "pg18") throw new Error("scratch target이 허용되지 않음");
+  const rows = await client.unsafe(
+    "SELECT system_identifier::text AS system_identifier FROM pg_control_system()",
+  ) as { system_identifier?: unknown }[];
+  const [row] = rows;
+  if (row?.system_identifier !== SCRATCH_PG18_SYSTEM_IDENTIFIER)
+    throw new Error("PostgreSQL cluster identity 불일치 — PG18 target 거부");
+}
+
 // adminUrl의 마지막 path 세그먼트만 치환해 대상 DB URL을 만든다.
 // ?database= 등 query는 전부 버린다 — planScratchConnect가 query 있는
 // adminUrl 자체를 거부하므로 여기서 버려지는 query는 없어야 정상이다.
@@ -225,6 +248,7 @@ export async function createOwnedScratchDb(
   adminUrl: string,
   deps: {
     connect?: Connect;
+    target?: ScratchTarget;
     // 단계 이벤트 — runner evidence 기록용. await 된다: 기록 실패가 곧
     // 해당 단계의 실패다(planned 실패 → CREATE 미실행).
     events?: (e: ScratchEvent) => void | Promise<void>;
@@ -236,12 +260,14 @@ export async function createOwnedScratchDb(
     guard?: () => void;
   } = {},
 ): Promise<ScratchDb> {
+  const target = deps.target ?? "pg17";
   const connect: Connect =
     deps.connect ?? ((url, o) => postgres(url, o) as unknown as SqlLike);
   // connect 전 게이트 — opt-in 없이는 어떤 DB 접속도 열지 않는다.
   const gate = planScratchConnect({
     optin: process.env[SCRATCH_OPTIN_ENV],
     adminUrl,
+    target,
   });
   if (!gate.ok) throw new Error("scratch create 거부: " + gate.reason);
   // runId는 이 함수 안에서만 만든다 — 호출자·env 주입 경로가 없다.
@@ -266,11 +292,13 @@ export async function createOwnedScratchDb(
     const g = planScratchConnect({
       optin: process.env[SCRATCH_OPTIN_ENV],
       adminUrl,
+      target,
     });
     if (!g.ok) throw new Error("scratch write 거부: " + g.reason);
   };
   const admin = connect(adminUrl, { max: 1 });
   try {
+    await assertScratchTargetCluster(admin, target);
     const dbs = (await admin.unsafe("SELECT datname FROM pg_database")).map(
       (r) => r.datname as string,
     );
@@ -296,6 +324,7 @@ export async function createOwnedScratchDb(
     const dbUrl = scratchDbUrl(adminUrl, plan.dbName);
     const owned = connect(dbUrl, { max: 1 });
     try {
+      await assertScratchTargetCluster(owned, target);
       // ?database= 등으로 다른 DB에 붙었는지 실제 접속명을 확인한다.
       const [cd] = await owned.unsafe("SELECT current_database() AS db");
       if (cd.db !== plan.dbName)
@@ -328,10 +357,12 @@ export async function createOwnedScratchDb(
         const g = planScratchConnect({
           optin: process.env[SCRATCH_OPTIN_ENV],
           adminUrl,
+          target,
         });
         if (!g.ok) throw new Error("scratch cleanup 거부: " + g.reason);
         const adm = connect(adminUrl, { max: 1 });
         try {
+          await assertScratchTargetCluster(adm, target);
           const identity = await readIdentity(adm, dbName);
           let currentDb: string | null = null;
           let marker: string | null = null;
@@ -345,6 +376,7 @@ export async function createOwnedScratchDb(
           ) {
             const c = connect(dbUrl, { max: 1 });
             try {
+              await assertScratchTargetCluster(c, target);
               const [cd2] = await c.unsafe(
                 "SELECT current_database() AS db",
               );

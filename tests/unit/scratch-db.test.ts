@@ -13,6 +13,8 @@ import {
 } from "../helpers/scratch-db.ts";
 
 const ADMIN = "postgres://commerce:commerce@localhost:5432/postgres";
+const PG18_ADMIN = "postgres://commerce:commerce@localhost:5433/postgres";
+const PG18_SYSTEM_ID = "7696770435959939111";
 
 type Row = Record<string, unknown>;
 type Handler = (q: string, p: unknown[] | undefined, url: string) => Row[];
@@ -49,16 +51,28 @@ function okHandler(
     marker?: string | null | "captured";
     markerList?: { run_id: string }[];
     failOn?: string;
+    systemIdentifier?: string;
+    systemIdentifierAtCleanup?: string;
   } = {},
 ) {
   let capturedRunId: string | null = null;
   let identityCalls = 0;
   let currentDbCalls = 0;
+  let systemIdentifierCalls = 0;
   const firstIdentity =
     opts.identity === undefined ? { oid: 70001, owner: 10 } : opts.identity;
   return (q: string, p: unknown[] | undefined, url: string): Row[] => {
     if (opts.failOn && q.startsWith(opts.failOn))
       throw new Error("주입 실패: " + opts.failOn);
+    if (q.startsWith("SELECT system_identifier::text")) {
+      systemIdentifierCalls++;
+      return [{
+        system_identifier:
+          systemIdentifierCalls < 3
+            ? (opts.systemIdentifier ?? PG18_SYSTEM_ID)
+            : (opts.systemIdentifierAtCleanup ?? opts.systemIdentifier ?? PG18_SYSTEM_ID),
+      }];
+    }
     if (q.startsWith("SELECT datname FROM pg_database"))
       return (opts.existing ?? ["commerce", "commerce_test", "postgres"]).map(
         (d) => ({ datname: d }),
@@ -111,6 +125,21 @@ describe("scratch-db 결정 함수", () => {
     assert.equal(planScratchConnect({ optin: undefined, adminUrl: ADMIN }).ok, false);
     assert.equal(planScratchConnect({ optin: "0", adminUrl: ADMIN }).ok, false);
     assert.equal(planScratchConnect({ optin: "1", adminUrl: ADMIN }).ok, true);
+  });
+
+  test("planScratchConnect: PG18은 5433만 허용하고 기본 PG17은 5432를 유지", () => {
+    assert.equal(
+      planScratchConnect({ optin: "1", adminUrl: PG18_ADMIN, target: "pg18" }).ok,
+      true,
+    );
+    assert.equal(
+      planScratchConnect({ optin: "1", adminUrl: ADMIN, target: "pg18" }).ok,
+      false,
+    );
+    assert.equal(
+      planScratchConnect({ optin: "1", adminUrl: PG18_ADMIN }).ok,
+      false,
+    );
   });
 
   test("planScratchConnect: adminUrl에 query(?database= 등)가 있으면 거부 — reason에 credential 원문 없음", () => {
@@ -240,6 +269,38 @@ describe("createOwnedScratchDb — DB-free mock 검증", () => {
   test("생성 후 접속 DB 불일치 — 거부, DROP 0회", async () => {
     const { connect, queries } = fake(okHandler({ currentDb: "commerce_test" }));
     await assert.rejects(() => createOwnedScratchDb(ADMIN, { connect }), /불일치/);
+    assert.equal(dropQueries(queries).length, 0);
+  });
+
+  test("PG18 cluster identity가 다르면 DB 목록 조회와 CREATE 전에 중단", async () => {
+    const { connect, queries } = fake(okHandler({ systemIdentifier: "wrong" }));
+    await assert.rejects(
+      () => createOwnedScratchDb(PG18_ADMIN, { target: "pg18", connect }),
+      /cluster identity/,
+    );
+    assert.equal(queries.some((x) => x.q.startsWith("SELECT datname FROM pg_database")), false);
+    assert.equal(queries.some((x) => x.q.startsWith("CREATE DATABASE")), false);
+  });
+
+  test("PG18 경로는 5433에서만 생성·접속하고 같은 cluster를 cleanup에서도 확인", async () => {
+    const { connect, queries } = fake(okHandler());
+    const s = await createOwnedScratchDb(PG18_ADMIN, { target: "pg18", connect });
+    assert.equal(new URL(s.dbUrl).port, "5433");
+    await s.cleanup();
+    assert.equal(queries.every((x) => new URL(x.url).port === "5433"), true);
+    assert.equal(
+      queries.filter((x) => x.q.startsWith("SELECT system_identifier::text")).length,
+      4,
+    );
+    assert.equal(dropQueries(queries).length, 1);
+  });
+
+  test("PG18 cleanup cluster identity drift는 DROP 전에 거부", async () => {
+    const { connect, queries } = fake(okHandler({
+      systemIdentifierAtCleanup: "other-cluster",
+    }));
+    const s = await createOwnedScratchDb(PG18_ADMIN, { target: "pg18", connect });
+    await assert.rejects(() => s.cleanup(), /cluster identity/);
     assert.equal(dropQueries(queries).length, 0);
   });
 

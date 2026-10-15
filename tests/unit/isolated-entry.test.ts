@@ -131,7 +131,23 @@ describe("isolated runtime entry guards", () => {
     assert.deepEqual(planSuiteEnv(env, []), {
       ok: true,
       adminUrl: env.SCRATCH_ADMIN_URL,
+      protectedAdminUrl: env.SCRATCH_ADMIN_URL,
+      target: "pg17",
     });
+    const pg18 = {
+      ...env,
+      SCRATCH_DB_TARGET: "pg18",
+      SCRATCH_ADMIN_URL: "postgres://commerce:commerce@localhost:5433/postgres",
+      SCRATCH_PROTECTED_ADMIN_URL: env.SCRATCH_ADMIN_URL,
+    };
+    assert.deepEqual(planSuiteEnv(pg18, []), {
+      ok: true,
+      adminUrl: pg18.SCRATCH_ADMIN_URL,
+      protectedAdminUrl: pg18.SCRATCH_PROTECTED_ADMIN_URL,
+      target: "pg18",
+    });
+    assert.equal(planSuiteEnv({ ...pg18, SCRATCH_PROTECTED_ADMIN_URL: undefined }, []).ok, false);
+    assert.equal(planSuiteEnv({ ...pg18, SCRATCH_ADMIN_URL: env.SCRATCH_ADMIN_URL }, []).ok, false);
     assert.equal(planSuiteEnv(env, ["--grep=wishlist"]).ok, false);
     assert.equal(planSuiteEnv({ ...env, DATABASE_URL: ENV.DATABASE_URL }, []).ok, false);
     assert.equal(

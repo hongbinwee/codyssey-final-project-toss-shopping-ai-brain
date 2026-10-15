@@ -109,7 +109,12 @@ export const SUITE_EVIDENCE_DIRS = Object.freeze(["shots", "reference"]);
 export function planSuiteEnv(
   env: Record<string, string | undefined>,
   argv: readonly string[],
-): { ok: true; adminUrl: string } | { ok: false; reason: string } {
+): {
+  ok: true;
+  adminUrl: string;
+  protectedAdminUrl: string;
+  target: "pg17" | "pg18";
+} | { ok: false; reason: string } {
   if (argv.length) return { ok: false, reason: "launcher 인자 허용 외" };
   const smoke = planSmokeEnv(env);
   if (!smoke.ok) return { ok: false, reason: smoke.reasons.join(" | ") };
@@ -121,7 +126,12 @@ export function planSuiteEnv(
     return { ok: false, reason: "상속 Playwright output/runner env 차단" };
   if (env.NODE_OPTIONS || env.NODE_PATH)
     return { ok: false, reason: "Node preload/module env 차단" };
-  return { ok: true, adminUrl: smoke.adminUrl };
+  return {
+    ok: true,
+    adminUrl: smoke.adminUrl,
+    protectedAdminUrl: smoke.protectedAdminUrl,
+    target: smoke.target,
+  };
 }
 
 type ChildResult = {
@@ -502,9 +512,14 @@ export async function runIsolatedSuite(deps: SuiteDeps = {}): Promise<{
   if (!initial.ok) return { ok: false, stage: "preflight", scratchState: "not-created" };
 
   const adminUrl = initial.adminUrl;
+  const protectedAdminUrl = initial.protectedAdminUrl;
+  const target = initial.target;
   const recheck = () => {
     const source = planSuiteEnv(process.env, []);
-    if (!source.ok || source.adminUrl !== adminUrl)
+    if (
+      !source.ok || source.adminUrl !== adminUrl ||
+      source.protectedAdminUrl !== protectedAdminUrl || source.target !== target
+    )
       throw new Error("isolated suite env 변경 — 중단");
   };
 
@@ -528,7 +543,7 @@ export async function runIsolatedSuite(deps: SuiteDeps = {}): Promise<{
   // 보호 DB readonly 지문 — smoke의 roSnap과 같은 검증(identity·writer·
   // unreadable)과 같은 readonly 연결 계약을 재사용한다.
   const roSnap = async (db: string, wantOid: number): Promise<DbSnap> => {
-    const url = parseRoDbUrl(scratchDbUrl(adminUrl, db), db);
+    const url = parseRoDbUrl(scratchDbUrl(protectedAdminUrl, db), db);
     const c = connect(url, { max: 1 });
     try {
       return await c.begin(async (q) => {
@@ -706,6 +721,7 @@ export async function runIsolatedSuite(deps: SuiteDeps = {}): Promise<{
     stage = "scratch-create";
     recheck();
     handle = await createOwnedScratchDb(adminUrl, {
+      target,
       guard: recheck,
       events: async (event: ScratchEvent) => {
         // exec 계획의 동적 부분 — 실제 scratch dbName·outputDir 바인딩은
@@ -948,6 +964,11 @@ if (invoked) {
       process.env.SCRATCH_ADMIN_URL,
       ".secrets/pg-password",
     );
+    if (process.env.SCRATCH_PROTECTED_ADMIN_URL)
+      process.env.SCRATCH_PROTECTED_ADMIN_URL = databaseUrlWithPasswordFile(
+        process.env.SCRATCH_PROTECTED_ADMIN_URL,
+        ".secrets/pg-password",
+      );
   } catch {
     console.error("isolated suite stopped: local database credential unavailable");
     process.exitCode = 2;

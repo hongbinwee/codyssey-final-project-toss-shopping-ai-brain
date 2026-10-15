@@ -30,6 +30,7 @@ import { databaseUrlForName, databaseUrlWithPasswordFile } from "../src/db-url.t
 import { planSmokeEnv } from "./isolated-smoke.ts";
 import {
   createOwnedScratchDb,
+  assertScratchTargetCluster,
   type ScratchDb,
 } from "../tests/helpers/scratch-db.ts";
 import {
@@ -226,6 +227,19 @@ const SLOTS = [
 ] as const;
 const PREVIEW_PORT = 3105;
 const SCRATCH_CAP = 2;
+const PG18_RESTORED_SCRATCH_DBS = new Set([
+  "scratch_307187680bdc451e",
+  "scratch_cd2043674f254b82",
+]);
+
+export function countScratchCapacity(
+  names: readonly string[],
+  target: "pg17" | "pg18",
+): number {
+  return names.filter(
+    (name) => target !== "pg18" || !PG18_RESTORED_SCRATCH_DBS.has(name),
+  ).length;
+}
 
 // 점유 중이면 true — 포트를 비우지 않고 즉시 중단한다(no kill/reuse).
 function portOccupied(port: number): Promise<boolean> {
@@ -297,6 +311,9 @@ type PreviewIdentity = Pick<IsolatedContract, "dbName" | "dbOid" | "dbOwner" | "
 export function resumePreviewContract(record: {
   dbName: string; runId: string; oid: number; owner: number;
 }, adminUrl: string): IsolatedContract {
+  if (new URL(adminUrl).port === "5433" && PG18_RESTORED_SCRATCH_DBS.has(record.dbName)) {
+    throw new Error("restored PG18 scratch database cannot be resumed as an owned Preview");
+  }
   return contractFromScratch({
     dbName: record.dbName, runId: record.runId,
     dbUrl: databaseUrlForName(record.dbName, adminUrl),
@@ -345,6 +362,11 @@ async function main(): Promise<void> {
       process.env.SCRATCH_ADMIN_URL,
       ".secrets/pg-password",
     );
+    if (process.env.SCRATCH_PROTECTED_ADMIN_URL)
+      process.env.SCRATCH_PROTECTED_ADMIN_URL = databaseUrlWithPasswordFile(
+        process.env.SCRATCH_PROTECTED_ADMIN_URL,
+        ".secrets/pg-password",
+      );
   } catch {
     console.error("preview stopped: local database credential unavailable");
     process.exitCode = 2;
@@ -378,10 +400,14 @@ async function main(): Promise<void> {
     const admin = postgres(adminUrl, { max: 1, connect_timeout: 10 });
     let preExisting = 0;
     try {
-      const [row] = await admin.unsafe<{ c: number }[]>(
-        "SELECT count(*)::int AS c FROM pg_database WHERE datname LIKE 'scratch_%'",
+      await assertScratchTargetCluster(admin, gate.target);
+      const rows = await admin.unsafe<{ datname: string }[]>(
+        "SELECT datname FROM pg_database WHERE datname LIKE 'scratch_%'",
       );
-      preExisting = row.c;
+      preExisting = countScratchCapacity(
+        rows.map((row) => row.datname),
+        gate.target,
+      );
     } finally {
       await admin.end();
     }
@@ -394,6 +420,8 @@ async function main(): Promise<void> {
       portOccupied: false,
       scratchPreExisting: preExisting,
       scratchCap: SCRATCH_CAP,
+      restoredScratchExcluded:
+        gate.target === "pg18" ? [...PG18_RESTORED_SCRATCH_DBS] : [],
       resumeRun: resumeRun ?? null,
       note: "owned scratch + phase6 fixture + owned-txn demo upsert(25/55/80) + child server on held server.log stream; no auto-drop",
     });
@@ -408,6 +436,7 @@ async function main(): Promise<void> {
       contract = resumePreviewContract(record, adminUrl);
       const pool = postgres(contract.dbUrl, { max: 1, connect_timeout: 10 });
       try {
+        await assertScratchTargetCluster(pool, gate.target);
         const owned = await verifyOwnedTransaction(
           pool as unknown as Parameters<typeof verifyOwnedTransaction>[0], contract,
         );
@@ -427,6 +456,7 @@ async function main(): Promise<void> {
     let scratch: ScratchDb;
     try {
       scratch = await createOwnedScratchDb(adminUrl, {
+        target: gate.target,
         events: (e) => {
           stages.push(e);
         },

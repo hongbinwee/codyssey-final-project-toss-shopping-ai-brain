@@ -28,6 +28,7 @@ import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 import {
   createOwnedScratchDb,
+  type ScratchTarget,
   scratchDbUrl,
   type ScratchDb,
   type ScratchEvent,
@@ -100,6 +101,8 @@ export const SMOKE_EVIDENCE_SLOTS: readonly string[] = Object.freeze(
 export const SMOKE_OPTIN_ENV = "SCRATCH_DB_TESTS";
 export const SMOKE_STRICT_ENV = "ISOLATED_STRICT";
 export const SMOKE_ADMIN_ENV = "SCRATCH_ADMIN_URL";
+export const SMOKE_TARGET_ENV = "SCRATCH_DB_TARGET";
+export const SMOKE_PROTECTED_ADMIN_ENV = "SCRATCH_PROTECTED_ADMIN_URL";
 // 외부 주입을 허용하면 혼동이 생기는 키 — 존재 자체가 거부다.
 export const SMOKE_BLOCKED_ENV_KEYS = [
   "DATABASE_URL",
@@ -116,7 +119,12 @@ export const SMOKE_BLOCKED_ENV_KEYS = [
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
 
 export type EnvPlan =
-  | { ok: true; adminUrl: string }
+  | {
+      ok: true;
+      adminUrl: string;
+      protectedAdminUrl: string;
+      target: ScratchTarget;
+    }
   | { ok: false; reasons: string[] };
 
 /** raw source env 판정 — connect 전 단계. URL 원문은 reason에 넣지 않는다. */
@@ -128,36 +136,62 @@ export function planSmokeEnv(
     reasons.push("opt-in 없음: " + SMOKE_OPTIN_ENV + "=1 필요");
   if (env[SMOKE_STRICT_ENV] !== "1")
     reasons.push("strict 없음: " + SMOKE_STRICT_ENV + "=1 필요");
+  const targetValue = env[SMOKE_TARGET_ENV];
+  const target = targetValue === undefined ? "pg17" : targetValue;
+  if (target !== "pg17" && target !== "pg18")
+    reasons.push(SMOKE_TARGET_ENV + "은 pg17 또는 pg18만 허용");
   for (const k of SMOKE_BLOCKED_ENV_KEYS)
     if (env[k] !== undefined)
       reasons.push("외부 주입 env 거부(혼동 방지): " + k);
-  const raw = env[SMOKE_ADMIN_ENV];
-  if (raw === undefined || raw === "") {
-    reasons.push(SMOKE_ADMIN_ENV + " 없음 — 명시 로컬 admin URL 필요");
-  } else if (raw.includes("?") || raw.includes("#")) {
-    reasons.push(SMOKE_ADMIN_ENV + " query/fragment 금지");
-  } else {
+  const validateAdminUrl = (
+    raw: string | undefined,
+    key: string,
+    expectedPort: string,
+  ) => {
+    if (raw === undefined || raw === "") {
+      reasons.push(key + " 없음 — 명시 로컬 admin URL 필요");
+      return;
+    }
+    if (raw.includes("?") || raw.includes("#")) {
+      reasons.push(key + " query/fragment 금지");
+      return;
+    }
     let u: URL;
     try {
       u = new URL(raw);
     } catch {
-      reasons.push(SMOKE_ADMIN_ENV + " 파싱 불가");
+      reasons.push(key + " 파싱 불가");
       u = null as unknown as URL;
     }
     if (u) {
       if (u.protocol !== "postgres:" && u.protocol !== "postgresql:")
-        reasons.push(SMOKE_ADMIN_ENV + " 프로토콜 불일치");
+        reasons.push(key + " 프로토콜 불일치");
       if (!LOCAL_HOSTS.has(u.hostname))
-        reasons.push(SMOKE_ADMIN_ENV + " 로컬 호스트 외 거부");
-      if (u.port !== "5432")
-        reasons.push(SMOKE_ADMIN_ENV + " 포트 5432만 허용");
+        reasons.push(key + " 로컬 호스트 외 거부");
+      if (u.port !== expectedPort)
+        reasons.push(key + " 포트 " + expectedPort + "만 허용");
       if (u.pathname !== "/postgres")
-        reasons.push(SMOKE_ADMIN_ENV + " 경로 /postgres만 허용");
+        reasons.push(key + " 경로 /postgres만 허용");
     }
+  };
+  const raw = env[SMOKE_ADMIN_ENV];
+  validateAdminUrl(raw, SMOKE_ADMIN_ENV, target === "pg18" ? "5433" : "5432");
+  const protectedRaw = env[SMOKE_PROTECTED_ADMIN_ENV];
+  let protectedAdminUrl = raw ?? "";
+  if (target === "pg18") {
+    protectedAdminUrl = protectedRaw ?? "";
+    validateAdminUrl(protectedRaw, SMOKE_PROTECTED_ADMIN_ENV, "5432");
+  } else if (protectedRaw !== undefined) {
+    reasons.push(SMOKE_PROTECTED_ADMIN_ENV + "은 pg18 target에서만 허용");
   }
   return reasons.length
     ? { ok: false, reasons }
-    : { ok: true, adminUrl: raw as string };
+    : {
+        ok: true,
+        adminUrl: raw as string,
+        protectedAdminUrl,
+        target: target as ScratchTarget,
+      };
 }
 
 // ── 승인 pin — 이 실행의 검증 기준(로컬 전용, 09 이식성 해소 아님) ──
@@ -555,6 +589,8 @@ export async function runSmoke(deps: SmokeDeps = {}): Promise<SmokeResult> {
     return result;
   }
   const adminUrl = plan.adminUrl;
+  const protectedAdminUrl = plan.protectedAdminUrl;
+  const target = plan.target;
   // raw source(deps.env)와 실제 global(process.env) 둘 다 매 민감 단계 직전에
   // 재검증한다 — 초기 gate 이후 flag 소실·adminUrl 변화·외부 계약 주입이 있으면
   // STOP이고 후속 write/cleanup은 0이다. source/global env 자체는 절대 쓰지
@@ -562,12 +598,20 @@ export async function runSmoke(deps: SmokeDeps = {}): Promise<SmokeResult> {
   const recheck = () => {
     const a = planSmokeEnv(envSource);
     if (!a.ok) throw safe("env source 소실: " + a.reasons.join(" | "));
-    if (a.adminUrl !== adminUrl)
-      throw safe("env source adminUrl 변경 — 초기 승인값과 상이");
+    if (
+      a.adminUrl !== adminUrl ||
+      a.protectedAdminUrl !== protectedAdminUrl ||
+      a.target !== target
+    )
+      throw safe("env source scratch target/URL 변경 — 초기 승인값과 상이");
     const g = planSmokeEnv(process.env);
     if (!g.ok) throw safe("global env 소실: " + g.reasons.join(" | "));
-    if (g.adminUrl !== adminUrl)
-      throw safe("global adminUrl 변경 — 초기 승인값과 상이");
+    if (
+      g.adminUrl !== adminUrl ||
+      g.protectedAdminUrl !== protectedAdminUrl ||
+      g.target !== target
+    )
+      throw safe("global scratch target/URL 변경 — 초기 승인값과 상이");
   };
   // prepare/fault 경로의 owned connect — 모든 unsafe(root+txn)가 동기
   // recheck로 감싸진다. txn 내부 await 경계(verify/advisory lock/migration/
@@ -668,7 +712,7 @@ export async function runSmoke(deps: SmokeDeps = {}): Promise<SmokeResult> {
   // 보호 DB RO 스냅 — startup GUC + txn 첫 query SET TRANSACTION,
   // name/OID·writer·unreadable을 매번 검증한다.
   const roSnap = async (db: string, wantOid: number): Promise<DbSnap> => {
-    const url = parseRoDbUrl(scratchDbUrl(adminUrl, db), db);
+    const url = parseRoDbUrl(scratchDbUrl(protectedAdminUrl, db), db);
     const c = connect(url, { max: 1 });
     try {
       return await c.begin(async (q) => {
@@ -784,6 +828,7 @@ export async function runSmoke(deps: SmokeDeps = {}): Promise<SmokeResult> {
       connect: connect as unknown as NonNullable<
         NonNullable<Parameters<typeof createOwnedScratchDb>[1]>["connect"]
       >,
+      target,
       events,
       // runner의 source+global 불변 재검증 — helper가 각 mutation SQL 직전에
       // await 없이 동기 호출한다(더 제한하는 hook이며 허용 권한은 없다) [052-C].

@@ -16,6 +16,7 @@ import {
   finalizePreviewRun,
   previewHealthMatches,
   resumePreviewContract,
+  countScratchCapacity,
 } from "../../scripts/preview-isolated.ts";
 
 test("Preview resume는 기존 생성 identity를 유지하고 보호 DB와 불완전 계약을 거부한다", () => {
@@ -29,6 +30,19 @@ test("Preview resume는 기존 생성 identity를 유지하고 보호 DB와 불�
   assert.equal(contract.dbOid, record.oid);
   assert.equal(contract.dbOwner, record.owner);
   assert.equal(contract.runId, record.runId);
+  const pg18 = resumePreviewContract(
+    record,
+    "postgres://commerce:unit-only@127.0.0.1:5433/postgres",
+  );
+  assert.equal(new URL(pg18.dbUrl).port, "5433");
+  for (const dbName of ["scratch_307187680bdc451e", "scratch_cd2043674f254b82"]) {
+    const restored = { ...record, dbName };
+    assert.throws(
+      () => resumePreviewContract(restored, "postgres://commerce:unit-only@127.0.0.1:5433/postgres"),
+      /restored PG18 scratch database/,
+    );
+    assert.equal(resumePreviewContract(restored, admin).dbName, dbName);
+  }
   assert.throws(() => resumePreviewContract({ ...record, dbName: "commerce_test" }, admin));
   assert.throws(() => resumePreviewContract({ ...record, oid: 0 }, admin));
   assert.throws(() => resumePreviewContract({ ...record, runId: "" }, admin));
@@ -47,6 +61,20 @@ test("Preview readiness는 HTTP 200만이 아니라 승인 DB identity 전체 �
       ...valid, isolated: { ...expected, [key]: "mismatch" },
     })),
   ]) assert.equal(previewHealthMatches(invalid, expected), false);
+});
+
+test("scratch cap은 PG18 복원 scratch 두 개만 제외하고 PG17은 기존 카운트를 유지한다", () => {
+  const restored = [
+    "scratch_307187680bdc451e",
+    "scratch_cd2043674f254b82",
+  ];
+  assert.equal(countScratchCapacity(restored, "pg18"), 0);
+  assert.equal(countScratchCapacity([...restored, "scratch_new"], "pg18"), 1);
+  assert.equal(countScratchCapacity([...restored, "scratch_new"], "pg17"), 3);
+  assert.equal(
+    countScratchCapacity([...restored, "scratch_new", "scratch_other"], "pg18"),
+    2,
+  );
 });
 
 // 최소 fake 자식 — EventEmitter에 stdout/stderr/pid/exitCode·exit()/close()
