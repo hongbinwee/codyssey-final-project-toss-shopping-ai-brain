@@ -59,7 +59,8 @@ test("persistent source/confirmation is actor-scoped, one-use and can be deleted
  assert.equal((await c.confirmPreference("user-a",proposal)).value,"value");
  await assert.rejects(()=>c.confirmPreference("user-a",proposal),/used/);
  assert.equal((await m.list("user-a"))[0].sourceMessageId,mid);
- await assert.rejects(()=>m.put((await m.list("user-a"))[0]),/confirmed proposal/);
+ const savedPreference=(await m.list("user-a"))[0];
+ await assert.rejects(()=>m.put(savedPreference),/confirmed proposal/);
  assert.equal(await m.delete("user-a","price_priority"),true);
  assert.deepEqual(await m.list("user-a"),[]);
 });
