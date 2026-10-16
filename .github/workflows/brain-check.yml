@@ -8,6 +8,7 @@ on:
       - "tests/brain-sandbox/**"
       - "tests/unit/brain-*.test.ts"
       - "db/brain/**"
+      - "experiments/langgraph/**"
       - ".github/workflows/brain-check.yml"
   workflow_dispatch:
 
@@ -30,3 +31,9 @@ jobs:
         run: npm run check
       - name: Unit-test Brain contracts without any database or credentials
         run: node --experimental-strip-types --test tests/brain-sandbox/*.test.mjs tests/unit/brain-context.test.ts tests/unit/brain-personalization.test.ts
+      - name: Install pinned LangGraph for isolated experiment without lock changes
+        run: npm install --no-save --package-lock=false --ignore-scripts @langchain/langgraph@1.5.0
+      - name: Smoke test real StateGraph with in-memory checkpointer (no database)
+        run: node --experimental-strip-types --test experiments/langgraph/smoke.test.mjs
+      - name: Verify production manifests remain unchanged
+        run: test -z "$(git status --porcelain -- package.json package-lock.json)"
