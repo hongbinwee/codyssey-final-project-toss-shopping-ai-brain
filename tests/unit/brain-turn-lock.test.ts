@@ -36,10 +36,11 @@ test("turn lock unlocks using identical 64-bit key and finally releases session"
  await lease.assertHeld();
  await lease.release();
  await lease.release();
- assert.equal(calls.length,3);
+ assert.equal(calls.length,4);
  assert.match(calls[0].query,/pg_try_advisory_lock/);
  assert.match(calls[1].query,/FROM pg_locks/);
- assert.match(calls[2].query,/pg_advisory_unlock/);
- assert.equal(calls[0].key,calls[2].key);
+ assert.match(calls[2].query,/FROM pg_locks/);
+ assert.match(calls[3].query,/pg_advisory_unlock/);
+ assert.equal(calls[0].key,calls[3].key);
  assert.equal(released,1);
 });
