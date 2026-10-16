@@ -44,7 +44,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     SESSION_SECRET:randomBytes(32).toString("hex"),TEST_USER_CODES:"qa-code-a=http-a,qa-code-b=http-b"
   });
   const {start}=await import("../../src/server.ts");
-  const {sql}=await import("../../src/db.ts");
+  const commerceDbModule=await import("../../src/db.ts"); // read live export after start()
   try{
     server=await start(0,{build:async()=>{}}); // npm run build separately verifies UI bundle
     console.log("BRAIN_HTTP_STEP 04 commerce-api-and-brain-started");
@@ -109,7 +109,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     console.log("BRAIN_HTTP_STEP 08 no-commerce-writes");
   } finally {
     if(server){server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
-    await sql.end();
+    if(commerceDbModule.sql)await commerceDbModule.sql.end();
   }
  } finally {
   if(mock){mock.closeAllConnections?.();await new Promise(resolve=>mock.close(resolve));}
