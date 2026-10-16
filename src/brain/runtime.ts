@@ -7,6 +7,7 @@ import {brainDatabaseFromPostgres} from "./pg-adapter.ts";
 import {PersistentConversations,PersistentPreferences} from "./persistent-store.ts";
 import {createBrainApi} from "./api.ts";
 import {createPersistentResearchGraph} from "./graph.ts";
+import {postgresTurnLock} from "./turn-lock.ts";
 import {parseBrainDatabaseUrl} from "./database-isolation.ts";
 import {commerceRetriever} from "./commerce-retriever.ts";
 import {providerIntentModel} from "./provider-intent.ts";
@@ -34,7 +35,7 @@ export async function createBrainRuntime(options:{
      conversations,memory:preferences,
      retriever:options.rag?verifiedRagRetriever(options.rag,getProduct):commerceRetriever(searchProducts),
      intent:createIntentPort(providerIntentModel(options.provider,45000))
-   },saver);
+   },saver,postgresTurnLock(db));
    return {
      handle:createBrainApi({conversations,preferences,graph}),
      close:async()=>{await Promise.allSettled([db.end(),saver!.end()]);}
