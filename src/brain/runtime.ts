@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
-import {searchProducts} from "../catalog.ts";
+import {searchProducts,getProduct} from "../catalog.ts";
+import {verifiedRagRetriever,type RagConnection} from "./rag-adapter.ts";
 import type {Provider} from "../llm.ts";
 import {brainDatabaseFromPostgres} from "./pg-adapter.ts";
 import {PersistentConversations,PersistentPreferences} from "./persistent-store.ts";
@@ -12,7 +13,7 @@ import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
 
 export async function createBrainRuntime(options:{
- brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider
+ brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider;rag?:RagConnection
 }) {
  const {url,dbName}=parseBrainDatabaseUrl(options.brainDatabaseUrl,options.commerceDatabaseUrl);
  if(!options.provider.name.startsWith("live:"))
@@ -30,7 +31,8 @@ export async function createBrainRuntime(options:{
    const store=brainDatabaseFromPostgres(db);
    const conversations=new PersistentConversations(store),preferences=new PersistentPreferences(store);
    const graph=createPersistentResearchGraph({
-     conversations,memory:preferences,retriever:commerceRetriever(searchProducts),
+     conversations,memory:preferences,
+     retriever:options.rag?verifiedRagRetriever(options.rag,getProduct):commerceRetriever(searchProducts),
      intent:createIntentPort(providerIntentModel(options.provider,45000))
    },saver);
    return {
