@@ -1,0 +1,32 @@
+name: Brain core static QA
+
+on:
+  pull_request:
+    paths:
+      - "src/brain/**"
+      - "src/agent.ts"
+      - "tests/brain-sandbox/**"
+      - "tests/unit/brain-*.test.ts"
+      - "db/brain/**"
+      - ".github/workflows/brain-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-brain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install exact existing dependencies
+        run: npm ci
+      - name: Compile full TypeScript project
+        run: npm run check
+      - name: Unit-test Brain contracts without any database or credentials
+        run: node --experimental-strip-types --test tests/brain-sandbox/*.test.mjs tests/unit/brain-context.test.ts tests/unit/brain-personalization.test.ts
