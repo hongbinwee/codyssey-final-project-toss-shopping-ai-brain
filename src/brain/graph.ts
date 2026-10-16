@@ -8,6 +8,7 @@ import type {ShoppingPlan} from "./shopping-plan.ts";
 import {buildGroundedExplanation} from "./grounded-response.ts";
 import type {BrainGraphPort} from "./api.ts";
 import type {TurnLock,TurnLease} from "./turn-lock.ts";
+import type {FencedTurns} from "./fenced-turns.ts";
 
 export type GraphRequest=BrainTrace & {clientActionId:string;userMessage:string};
 const State=Annotation.Root({
@@ -24,10 +25,11 @@ const State=Annotation.Root({
  * in a previous checkpoint.
  */
 export function createPersistentResearchGraph(
- deps:ResearchDeps,checkpointer:PostgresSaver,turnLock?:TurnLock
+ deps:ResearchDeps,checkpointer:PostgresSaver,turnLock?:TurnLock,fencing?:FencedTurns
 ):BrainGraphPort {
  // Context is per invocation, not per compiled graph: different conversations
  // may run concurrently without sharing lock ownership.
+ if(fencing&&!turnLock)throw Error("fenced Brain requires distributed turn lock");
  const activeLease=new AsyncLocalStorage<TurnLease>();
  const verify=async()=>{await activeLease.getStore()?.assertHeld();};
  const compiled=new StateGraph(State)
@@ -85,22 +87,35 @@ export function createPersistentResearchGraph(
        if(turnLock&&!lease)throw new Error("conversation busy");
        const execute=async()=>{
 
-       const config={configurable:{thread_id:input.conversationId}};
-       const prior=await compiled.getState(config);
-       await verify();
-       const request=prior.values?.request as GraphRequest|undefined;
-       const completed=prior.values?.researchResult as ResearchResult|undefined;
-       if(request?.clientActionId===input.clientActionId){
-         if(request.actorUserId!==input.actorUserId||request.userMessage!==input.userMessage)
-           throw new Error("duplicate action conflict");
-         if(completed?.conversationId===input.conversationId&&
-           completed.clientActionId===input.clientActionId&&completed.explanation)return completed;
+       const claim=fencing?await fencing.claim(input):null;
+       if(claim?.kind==="replay")return claim.result;
+       // Fenced executions use a new physical checkpoint thread for EACH
+       // generation. A stale Worker can only write its private thread; the
+       // canonical pointer is guarded by a PostgreSQL row-locked CAS.
+       const threadId=claim?.kind==="run"?claim.attemptId:input.conversationId;
+       const config={configurable:{thread_id:threadId}};
+       if(!fencing){
+         const prior=await compiled.getState(config);
+         await verify();
+         const request=prior.values?.request as GraphRequest|undefined;
+         const completed=prior.values?.researchResult as ResearchResult|undefined;
+         if(request?.clientActionId===input.clientActionId){
+           if(request.actorUserId!==input.actorUserId||request.userMessage!==input.userMessage)
+             throw new Error("duplicate action conflict");
+           if(completed?.conversationId===input.conversationId&&
+             completed.clientActionId===input.clientActionId&&completed.explanation)return completed;
+         }
        }
-       const run=await compiled.invoke({request:input},config);
+       const seed=claim?.kind==="run"&&claim.prior?{researchResult:claim.prior}:{};
+       const run=await compiled.invoke({request:input,...seed},config);
        await verify();
        if(!run.researchResult||run.researchResult.conversationId!==input.conversationId||
            run.researchResult.clientActionId!==input.clientActionId||!run.researchResult.explanation)
          throw new Error("invalid graph result");
+       if(fencing&&claim?.kind==="run"){
+         await fencing.publish(input,claim,run.researchResult);
+         await verify();
+       }
        return run.researchResult;
        };
        try{
@@ -116,7 +131,17 @@ export function createPersistentResearchGraph(
    },
    async getOwnedState(actorUserId:string,conversationId:string){
      await deps.conversations.assertOwned(actorUserId,conversationId);
-     const snapshot=await compiled.getState({configurable:{thread_id:conversationId}});
+     const canonical=fencing?await fencing.latest(conversationId):null;
+     if(fencing&&!canonical)return {values:{}};
+     const snapshot=await compiled.getState({configurable:{
+       thread_id:canonical?.threadId??conversationId
+     }});
+     if(canonical){
+       const actual=snapshot.values?.researchResult as ResearchResult|undefined;
+       if(!actual?.explanation||actual.messageId!==canonical.result.messageId||
+          actual.clientActionId!==canonical.result.clientActionId)
+         throw Error("published Brain checkpoint not valid");
+     }
      return {values:snapshot.values as unknown as Record<string,unknown>};
    }
  };
