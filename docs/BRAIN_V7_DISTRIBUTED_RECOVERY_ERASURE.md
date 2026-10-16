@@ -18,11 +18,29 @@ A single-process `Map` cannot coordinate parallel Node processes or serverless i
 
 ## Distributed/operational limits — do not claim everything is solved
 
-- A dropped database session releases advisory locks. If a worker continues after losing the reserved session, it may compete with a newer worker; **fencing tokens, lease/health checks or transactional ownership verification** may be required for a formal exactly-once guarantee. A controlled killed-worker test remains pending.
+- A dropped database session releases advisory locks. The v7.1 lock-ownership check detects the common case of a lost owner at graph node boundaries, but **it cannot make a check and LangGraph checkpoint write atomic**. A session may disappear after verification. **Transactional fencing / a versioned ownership claim remains required before formal exactly-once semantics or Commerce write tools**. Killing the lock PostgreSQL backend is now exercised in CI; it is NOT a full process-kill or network-partition/failover test.
 - All participating workers must point to the **same AI PostgreSQL cluster** with the same versioned hash-key algorithm. Different database clusters cannot share an advisory lock.
 - The key is 64-bit and collision-resistant with SHA-256 truncation, not mathematically collision-free. A hash collision only causes unnecessary contention across different conversation IDs, not data crossover.
 - Checkpoint writes and external model calls are still not a distributed atomic transaction. A provider may have processed a request before the app lost the response. Completed-action replay is safe for read-only Brain, but **DO NOT** reuse this pattern to automatically execute Cart/Checkout writes.
 - 429 and timeout classification is not automatic retry/backoff: it intentionally leaves user-controlled retry so repeated model calls don't expand spend without consent. Production Retry-After, bounded exponential backoff and circuit breaking require subsequent work.
+
+## Follow-up session-loss QA (2026-10-17 KST)
+
+**Code CI PASS**: [run #38936920334](https://github.com/hongbinwee/codyssey_final-mission-main/actions/runs/38936920334), `feature/brain-core` commit `0c29c315`. Real disposable PostgreSQL tests **8/8 PASS**, including two newly gated lock-loss scenarios. Existing unit/typecheck/build/authenticated HTTP/Mock RAG/Chromium gates also passed. Historical Commerce tests remain separately non-gating; this does NOT prove production LLM/RAG behavior.
+
+### Defect demonstrated and minimal hardening
+1. `tests/brain-db/brain-lock-loss.test.mjs` kills the reserved advisory-lock backend with `pg_terminate_backend`. A different worker then acquires the same conversation lock: session locks alone do **not** fence a still-running Node worker.
+2. An initial attempt to query the terminated `postgres.js` reserved connection crashed in the driver with `TypeError: Cannot read properties of null (reading 'write')`. That failed CI run is a genuine observed test failure, not an operating guarantee.
+3. `src/brain/turn-lock.ts` now checks for the original backend PID's granted advisory lock using a **separate AI-only observer pool**. It never intentionally probes the dead reserved socket after detecting owner loss. `runtime.ts` uses distinct lock-reservation and observer/store pools to avoid pool exhaustion deadlock.
+4. `src/brain/graph.ts` verifies lease ownership after each graph node's work and after checkpoint operations. In the injected delayed-RAG test, the old worker rejects and the new worker's completed checkpoint remains authoritative. A live lost owner returns a generic safe error; it never becomes a successful answer in this test.
+5. `.github/workflows/brain-check.yml` now gates both existing `brain-pg.test.mjs` and new `brain-lock-loss.test.mjs`. The reproduction tests have bounded waits rather than hanging CI indefinitely.
+
+### Remaining explicit NO-GO
+- **Not exactly-once**: ownership verification and LangGraph PostgresSaver checkpoint writes are independent operations, leaving a time-of-check/time-of-use race; there is no DB-enforced fencing generation on every checkpoint commit.
+- Test currently terminates the *lock backend*, not a Node/OS process or full primary failover. True worker kill, network partition, partial checkpoint commit, action-outcome reconciliation and automated recovery are not comprehensively proven.
+- No unattended Cart/Checkout/Cancel writes through the Brain. An approved design must cover transactional action idempotency, fencing against stale checkpoint writers and actual rollback/restart behavior.
+- 429/504 error classification remains user-retry only; `Retry-After` policy, circuit breaker and real provider/network hard-timeout tests remain open.
+- Full privacy erasure remains **design only**; no full-delete endpoint or destructive production action was added.
 
 ## Privacy: deletion scope and proposed full-erasure lifecycle
 
