@@ -97,3 +97,14 @@ test("nonqualifying candidates receive no fabricated recommendation",()=>{
  assert.equal(explanation.items.length,0);
  assert.match(explanation.text,/참고 정보/);
 });
+
+test("synthetic review evidence cannot satisfy recommendation ranking",()=>{
+ const p=candidate("a",90000);
+ const evidence=["perf","eye","noise","fhd"].map(name=>({
+   id:name+"-a",productId:"p-a",variantId:null,
+   kind:name==="fhd"?"SPEC" as const:"REVIEW" as const,sourceKind:"SYNTHETIC" as const
+ }));
+ const ranking=rankProducts([p],evidence,oldPlan,[]);
+ assert.equal(ranking.ranked.length,0);
+ assert.ok(ranking.rejected.some(x=>x.reasons.some(r=>r.includes("invalid_or_cross_product_facet"))));
+});
