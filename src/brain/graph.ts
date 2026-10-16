@@ -6,6 +6,7 @@ import {prepareTurn,resolveTurnPlan,retrieveTurn} from "./read-flow.ts";
 import type {ShoppingPlan} from "./shopping-plan.ts";
 import {buildGroundedExplanation} from "./grounded-response.ts";
 import type {BrainGraphPort} from "./api.ts";
+import type {TurnLock} from "./turn-lock.ts";
 
 export type GraphRequest=BrainTrace & {clientActionId:string;userMessage:string};
 const State=Annotation.Root({
@@ -22,7 +23,7 @@ const State=Annotation.Root({
  * in a previous checkpoint.
  */
 export function createPersistentResearchGraph(
- deps:ResearchDeps,checkpointer:PostgresSaver
+ deps:ResearchDeps,checkpointer:PostgresSaver,turnLock?:TurnLock
 ):BrainGraphPort {
  const compiled=new StateGraph(State)
    .addNode("prepare",async state=>({
@@ -65,6 +66,11 @@ export function createPersistentResearchGraph(
        throw new Error("conversation busy");
      }
      const task=(async()=>{
+       // A reserved AI-DB session lock spans checkpoint read through final write.
+       // Existing isolated tests without turnLock remain single-process only.
+       const release=turnLock?await turnLock.tryAcquire(input.conversationId):null;
+       if(turnLock&&!release)throw new Error("conversation busy");
+       try{
        const config={configurable:{thread_id:input.conversationId}};
        const prior=await compiled.getState(config);
        const request=prior.values?.request as GraphRequest|undefined;
@@ -80,6 +86,7 @@ export function createPersistentResearchGraph(
            run.researchResult.clientActionId!==input.clientActionId||!run.researchResult.explanation)
          throw new Error("invalid graph result");
        return run.researchResult;
+       }finally{if(release)await release();}
      })();
      inFlight.set(input.conversationId,{
        actorUserId:input.actorUserId,clientActionId:input.clientActionId,
