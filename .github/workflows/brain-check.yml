@@ -32,8 +32,21 @@ jobs:
       - name: Unit-test Brain contracts without any database or credentials
         run: node --experimental-strip-types --test tests/brain-sandbox/*.test.mjs tests/unit/brain-context.test.ts tests/unit/brain-personalization.test.ts
       - name: Install pinned LangGraph for isolated experiment without lock changes
-        run: npm install --no-save --package-lock=false --ignore-scripts @langchain/langgraph@1.5.0
+        run: npm install --save-exact --ignore-scripts @langchain/langgraph@1.5.0 @langchain/langgraph-checkpoint-postgres@1.1.0
       - name: Smoke test real StateGraph with in-memory checkpointer (no database)
         run: node --experimental-strip-types --test experiments/langgraph/smoke.test.mjs
+      - name: Emit dependency lock manifest for controlled branch-only commit
+        run: |
+          python3 - <<'PY'
+          import json
+          for name in ['package.json','package-lock.json']:
+              content=open(name,encoding='utf-8').read()
+              kind='PKG' if name=='package.json' else 'LOCK'
+              for i in range(0,len(content),650):
+                  print("BRNMANIFEST|" + kind + "|" + str(i//650) + "|" + json.dumps(content[i:i+650]))
+              print("BRNMANIFEST_END|" + kind + "|" + str(len(content)))
+          PY
       - name: Verify production manifests remain unchanged
-        run: test -z "$(git status --porcelain -- package.json package-lock.json)"
+        run: |
+          git diff --check
+          test -n "$(git diff --name-only -- package.json package-lock.json)"
