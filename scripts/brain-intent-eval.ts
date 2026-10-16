@@ -13,9 +13,16 @@ type Case={
  expected:{query:string;maxTotalWon:number|null;requiredConditions:string[];currentPreferences:Record<string,string>};
 };
 type Mode="gold-replay"|"live";
-const path=fileURLToPath(new URL("../eval/brain/intent-v1.json",import.meta.url));
-const file=JSON.parse(readFileSync(path,"utf8")) as {version:string;cases:Case[]};
-if(file.version!=="brain-intent-eval-v1"||file.cases.length<10)throw new Error("invalid intent goldset");
+const datasetArg=process.argv.find(x=>x.startsWith("--dataset="));
+const dataset=datasetArg?.slice("--dataset=".length)??"v1";
+if(dataset!=="v1"&&dataset!=="v2")throw new Error("unsupported evaluation dataset version");
+const path=fileURLToPath(new URL("../eval/brain/intent-"+dataset+".json",import.meta.url));
+const file=JSON.parse(readFileSync(path,"utf8")) as {version:string;dataClass?:string;cases:(Case & {split?:string;annotationStatus?:string;dataClass?:string})[]};
+if(file.version!=="brain-intent-eval-"+dataset||file.cases.length<(dataset==="v2"?60:10))
+ throw new Error("invalid intent goldset");
+if(dataset==="v2"&&(file.dataClass!=="EVALUATION_ONLY"||
+ file.cases.some(c=>c.dataClass!=="EVALUATION_ONLY"||c.annotationStatus!=="author_review_required")))
+ throw new Error("evaluation dataset isolation or review status invalid");
 const mode:Mode=process.argv.includes("--live")?"live":"gold-replay";
 if(mode==="live"&&process.env.BRAIN_LIVE_EVAL_APPROVED!=="1")
  throw new Error("Live eval requires explicit BRAIN_LIVE_EVAL_APPROVED=1; never use in CI");
@@ -24,7 +31,7 @@ if(mode==="live"&&(!process.env.LLM_API_KEY||!process.env.LLM_MODEL))
 const ids=new Set(file.cases.map(c=>c.id));
 if(ids.size!==file.cases.length)throw new Error("duplicate evaluation case ID");
 type RecordResult={
- id:string;group:string;passed:boolean;fields:Record<string,boolean>;
+ id:string;group:string;split?:string;passed:boolean;fields:Record<string,boolean>;
  latencyMs:number;error?:string;model?:string
 };
 const results:RecordResult[]=[];
@@ -57,13 +64,20 @@ for(const c of file.cases){
    }
  }catch(e){error=e instanceof Error?e.message:"unknown evaluator error";fields={plan:false};}
  const elapsed=performance.now()-start;
- results.push({id:c.id,group:c.group,passed:Object.values(fields).every(Boolean),fields,latencyMs:elapsed,
+ results.push({id:c.id,group:c.group,split:c.split,passed:Object.values(fields).every(Boolean),fields,latencyMs:elapsed,
    ...(error?{error}:{}),...(mode==="live"?{model:process.env.LLM_MODEL}: {})});
 }
 const failures=results.filter(r=>!r.passed);
 const lat=summarizeLatency(results.map(r=>r.latencyMs));
+const splitMetrics=Object.fromEntries([...new Set(results.map(r=>r.split??"unassigned"))].map(split=>{
+ const group=results.filter(r=>(r.split??"unassigned")===split);
+ return [split,{cases:group.length,passed:group.filter(r=>r.passed).length,
+   exactPlanAccuracy:group.filter(r=>r.passed).length/group.length}];
+}));
 const summary={
  version:"brain-intent-eval-report-v1",mode,
+ provisionalHoldout:dataset==="v2",reviewStatus:dataset==="v2"?"AWAITING_INDEPENDENT_ANNOTATOR":"NOT_INDEPENDENTLY_ADJUDICATED",
+ splits:splitMetrics,
  dataset:file.version,model:mode==="live"?process.env.LLM_MODEL:null,
  cases:results.length,passed:results.length-failures.length,failed:failures.length,
  exactPlanAccuracy:(results.length-failures.length)/results.length,
