@@ -62,7 +62,8 @@ jobs:
       - name: Deterministic Shopping Brain intent goldset (not live model accuracy)
         run: |
           mkdir -p /tmp/brain-eval
-          BRAIN_EVAL_REPORT_PATH=/tmp/brain-eval/gold-replay.json node --experimental-strip-types scripts/brain-intent-eval.ts --gold-replay
+          BRAIN_EVAL_REPORT_PATH=/tmp/brain-eval/gold-replay-v1.json node --experimental-strip-types scripts/brain-intent-eval.ts --gold-replay --dataset=v1
+          BRAIN_EVAL_REPORT_PATH=/tmp/brain-eval/gold-replay-v2.json node --experimental-strip-types scripts/brain-intent-eval.ts --gold-replay --dataset=v2
       - name: Legacy Commerce unit audit (known fixture/env blockers, non-gating)
         continue-on-error: true
         run: |
