@@ -5,6 +5,7 @@ import {createIntentPort} from "../../src/brain/intent.ts";
 import {resolveShoppingPlan} from "../../src/brain/shopping-plan.ts";
 import {rankProducts} from "../../src/brain/personalization.ts";
 import {buildGroundedExplanation} from "../../src/brain/grounded-response.ts";
+import type {EvidenceRecord} from "../../src/brain/contracts.ts";
 
 const dataset=JSON.parse(readFileSync(new URL("../../eval/brain/intent-v1.json",import.meta.url),"utf8"));
 test("goldset: each hand-labeled extracted intent resolves to its expected Shopping Plan",async()=>{
@@ -28,9 +29,9 @@ function mockCandidate(id,verified=true){
    noise:{score:.6,evidenceIds:["p-"+id+"-noise"]}
   }};
 }
-const evidence=(id)=>["performance","eye_comfort","noise"].map(aspect=>({
+const evidence=(id:string):EvidenceRecord[]=>["performance","eye_comfort","noise"].map(aspect=>({
  id:"p-"+id+"-"+aspect,productId:"p-"+id,variantId:null,
- kind:"REVIEW",sourceKind:"REAL",sourceRef:"CI-only-fixture"
+ kind:"REVIEW" as const,sourceKind:"REAL" as const,sourceRef:"CI-only-fixture"
 }));
 const ctx={query:"monitor",revision:1,maxTotalWon:500000,requiredConditions:[],
  currentPreferences:{price_priority:"performance"}};
