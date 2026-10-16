@@ -225,8 +225,9 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
           return res.end("Not found");
         }
         try {
+          const bytes = await readFile(filePath);
           res.writeHead(200, { "content-type": MIME[extname(filePath)] ?? "application/octet-stream" });
-          return res.end(await readFile(filePath));
+          return res.end(bytes);
         } catch {
           res.writeHead(404);
           return res.end("Not found");
