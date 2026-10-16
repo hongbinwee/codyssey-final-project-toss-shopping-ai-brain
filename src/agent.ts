@@ -17,6 +17,17 @@ import { err, fail, type CompareCard, type ToolResult } from "./contracts.ts";
 import type { Provider, ChatMsg } from "./llm.ts";
 import type { RequestContext } from "./session.ts";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import {
+  adaptShoppingResult, demoToolAllowed, SHOPPING_DEMO_CONTRACT,
+} from "./shopping-adapter.ts";
+
+const liveDemo = () => process.env.AI_LIVE_DEMO === "1";
+function demoSystem(): string {
+  // Keep the supplied v0.6 bytes untouched; add the real tool mapping separately.
+  return readFileSync(new URL("../SHOPPING_BRAIN_SYSTEM_v0.6.txt", import.meta.url), "utf8")
+    + "\n\n" + SHOPPING_DEMO_CONTRACT;
+}
 
 type ToolRun = (input: Record<string, unknown>, ctx: RequestContext, key: string) => Promise<unknown>;
 
@@ -187,7 +198,7 @@ export const TOOL_REGISTRY: Record<string, ToolSpec> = {
 
 export const toolDefs = (brain: Brain) =>
   Object.entries(TOOL_REGISTRY)
-    .filter(([, s]) => s.brains.includes(brain))
+    .filter(([name, s]) => s.brains.includes(brain) && (!liveDemo() || demoToolAllowed(name, brain)))
     .map(([name, s]) => ({
     type: "function",
     function: { name, description: s.description, parameters: s.parameters },
@@ -211,6 +222,8 @@ export async function executeTool(
   brain: Brain = "shopping",
 ): Promise<ToolResult<unknown>> {
   const trace_id = crypto.randomUUID();
+  if (liveDemo() && !demoToolAllowed(name, brain))
+    return fail(err("TOOL_NOT_ALLOWED", "이 데모에서는 상품·리뷰 조회만 가능합니다."), trace_id);
   const spec = TOOL_REGISTRY[name];
   if (!spec || !spec.brains.includes(brain))
     return fail(err("TOOL_NOT_ALLOWED", "등록되지 않은 Tool"), trace_id);
@@ -220,11 +233,23 @@ export async function executeTool(
       : {};
   for (const k of Object.keys(input))
     if (!spec.allowed.includes(k))
-      return fail(err("VALIDATION", "허용되지 않은 입력 키: " + k), trace_id);
+      return fail(err("VALIDATION", liveDemo() ? "허용되지 않은 입력 키" : "허용되지 않은 입력 키: " + k), trace_id);
   for (const k of spec.required)
     if (input[k] === undefined)
       return fail(err("VALIDATION", "필수 입력 누락: " + k), trace_id);
-  return spec.run(input, ctx, writeKey(clientActionId, name, input)) as Promise<ToolResult<unknown>>;
+  if (!liveDemo())
+    return spec.run(input, ctx, writeKey(clientActionId, name, input)) as Promise<ToolResult<unknown>>;
+  try {
+    // A read-only demo never computes write keys or calls cart/CS services.
+    const result = await spec.run(input, ctx, "") as ToolResult<unknown>;
+    if (result.ok) return result;
+    return fail(err(
+      ["VALIDATION", "NOT_FOUND", "TIMEOUT"].includes(result.error.code) ? result.error.code : "TOOL_UNAVAILABLE",
+      "상품 정보를 조회하지 못했습니다.",
+    ), trace_id);
+  } catch {
+    return fail(err("TOOL_UNAVAILABLE", "상품 정보를 조회하지 못했습니다."), trace_id);
+  }
 }
 
 export interface AgentTurnRequest {
@@ -257,6 +282,8 @@ const histories = new Map<string, ChatMsg[]>();
 export function resetHistory(userId: string) {
   histories.delete(userId + ":shopping");
   histories.delete(userId + ":cs");
+  histories.delete(userId + ":shopping:live-demo");
+  histories.delete(userId + ":cs:live-demo");
 }
 
 const SHOPPING_SYSTEM = [
@@ -283,11 +310,42 @@ const CS_SYSTEM = [
 
 const MAX_CALLS = 8;
 const TIMEOUT_MS = 60_000;
+const LIVE_TIMEOUT_MS = 240_000;
 
-function evidenceFrom(calls: { resultJson?: string }[]): AgentTurnResult["evidence_refs"] {
+// Bound catalog reads; provider work is aborted and awaited directly below.
+async function withinDeadline<T>(work: () => Promise<T>, deadline: number): Promise<T> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error("DEMO_TIMEOUT");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(work),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("DEMO_TIMEOUT")), remaining);
+      }),
+    ]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+
+function evidenceFrom(calls: { resultJson?: string }[], demo = false): AgentTurnResult["evidence_refs"] {
   const seen = { products: new Set<string>(), variants: new Set<string>(), reviews: new Set<string>() };
   for (const c of calls) {
     if (!c.resultJson) continue;
+    if (demo) {
+      // Read only ID fields, never IDs embedded in untrusted review/description text.
+      try {
+        const d = JSON.parse(c.resultJson);
+        if (d.status !== "success") continue;
+        for (const p of d.products ?? []) {
+          if (typeof p.product_id === "string") seen.products.add(p.product_id);
+          for (const v of p.variants ?? [])
+            if (typeof v.variant_id === "string") seen.variants.add(v.variant_id);
+          for (const r of p.reviews ?? [])
+            if (typeof r.source_id === "string") seen.reviews.add(r.source_id);
+        }
+      } catch { /* No evidence from malformed data. */ }
+      continue;
+    }
     for (const m of c.resultJson.matchAll(/\b(p-[a-z0-9-]+)\b/g)) seen.products.add(m[1]);
     for (const m of c.resultJson.matchAll(/\b(v-[a-z0-9-]+)\b/g)) seen.variants.add(m[1]);
     for (const m of c.resultJson.matchAll(/\b(r-[a-z0-9-]+)\b/g)) seen.reviews.add(m[1]);
@@ -313,7 +371,7 @@ export function ungroundedCitations(
 
 // A01 비교 카드: Tool 결과에 실제로 등장한 상품만 모아 최대 3개로 만든다.
 // 모델이 쓴 텍스트가 아니라 조회 데이터 기준 — 조회 안 한 상품/근거를 꾸며 넣을 수 없다.
-function buildCompare(calls: { resultJson?: string }[]): CompareCard | undefined {
+function buildCompare(calls: { resultJson?: string }[], demo = false): CompareCard | undefined {
   type Acc = {
     product_id: string; name: string;
     min: number; max: number;
@@ -365,8 +423,13 @@ function buildCompare(calls: { resultJson?: string }[]): CompareCard | undefined
       }
   }
   const products = [...byId.values()];
-  if (products.length < 2) return undefined;
+  if (products.length < (demo ? 1 : 2)) return undefined;
   const limitations: string[] = [];
+  if (demo) limitations.push(
+    "reference_only: 추천 기준 미충족 상품의 참고 정보(최대 3개)",
+    "상품 전체 리뷰 수 미확인: rating_summary.count는 저장된 리뷰 수이며 전체 리뷰 10개 이상 기준 충족을 확인할 수 없습니다.",
+    "평점은 저장된 리뷰의 5점 만점 평균이며 상품 전체 평가로 일반화할 수 없습니다.",
+  );
   const shown = products.slice(0, 3);
   if (products.length > 3)
     limitations.push("후보가 더 있지만 상위 " + shown.length + "개만 비교했어요");
@@ -395,47 +458,64 @@ export async function runAgentTurn(
   provider: Provider,
 ): Promise<AgentTurnResult> {
   const trace_id = crypto.randomUUID();
+  const demo = liveDemo();
   const brain: Brain = req.brain === "cs" ? "cs" : "shopping";
-  const histKey = ctx.actorUserId + ":" + brain;
+  if (demo && brain === "cs") return {
+    message: "이 데모에서는 상품 검색과 리뷰 확인을 도와드릴 수 있어요.",
+    evidence_refs: { products: [], variants: [], reviews: [] }, tool_calls: [], trace_id,
+  };
+  const histKey = ctx.actorUserId + ":" + brain + (demo ? ":live-demo" : "");
   const history = histories.get(histKey) ?? [];
   const pageNote = req.page_context
     ? "\n현재 사용자 화면: " + JSON.stringify(req.page_context)
     : "";
-  const messages: ChatMsg[] = [
-    { role: "system", content: (brain === "cs" ? CS_SYSTEM : SHOPPING_SYSTEM) + pageNote },
-    ...history,
-    { role: "user", content: req.user_message },
-  ];
   const calls: (ToolCallRecord & { resultJson?: string })[] = [];
   const started = Date.now();
+  const timeout = demo ? LIVE_TIMEOUT_MS : TIMEOUT_MS;
+  const deadline = started + timeout;
   try {
+    const messages: ChatMsg[] = [
+      { role: "system", content: demo ? demoSystem() : (brain === "cs" ? CS_SYSTEM : SHOPPING_SYSTEM) + pageNote },
+      ...history,
+      { role: "user", content: req.user_message + (demo && pageNote ? "\n[untrusted_data: 화면 문맥]" + pageNote : "") },
+    ];
     for (;;) {
-      if (Date.now() - started > TIMEOUT_MS || calls.length >= MAX_CALLS) {
+      if (Date.now() - started >= timeout || calls.length >= MAX_CALLS) {
         return {
           message: "처리 한도에 도달했어요. 요청을 더 작게 나눠서 다시 시도해 주세요.",
-          evidence_refs: evidenceFrom(calls),
-          compare: buildCompare(calls),
+          evidence_refs: evidenceFrom(calls, demo),
+          compare: buildCompare(calls, demo),
           tool_calls: calls.map(({ resultJson: _r, ...c }) => c),
           trace_id,
           limit_reached: true,
         };
       }
-      const resp = await provider.chat(messages, toolDefs(brain));
+      const resp = demo
+        ? await provider.chat(messages, toolDefs(brain), {
+          signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+        })
+        : await provider.chat(messages, toolDefs(brain));
       if (resp.tool_calls?.length) {
         messages.push({
           role: "assistant",
           content: resp.content ?? null,
           tool_calls: resp.tool_calls,
+          responses_output: resp.responses_output,
         });
         for (const tc of resp.tool_calls) {
+          if (demo && (Date.now() >= deadline || calls.length >= MAX_CALLS)) break;
           let input: unknown = {};
           try {
             input = tc.arguments ? JSON.parse(tc.arguments) : {};
           } catch {
             input = {};
           }
-          const result = await executeTool(tc.name, input, ctx, req.client_action_id, brain);
-          const resultJson = JSON.stringify(result.ok ? result.data : result);
+          const result = demo
+            ? await withinDeadline(() => executeTool(tc.name, input, ctx, req.client_action_id, brain), deadline)
+            : await executeTool(tc.name, input, ctx, req.client_action_id, brain);
+          const resultJson = JSON.stringify(demo
+            ? adaptShoppingResult(tc.name, result, input as Record<string, unknown>)
+            : result.ok ? result.data : result);
           calls.push({
             name: tc.name,
             input,
@@ -464,8 +544,8 @@ export async function runAgentTurn(
       const tool_calls = calls.map(({ resultJson: _r, ...c }) => c);
       const result: AgentTurnResult = {
         message: text,
-        evidence_refs: evidenceFrom(calls),
-        compare: buildCompare(calls),
+        evidence_refs: evidenceFrom(calls, demo),
+        compare: buildCompare(calls, demo),
         tool_calls,
         trace_id,
       };
@@ -481,13 +561,13 @@ export async function runAgentTurn(
       );
       return result;
     }
-  } catch (e) {
+  } catch {
     return {
       message: "AI 응답 생성에 실패했어요. 잠시 후 다시 시도해 주세요.",
-      evidence_refs: evidenceFrom(calls),
+      evidence_refs: evidenceFrom(calls, demo),
       tool_calls: calls.map(({ resultJson: _r, ...c }) => c),
       trace_id,
-      error: "LLM_UNAVAILABLE: " + String(e).slice(0, 200),
+      error: "LLM_UNAVAILABLE",
     };
   }
 }

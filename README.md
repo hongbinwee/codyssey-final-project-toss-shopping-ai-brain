@@ -1,6 +1,21 @@
 # AI Commerce Environment
 
-구매자용 Commerce Environment를 먼저 완성하고, 이후 Shopping Brain / CS Agent를 결합하는 프로젝트입니다. 이 문서는 RAG·시스템 프롬프트 팀을 위한 **WIP 맥락 공유**이며 Brain 통합이나 Commerce Freeze 완료를 뜻하지 않습니다. AI stub/scaffolding과 화면의 `준비중` 상태를 유지합니다. 현재 범위는 [CORE_TASK_SCOPE.md](CORE_TASK_SCOPE.md), 최상위 방향은 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)를 참고하세요.
+구매자용 Commerce Environment를 먼저 완성하고, 이후 Shopping Brain / CS Agent를 결합하는 프로젝트입니다. 이 문서는 RAG·시스템 프롬프트 팀을 위한 **WIP 맥락 공유**이며 Brain 통합이나 Commerce Freeze 완료를 뜻하지 않습니다. 쇼핑 AI의 실험용 Responses API 연결과 v0.6 읽기 전용 시연 모드가 포함되어 있습니다. CS Brain은 미지원이며 전체 통합 검증·최종 Visual QA는 미완료입니다. 현재 범위는 [CORE_TASK_SCOPE.md](CORE_TASK_SCOPE.md), 최상위 방향은 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)를 참고하세요.
+
+## 쇼핑 AI 시연 실행
+
+기존 DB 연결과 세션 설정을 유지한 별도 서버에서 로컬 비공개 환경 변수로 다음을 설정합니다. 실제 값은 Git에 저장하지 않습니다.
+
+- `AI_LIVE_DEMO=1`, `LLM_PROVIDER=live`, `LLM_MODEL=gpt-6-luna`, `LLM_REASONING_EFFORT=xhigh`
+- `LLM_API_KEY`: 서버 환경 변수로만 주입합니다. `key.md`, `.env`, `.secrets/`는 추적하지 않습니다.
+- `HOST=127.0.0.1`, `PORT=3110`: 기존 Preview 3105와 분리합니다. 필요한 원격 DB CA는 `DATABASE_SSL_CA_FILE`로 지정합니다.
+- 기존 `TEST_USER_CODES`에는 시연 사용자별 비공개 접근 코드를 설정합니다. 세션이 있어야 AI를 호출할 수 있습니다.
+
+`npm start` 후 `http://127.0.0.1:3110`에서 로그인하고 AI 버튼을 엽니다. 프롬프트는 루트의 `SHOPPING_BRAIN_SYSTEM_v0.6.txt`를 원문 그대로 로드하고 Commerce Tool Adapter를 덧붙입니다. 제공되는 Tool은 상품 검색·상세·리뷰 조회 3개입니다. 이 모드에서는 DB 연결이 읽기 전용이며 일반 카트·주문·취소 변경도 차단됩니다. 일반 쇼핑은 기존 Commerce 서버에서 확인합니다. 키가 없으면 실제 모델 대신 stub이 선택됩니다.
+
+호출 한도는 프로세스당 20턴/사용자당 6턴, 모델 호출 30회/사용자당 15회, 동시 사용자 2명입니다. 서버 재시작 시 초기화되므로 공개 무제한 서비스용 제한으로 사용하지 않습니다. 저장된 리뷰 수를 상품 전체 리뷰 수로 간주하지 않으며, 전체 수를 검증할 수 없는 상품은 추천이 아닌 참고 정보로 표시합니다.
+
+이번 main 통합에서는 Typecheck, DB 없는 관련 Unit/Mock 회귀 82건과 메모리 프런트 빌드를 확인했습니다. 실제 LLM·DB·브라우저·전체 Unit·Integration·E2E를 새로 실행한 결과는 아닙니다. 기존 실행 증거와 Commerce Freeze 완료 여부는 별도로 관리합니다.
 
 ## 개발자별 로컬 실행 체크리스트
 

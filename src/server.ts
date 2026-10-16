@@ -18,6 +18,7 @@ import {
 import { getActionResult } from "./actions.ts";
 import { runAgentTurn } from "./agent.ts";
 import { getProvider } from "./llm.ts";
+import { createAiDemoGate } from "./ai-demo-access.ts";
 import {
   isolatedEnvTouched,
   planIsolatedConnect,
@@ -151,6 +152,9 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
     logLevel: "silent",
   });
   const provider = getProvider();
+  const aiDemo = env.AI_LIVE_DEMO === "1";
+  const aiGate = createAiDemoGate();
+  const aiCalls = createAiDemoGate(30, 15);
 
   const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://local");
@@ -215,6 +219,9 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       // 아래부터는 인증 필요
       const ctx = reqCtx(req);
       if (!ctx) return json(res, 401, { ok: false, error: { code: "UNAUTHENTICATED", message: "로그인이 필요합니다" } });
+      if (aiDemo && p.startsWith("/api/") && p !== "/api/agent/turn" &&
+          !(req.method === "GET" && /^\/api\/products(?:\/[^/]+(?:\/reviews)?)?$/.test(p)))
+        return json(res, 403, { ok: false, error: { code: "READ_ONLY_DEMO", message: "이 AI 시연에서는 상품·리뷰 조회만 제공해요. 일반 쇼핑은 기존 3105 앱을 이용해 주세요." } });
 
       if (p === "/api/products" && req.method === "GET") {
         return send(res, await searchProducts({
@@ -365,14 +372,30 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
         const b = (await body(req)) as { user_message?: string; page_context?: unknown; client_action_id?: string; brain?: "shopping" | "cs" };
         if (!b.user_message || !b.client_action_id)
           return json(res, 400, { ok: false, error: { code: "VALIDATION", message: "user_message와 client_action_id가 필요합니다" } });
+        if (aiDemo && (b.brain === "cs" || typeof b.user_message !== "string" || b.user_message.length > 3000))
+          return json(res, 400, { ok: false, error: { code: "VALIDATION", message: "쇼핑 질문을 3,000자 이내로 입력해 주세요." } });
+        const ticket = aiDemo ? aiGate.take(ctx.actorUserId) : null;
+        if (ticket && !ticket.ok)
+          return json(res, 429, { ok: false, error: { code: ticket.code, message: ticket.code === "AI_DEMO_BUSY" ? "진행 중인 AI 응답을 기다려 주세요." : "시연 호출 한도에 도달했어요." } });
         // 이 경로에서 실행되는 Tool의 origin은 AGENT다.
         const agentCtx = { ...ctx, origin: "AGENT" as const };
-        const result = await runAgentTurn(
-          { user_message: b.user_message, page_context: b.page_context as never, client_action_id: b.client_action_id, brain: b.brain },
-          agentCtx,
-          provider,
-        );
-        return json(res, 200, { ok: true, data: result });
+        try {
+          const turnProvider = aiDemo ? {
+            name: provider.name,
+            async chat(...args: Parameters<typeof provider.chat>) {
+              const callTicket = aiCalls.take(ctx.actorUserId);
+              if (!callTicket.ok) throw new Error("AI_DEMO_PROVIDER_LIMIT");
+              try { return await provider.chat(...args); }
+              finally { callTicket.release(); }
+            },
+          } : provider;
+          const result = await runAgentTurn(
+            { user_message: b.user_message, page_context: b.page_context as never, client_action_id: b.client_action_id, brain: b.brain },
+            agentCtx,
+            turnProvider,
+          );
+          return json(res, 200, { ok: true, data: result });
+        } finally { if (ticket?.ok) ticket.release(); }
       }
 
       res.writeHead(404);
@@ -381,10 +404,13 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       json(res, 500, { ok: false, error: { code: "INTERNAL", message: "요청을 처리하지 못했습니다" } });
     }
   });
+  const host = env.HOST?.trim();
   await new Promise<void>((resolve) =>
     isolated
       ? server.listen(port, "127.0.0.1", resolve)
-      : server.listen(port, resolve),
+      : host
+        ? server.listen(port, host, resolve)
+        : server.listen(port, resolve),
   );
   return server;
 }

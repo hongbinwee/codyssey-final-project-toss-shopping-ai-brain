@@ -6,11 +6,13 @@ export type ApiResult<T> =
   | { ok: false; error: { code: string; message: string }; operation_id?: string };
 
 const API_TIMEOUT_MS = 30_000;
+// provider 180초 / tool loop 240초 뒤 응답을 받을 여유를 둔다.
+const AGENT_TIMEOUT_MS = 270_000;
 
 // 응답 없는 fetch가 영구 busy를 만들지 않게 bounded timeout을 건다.
 // 호출자가 넘긴 signal은 보존해 둘 중 먼저 오는 쪽으로 취소한다 [Project].
-function withTimeout(signal: AbortSignal | null | undefined): AbortSignal {
-  const t = AbortSignal.timeout(API_TIMEOUT_MS);
+function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number): AbortSignal {
+  const t = AbortSignal.timeout(timeoutMs);
   if (!signal) return t;
   if (typeof AbortSignal.any === "function") return AbortSignal.any([signal, t]);
   const c = new AbortController();
@@ -43,7 +45,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<ApiResul
   const r = await fetch(path, {
     headers: { "content-type": "application/json" },
     ...init,
-    signal: withTimeout(init?.signal),
+    signal: withTimeout(init?.signal, path === "/api/agent/turn" ? AGENT_TIMEOUT_MS : API_TIMEOUT_MS),
   });
   const j: unknown = await r.json();
   if (!isEnvelope(j)) throw new Error("BAD_ENVELOPE");

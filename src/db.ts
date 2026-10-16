@@ -1,10 +1,25 @@
 import postgres from "postgres";
+import { readFileSync } from "node:fs";
+import tls from "node:tls";
 
 // connectDb() 호출 전에는 미초기화 상태. server/scripts가 ensureDevDb() 후에 연다.
 export let sql: postgres.Sql;
 
 export function connectDb(url: string): postgres.Sql {
-  sql = postgres(url);
+  const caFile = process.env.DATABASE_SSL_CA_FILE;
+  const readOnly = process.env.AI_LIVE_DEMO === "1"
+    ? { connection: { default_transaction_read_only: true } } : {};
+  sql = caFile
+    ? postgres(url, {
+        ...readOnly,
+        ssl: {
+          ca: readFileSync(caFile),
+          rejectUnauthorized: true,
+          checkServerIdentity: (_hostname: string, cert: Parameters<typeof tls.checkServerIdentity>[1]) =>
+            tls.checkServerIdentity(new URL(url).hostname, cert),
+        },
+      })
+    : postgres(url, readOnly);
   return sql;
 }
 

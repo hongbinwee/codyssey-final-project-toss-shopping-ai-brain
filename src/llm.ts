@@ -1,50 +1,145 @@
-// LLM Provider Adapter. OpenAI 호환 chat completions + tool calling.
+// LLM Provider Adapter. Responses API + stateless tool calling.
 // 모델/SDK를 이 한 파일에 격리한다. live 키가 없으면 read-only stub을 쓴다.
 import { config } from "./config.ts";
 
 export type ToolCallReq = { id: string; name: string; arguments: string };
+// Keep opaque reasoning/encrypted content and every output field intact.
+export type ResponsesOutputItem = { type: string; [key: string]: unknown };
 export type ChatMsg = {
   role: "system" | "user" | "assistant" | "tool";
   content?: string | null;
   tool_calls?: ToolCallReq[];
   tool_call_id?: string;
   name?: string;
+  responses_output?: ResponsesOutputItem[];
 };
 export type ChatResponse = {
   content: string | null;
   tool_calls?: ToolCallReq[];
+  responses_output?: ResponsesOutputItem[];
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
 export interface Provider {
   name: string;
-  chat(messages: ChatMsg[], tools: unknown[]): Promise<ChatResponse>;
+  chat(messages: ChatMsg[], tools: unknown[], options?: { signal?: AbortSignal }): Promise<ChatResponse>;
+}
+
+function responsesInput(messages: ChatMsg[]): unknown[] {
+  const input: unknown[] = [];
+  for (const message of messages) {
+    if (message.role === "system") continue;
+    if (message.role === "tool") {
+      input.push({ type: "function_call_output", call_id: message.tool_call_id, output: message.content ?? "" });
+    } else if (message.role === "assistant" && message.responses_output?.length) {
+      // These items already contain assistant text and function calls. Rebuilding
+      // either would duplicate them and discard the reasoning needed by the model.
+      input.push(...message.responses_output);
+    } else {
+      if (message.content != null)
+        input.push({ role: message.role, content: message.content });
+      for (const call of message.tool_calls ?? []) {
+        input.push({ type: "function_call", call_id: call.id, name: call.name, arguments: call.arguments });
+      }
+    }
+  }
+  return input;
+}
+
+function responsesTools(tools: unknown[]): unknown[] {
+  return tools.map((tool) => {
+    const definition = tool as { type?: string; function?: Record<string, unknown> };
+    if (definition.type !== "function") return tool;
+    return { ...(definition.function ?? definition), type: "function", strict: false };
+  });
+}
+
+function parseResponse(value: unknown): ChatResponse {
+  if (!value || typeof value !== "object") throw new Error("LLM invalid response");
+  const response = value as {
+    status?: string;
+    output?: ResponsesOutputItem[];
+    usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
+  };
+  if (response.status === "failed" || response.status === "incomplete" || response.status === "cancelled")
+    throw new Error("LLM response failed");
+  if (!Array.isArray(response.output)) throw new Error("LLM invalid response");
+  const text: string[] = [];
+  const calls: ToolCallReq[] = [];
+  for (const item of response.output) {
+    if (!item || typeof item !== "object" || typeof item.type !== "string")
+      throw new Error("LLM invalid response");
+    if (item.type === "function_call") {
+      if (typeof item.call_id !== "string" || typeof item.name !== "string" || typeof item.arguments !== "string")
+        throw new Error("LLM invalid response");
+      calls.push({ id: item.call_id, name: item.name, arguments: item.arguments });
+    }
+    if (item.type === "message" && Array.isArray(item.content)) {
+      for (const part of item.content) {
+        if (part?.type === "output_text" && typeof part.text === "string") text.push(part.text);
+        if (part?.type === "refusal" && typeof part.refusal === "string") text.push(part.refusal);
+      }
+    }
+  }
+  return {
+    content: text.length ? text.join("") : null,
+    ...(calls.length ? { tool_calls: calls } : {}),
+    responses_output: response.output,
+    ...(response.usage ? { usage: {
+      prompt_tokens: response.usage.input_tokens,
+      completion_tokens: response.usage.output_tokens,
+      total_tokens: response.usage.total_tokens,
+    } } : {}),
+  };
 }
 
 export function liveProvider(): Provider {
   return {
     name: "live:" + config.llmModel,
-    async chat(messages, tools) {
-      const res = await fetch(config.llmBaseUrl + "/chat/completions", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer " + config.llmApiKey,
-        },
-        body: JSON.stringify({
-          model: config.llmModel,
-          messages,
-          tools,
-          tool_choice: "auto",
-        }),
-      });
-      if (!res.ok)
-        throw new Error("LLM http " + res.status + ": " + (await res.text()).slice(0, 300));
-      const j = (await res.json()) as {
-        choices: { message: { content: string | null; tool_calls?: ToolCallReq[] } }[];
-        usage?: ChatResponse["usage"];
-      };
-      const m = j.choices[0].message;
-      return { content: m.content, tool_calls: m.tool_calls, usage: j.usage };
+    async chat(messages, tools, options) {
+      const controller = new AbortController();
+      const signal = options?.signal
+        ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+      const timeoutMs = Number.isFinite(config.llmApiTimeoutMs) && config.llmApiTimeoutMs > 0
+        ? config.llmApiTimeoutMs : 180000;
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        let res: Response;
+        try {
+          res = await fetch(config.llmBaseUrl.replace(/\/+$/, "") + "/responses", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: "Bearer " + config.llmApiKey,
+            },
+            signal,
+            body: JSON.stringify({
+              model: config.llmModel,
+              instructions: messages.filter((m) => m.role === "system")
+                .map((m) => m.content ?? "").join("\n\n"),
+              input: responsesInput(messages),
+              tools: responsesTools(tools),
+              tool_choice: "auto",
+              reasoning: { effort: config.llmReasoningEffort },
+              max_output_tokens: 8192,
+              store: false,
+              include: ["reasoning.encrypted_content"],
+            }),
+          });
+        } catch {
+          throw new Error(signal.aborted ? "LLM timeout" : "LLM request failed");
+        }
+        // Never read or echo error bodies: they may contain credentials or PII.
+        if (!res.ok) throw new Error("LLM http " + res.status);
+        let value: unknown;
+        try {
+          value = await res.json();
+        } catch {
+          throw new Error(signal.aborted ? "LLM timeout" : "LLM invalid response");
+        }
+        return parseResponse(value);
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }

@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
 .secrets/
 web/app.js
 .pgdata/
@@ -14,3 +16,5 @@ eval/results/
 verify-*.txt
 reference/toss-shopping/screenshots/
 reference/toss-shopping/docs/history/
+
+key.md

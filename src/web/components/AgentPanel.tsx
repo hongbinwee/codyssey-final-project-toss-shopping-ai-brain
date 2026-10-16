@@ -1,8 +1,8 @@
 // A01 공통 AI 대화·비교 패널
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiSafe, fmtWon, newActionKey, type AgentBrain } from "../api.ts";
 import type { CompareCard } from "../../contracts.ts";
-import { sendAgentTurn } from "../agent-gate.ts";
+import { AGENT_TURN_ENABLED, sendAgentTurn } from "../agent-gate.ts";
 
 export interface AgentReply {
   role: "user" | "ai";
@@ -29,6 +29,9 @@ function CompareCardView({
         <div key={p.product_id} className="compare-row">
           <div className="compare-head">
             <b>{p.name}</b>
+            {(p.rating_summary.avg === null || p.rating_summary.avg <= 3.5 || p.rating_summary.count < 10) && (
+              <span className="chip">참고용 상품 · 평점/저장 리뷰 기준 미충족</span>
+            )}
             {p.availability !== "AVAILABLE" && <span className="badge-soldout">품절/중단</span>}
           </div>
           <div className="muted sm">
@@ -37,7 +40,11 @@ function CompareCardView({
             {" · "}
             {p.rating_summary.avg === null
               ? "평점 없음"
-              : "★" + p.rating_summary.avg + " (" + p.rating_summary.count + ")"}
+              : "★" + p.rating_summary.avg}
+            {" · 저장된 리뷰 " + p.rating_summary.count + "개"}
+          </div>
+          <div className="muted sm">
+            조회·비교용 · 저장된 리뷰 수는 Amazon 전체 리뷰 수가 아니에요
           </div>
           <div className="muted sm">
             근거 리뷰:{" "}
@@ -80,50 +87,62 @@ export function AgentPanel({
 }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const supported = AGENT_TURN_ENABLED && brain === "shopping";
 
   async function send() {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || inFlight.current || !supported) return;
+    inFlight.current = true;
     setInput("");
     setBusy(true);
     const next = [...messages, { role: "user" as const, text }];
     setMessages(next);
-    // F22 — 게이트가 닫힌 동안 post는 한 번도 호출되지 않는다 [C/069 fail-closed]
-    const r = await sendAgentTurn<{
-      message: string;
-      evidence_refs: { products: string[]; variants: string[]; reviews: string[] };
-      compare?: CompareCard;
-      tool_calls: { name: string; ok: boolean; code?: string }[];
-      limit_reached?: boolean;
-      error?: string;
-    }>(
-      {
-        user_message: text,
-        page_context: pageContext,
-        client_action_id: newActionKey(),
-        brain,
-      },
-      (path, body) =>
-        apiSafe(path, { method: "POST", body: JSON.stringify(body) }),
-    );
-    setBusy(false);
-    if (!r.ok) {
-      setMessages([...next, { role: "ai", text: "호출에 실패했어요: " + r.error.message, error: true }]);
-      return;
+    try {
+      const r = await sendAgentTurn<{
+        message: string;
+        evidence_refs: { products: string[]; variants: string[]; reviews: string[] };
+        compare?: CompareCard;
+        tool_calls: { name: string; ok: boolean; code?: string }[];
+        limit_reached?: boolean;
+        error?: string;
+      }>(
+        {
+          user_message: text,
+          page_context: pageContext,
+          client_action_id: newActionKey(),
+          brain,
+        },
+        (path, body) =>
+          apiSafe(path, { method: "POST", body: JSON.stringify(body) }),
+      );
+      if (!r.ok) {
+        setMessages([...next, { role: "ai", text: "AI 응답을 받지 못했어요. 잠시 후 다시 보내 주세요.", error: true }]);
+        setInput(text);
+        return;
+      }
+      const d = r.data;
+      if (d.tool_calls.some((c) => c.ok && CART_WRITE_TOOLS.includes(c.name))) onCartChanged();
+      setMessages([
+        ...next,
+        {
+          role: "ai",
+          text: d.error || d.limit_reached
+            ? "조회를 완료하지 못했어요. 조건을 줄여 다시 보내 주세요."
+            : d.message,
+          evidence: d.evidence_refs,
+          compare: d.compare,
+          toolCalls: d.tool_calls.map((c) => c.name + (c.ok ? "" : "✗")),
+          error: !!d.error || !!d.limit_reached,
+        },
+      ]);
+    } catch {
+      setMessages([...next, { role: "ai", text: "AI 응답을 받지 못했어요. 잠시 후 다시 보내 주세요.", error: true }]);
+      setInput(text);
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
     }
-    const d = r.data;
-    if (d.tool_calls.some((c) => c.ok && CART_WRITE_TOOLS.includes(c.name))) onCartChanged();
-    setMessages([
-      ...next,
-      {
-        role: "ai",
-        text: d.message,
-        evidence: d.evidence_refs,
-        compare: d.compare,
-        toolCalls: d.tool_calls.map((c) => c.name + (c.ok ? "" : "✗")),
-        error: !!d.error || !!d.limit_reached,
-      },
-    ]);
   }
 
   return (
@@ -131,15 +150,17 @@ export function AgentPanel({
       <div className="agent-head">
         <div>
           <b>{brain === "cs" ? "AI 고객센터" : "AI 쇼핑 도우미"}</b>
-          <div className="muted sm">AI 생성 답변 · 실제 데이터를 조회합니다</div>
+          <div className="muted sm">
+            {supported ? "AI 생성 답변 · 실제 상품과 저장된 리뷰를 조회합니다" : "AI 고객센터는 아직 지원하지 않아요"}
+          </div>
         </div>
-        <button className="link" onClick={onClose}>닫기</button>
+        <button className="link" onClick={onClose} disabled={busy}>닫기</button>
       </div>
       <div className="agent-body">
         {messages.length === 0 && (
           <div className="state-box">
-            {brain === "cs"
-              ? "주문이나 배송에 대해 물어보세요. 예: “내 최근 주문 배송 상태 알려줘”"
+            {!supported
+              ? "이 AI 기능은 아직 지원하지 않아요"
               : "예산·용도를 알려주세요. 예: “배송비 포함 20만원 안에서 개발용 모니터 비교해줘”"}
           </div>
         )}
@@ -156,7 +177,7 @@ export function AgentPanel({
               <div className="evidence-chips">
                 {m.evidence.products.map((id) => (
                   <button key={id} className="chip link-chip" onClick={() => onOpenProduct(id)}>
-                    상품 {id}
+                    상품 보기 · {id}
                   </button>
                 ))}
                 {m.evidence.reviews.map((id) => (
@@ -166,16 +187,21 @@ export function AgentPanel({
             )}
           </div>
         ))}
-        {busy && <div className="msg ai"><p>조회 중…</p></div>}
+        {busy && (
+          <div className="msg ai" role="status" aria-live="polite">
+            <p>실제 상품과 리뷰를 비교하고 있어요. 응답에 시간이 걸릴 수 있어요</p>
+          </div>
+        )}
       </div>
       <div className="agent-input">
         <input
           value={input}
+          disabled={busy || !supported}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && send()}
           placeholder="조건이나 요청을 입력하세요"
         />
-        <button className="btn primary" onClick={send} disabled={busy || !input.trim()}>
+        <button className="btn primary" onClick={send} disabled={busy || !supported || !input.trim()}>
           보내기
         </button>
       </div>

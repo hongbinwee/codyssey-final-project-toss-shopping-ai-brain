@@ -16,6 +16,7 @@ import { OrderDetail } from "./screens/OrderDetail.tsx";
 import { Recent } from "./screens/Recent.tsx";
 import { MyShop } from "./screens/MyShop.tsx";
 import { AgentPanel, type AgentReply } from "./components/AgentPanel.tsx";
+import { AGENT_TURN_ENABLED } from "./agent-gate.ts";
 import type { AgentBrain } from "./api.ts";
 import { IcBack, IcBagFill, IcCart, IcChevronDown, IcHome, IcMenu, IcReceipt, IcSearch, IcSparkle, IcTag, IcUser } from "./icons.tsx";
 import { CONTENT_TABS, groupLabel, groupOf } from "./display-meta.ts";
@@ -624,14 +625,15 @@ function App() {
             {/* 선택 상태는 채움 아이콘 — Reference의 filled bag [Observed→Project] */}
             {route.name === "shop" ? <IcBagFill size={22} /> : <IcCart size={22} />}쇼핑
           </button>
-          {/* F22 — Brain 미배포. 진입점은 '준비중'으로 명시하고 열지 않는다.
-              패널 send도 agent-gate fail-closed라 우회 실행이 없다 [C/069] */}
           <button
             className="nav-item"
-            disabled
-            title="AI 쇼핑 도우미는 아직 준비 중이에요"
+            disabled={!AGENT_TURN_ENABLED}
+            title="AI 쇼핑 도우미"
+            aria-expanded={agentOpen === "shopping"}
+            onClick={() => setAgentOpen("shopping")}
           >
-            <IcSparkle size={22} />AI<span className="nav-soon">준비중</span>
+            <IcSparkle size={22} />AI
+            {!AGENT_TURN_ENABLED && <span className="nav-soon">준비중</span>}
           </button>
           <button
             ref={allBtnRef}
@@ -658,7 +660,7 @@ function App() {
                 { icon: IcReceipt, label: "내 쇼핑", run: () => goto({ name: "myshop" }) },
                 { icon: IcCart, label: "장바구니", run: () => goto({ name: "cart" }) },
                 { icon: IcSearch, label: "검색", run: () => goto({ name: "search", query: "" }) },
-                { icon: IcSparkle, label: "AI 쇼핑 도우미", run: () => setAgentOpen("shopping"), soon: true },
+                { icon: IcSparkle, label: "AI 쇼핑 도우미", run: () => setAgentOpen("shopping"), soon: !AGENT_TURN_ENABLED },
               ] as const
             ).map((m) => (
               <button

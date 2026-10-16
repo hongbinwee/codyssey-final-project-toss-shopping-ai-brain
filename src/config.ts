@@ -43,6 +43,8 @@ export const config = {
   llmBaseUrl: process.env.LLM_BASE_URL ?? "https://api.openai.com/v1",
   llmApiKey: process.env.LLM_API_KEY ?? "",
   llmModel: process.env.LLM_MODEL ?? "",
+  llmReasoningEffort: process.env.LLM_REASONING_EFFORT ?? "xhigh",
+  llmApiTimeoutMs: Number(process.env.LLM_API_TIMEOUT_MS ?? 180000),
   // "code=auth_subject" 쌍, 콤마 구분. 코드는 서버 비밀 설정이다.
   testUserCodes: Object.fromEntries(
     (process.env.TEST_USER_CODES ?? "")
