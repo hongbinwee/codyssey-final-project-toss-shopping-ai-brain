@@ -37,7 +37,11 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    assert.equal(identity.name,"brain_ci");
    await admin.unsafe("CREATE DATABASE commerce_brain_browser_ci");
    shop=postgres(commerceUrl.toString(),{max:2});
-   await shop.unsafe(readFileSync(new URL("../../db/migrations/001_catalog_cart_actions.sql",import.meta.url),"utf8"));
+   // Only the newly provisioned disposable Commerce database. Never migrate an existing one.
+   for(const name of ["001_catalog_cart_actions.sql","002_orders_payments_shipments.sql",
+       "003_cancel_requests.sql","004_wishlist_items.sql"]){
+     await shop.unsafe(readFileSync(new URL("../../db/migrations/"+name,import.meta.url),"utf8"));
+   }
    await shop.unsafe("INSERT INTO users(id,auth_subject,display_name,test_address_json) VALUES ('browser-qa-a','browser-a','Brain QA A','{}'::jsonb),('browser-qa-b','browser-b','Brain QA B','{}'::jsonb)");
    await shop.unsafe(`INSERT INTO products(id,name,brand,category,description)
      VALUES ('p-browser-a','QA value monitor','CI','monitor','Not a real product'),
@@ -78,7 +82,7 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    });
    const {start}=await import("../../src/server.ts");
    dbModule=await import("../../src/db.ts");
-   apiServer=await start(0,{build:async()=>{}});
+   apiServer=await start(0); // rebuild real React bundle for browser use
    const base="http://127.0.0.1:"+apiServer.address().port;
    browser=await chromium.launch({headless:true,args:["--no-sandbox"]});
    const ctx=await browser.newContext({baseURL:base});
@@ -123,7 +127,8 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await panel.getByRole("button",{name:"보내기"}).click();
    await panel.locator(".msg.ai").nth(countBefore).locator(".compare-row").first().waitFor({timeout:25000});
    assert.ok(ragCalls>=5);
-   assert.equal((await shop.unsafe("SELECT count(*)::int AS n FROM carts"))[0].n,0);
+   // Storefront GET /api/cart may create an empty cart by design; measure actual writes instead.
+   assert.equal((await shop.unsafe("SELECT count(*)::int AS n FROM cart_items"))[0].n,0);
    assert.equal((await shop.unsafe("SELECT count(*)::int AS n FROM action_requests"))[0].n,0);
    await ctx.close();
    console.log("BRAIN_CHROMIUM_PASS owned sign-in, preference reversal, budget carryover, failed-retrieval retry, Commerce writes=0");
