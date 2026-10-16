@@ -1,9 +1,12 @@
 import type {PreferenceKey,PreferenceValue,Preference,RankingResult} from "./contracts.ts";
 import type {PersistentConversations,PersistentPreferences} from "./persistent-store.ts";
+import type {ShoppingPlan} from "./shopping-plan.ts";
+import type {GroundedExplanation} from "./grounded-response.ts";
 
 export interface BrainGraphPort {
   invoke(input:{actorUserId:string;conversationId:string;requestId:string;clientActionId:string;userMessage:string}):Promise<{
     conversationId:string;messageId:string;ranking:RankingResult;trace:Record<string,number>;
+    shoppingPlan?:ShoppingPlan;explanation?:GroundedExplanation;
   }>;
   getOwnedState(actorUserId:string,conversationId:string):Promise<{values?:Record<string,unknown>}>;
 }
@@ -62,7 +65,8 @@ export function createBrainApi(deps:BrainApiDeps) {
         const result=await deps.graph.invoke({actorUserId,conversationId:turn[1],
           requestId:crypto.randomUUID(),clientActionId:body.client_action_id,userMessage:body.user_message});
         return success({conversation_id:result.conversationId,message_id:result.messageId,
-          ranking:result.ranking,trace:result.trace,read_only:true});
+          ranking:result.ranking,trace:result.trace,read_only:true,
+          shopping_plan:result.shoppingPlan??null,explanation:result.explanation??null});
       }
       const state=path.match(/^\/api\/brain\/conversations\/([a-fA-F0-9-]+)\/state$/);
       if(method==="GET"&&state){
