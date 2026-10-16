@@ -55,3 +55,31 @@ The only in-scope user-visible side effect is the append-only source user messag
 - **Operational:** database cluster failover / network partition / PITR, data ownership validation and raw checkpoint authorization; current CI uses one isolated PostgreSQL service.
 - **Quality:** real RAG audited provenance + candidate/variant mapping, live model evaluation and cost/latency p50/p95, independent blind review, accessibility/mobile testing, 5+ real users. Existing mock latency is not real model performance.
 - **Approval-gated actions:** require Commerce's own idempotency and user confirmation before adding Brain write tools, regardless of v9 read-only fencing.
+
+## Independent v9 QA checkpoint (2026-10-17 KST)
+
+Validated at [GitHub Actions #38947933328](https://github.com/hongbinwee/codyssey_final-mission-main/actions/runs/38947933328) on code commit `57cac3b6`: full TypeScript, frontend build, Brain isolated unit/API, **disposable PostgreSQL 21/21 PASS**, authenticated HTTP + mock Responses/RAG, Chromium E2E, dependency manifest immutability: **PASS**. The legacy Commerce broad audit is intentionally non-gating and retains pre-existing protected-fixture/environment failures; it is **not** a full Commerce PASS.
+
+New v9 PostgreSQL scenarios passed:
+- Per-generation thread isolation and publication pointer / multi-turn Shopping Plan, duplicate Action ID conflict, same-action replay, owner isolation
+- Stale generation compare-and-swap after replacement
+- Genuine PostgreSQL advisory session termination while old Worker is delayed in RAG; successor publishes, old Worker rejects, original remains pending
+- Genuine Node subprocess SIGKILL during RAG; unpublished partial checkpoint remains invisible and replacement proceeds in new generation
+- Saver committed-write acknowledgment failure before publication; canonical prior plan preserved and retry advances one revision
+- Canonical publication committed but acknowledgment lost; subsequent same-action retry replays without repeated RAG
+- Legacy v8 checkpoint detection: reject and preserve saved legacy plan rather than silently reset
+- Read-only actor privacy inventory counts messages, proposals, canonical preferences, generations, receipts, checkpoints, writes and blobs; preference deletion does **not** erase the other data
+
+This implementation provides **atomic canonical RESULT publication and physical checkpoint isolation**, not transactional refusal of all old Saver writes. Retry can repeat an external LLM call on a failed/incomplete attempt, which is not operational exactly-once. No full erasure, autonomous Commerce write or external deployment was enabled.
+
+### Existing v8 database upgrade guard
+
+Version 9 migration `002_brain_fencing.sql` adds ONLY AI-owned tables. It does not transform previous logical checkpoint threads. If a user has a populated v8 thread without a canonical v9 receipt, `graph.ts` fails closed. A human-reviewed migration of last completed v8 state to the canonical v9 receipt model is a **release prerequisite for existing-user rollout**; do not bypass this guard or report historical data as lost.
+
+### Next integration milestones
+
+1. RAG team hands off real service URL, authentication, canonical Commerce ID map and signed/audited source manifest; verify schema and explicit SYNTHETIC/REAL boundary.
+2. Model integration: explicit API key + spending allowance, run actual intent evaluation with independent blind holdout and model-specific p50/p95/token cost.
+3. Security/operations: account-erasure process including all abandoned attempt threads and backup retention, distributed limits, CSRF, PostgreSQL failover/PITR QA.
+4. Deploy only after user approval; validate 5+ end users and accessibility.
+5. Write Tool Calling remains separately gated by Commerce idempotency, authorization and explicit user confirmation.
