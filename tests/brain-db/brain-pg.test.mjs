@@ -5,6 +5,7 @@ import {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
 import {brainDatabaseFromPostgres} from "../../src/brain/pg-adapter.ts";
 import {PersistentConversations,PersistentPreferences} from "../../src/brain/persistent-store.ts";
 import {createPersistentResearchGraph} from "../../src/brain/graph.ts";
+import {postgresTurnLock} from "../../src/brain/turn-lock.ts";
 import {createBrainApi} from "../../src/brain/api.ts";
 
 const url=process.env.BRAIN_DATABASE_URL;
@@ -302,4 +303,62 @@ test("retry unfinished RAG turn after checkpoint restart does not double-apply b
      [thread.id]);
    assert.equal(messages[0].n,1,"source message idempotency must survive provider failure and restart");
  }finally{await Promise.allSettled([saver.end(),db.end()]);}
+});
+
+test("two isolated Brain workers use the same PostgreSQL advisory session lock",async()=>{
+ if(!url||new URL(url).pathname!=="/brain_ci")throw Error("disposable brain_ci required");
+ const sql1=postgres(url,{max:3}),sql2=postgres(url,{max:3});
+ const saver1=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+ const saver2=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+ let unblock,markStarted;
+ const blocked=new Promise(resolve=>{unblock=resolve});
+ const started=new Promise(resolve=>{markStarted=resolve});
+ try{
+   const repo1=brainDatabaseFromPostgres(sql1);
+   const conversations1=new PersistentConversations(repo1),memory1=new PersistentPreferences(repo1);
+   const conversations2=new PersistentConversations(brainDatabaseFromPostgres(sql2));
+   const memory2=new PersistentPreferences(brainDatabaseFromPostgres(sql2));
+   const thread=await conversations1.create("user-multi-replica");
+   let retrievals=0;
+   const source={
+     intent:{extract:async()=>({query:"monitor",context:{maxTotalWon:500000,
+       requiredConditions:[],currentPreferences:{}}})},
+     retriever:{search:async()=>{
+       retrievals++;
+       if(retrievals===1){markStarted();await blocked;}
+       return {candidates:[],evidence:[]};
+     }}
+   };
+   await saver1.setup();await saver2.setup();
+   const a=createPersistentResearchGraph({
+     ...source,conversations:conversations1,memory:memory1
+   },saver1,postgresTurnLock(sql1));
+   const b=createPersistentResearchGraph({
+     ...source,conversations:conversations2,memory:memory2
+   },saver2,postgresTurnLock(sql2));
+   const request={actorUserId:"user-multi-replica",conversationId:thread.id,
+     requestId:crypto.randomUUID(),clientActionId:"distributed-1",
+     userMessage:"모니터 추천"};
+   const p=a.invoke(request);
+   await started;
+   await assert.rejects(()=>b.invoke(request),/conversation busy/,
+     "second worker must not enter same checkpoint concurrently");
+   const other={...request,clientActionId:"distributed-2",
+     requestId:crypto.randomUUID(),userMessage:"다른 질문"};
+   await assert.rejects(()=>b.invoke(other),/conversation busy/);
+   unblock();
+   const first=await p;
+   assert.equal(first.shoppingPlan.revision,1);
+   assert.equal(retrievals,1);
+   const repeated=await b.invoke(request);
+   assert.equal(repeated.messageId,first.messageId,
+     "second worker returns completed checkpoint for same action after first commits");
+   assert.equal(retrievals,1,"cross-worker completed replay cannot run RAG a second time");
+   const next=await b.invoke({...other,userMessage:"다른 질문"});
+   assert.equal(next.shoppingPlan.revision,2);
+   assert.equal(retrievals,2);
+ }finally{
+   if(unblock)unblock();
+   await Promise.allSettled([saver1.end(),saver2.end(),sql1.end(),sql2.end()]);
+ }
 });
