@@ -1,14 +1,19 @@
-name: Brain core static QA
+name: Brain core isolated QA
 
 on:
   pull_request:
     paths:
       - "src/brain/**"
       - "src/agent.ts"
-      - "tests/brain-sandbox/**"
-      - "tests/unit/brain-*.test.ts"
+      - "src/server.ts"
+      - "scripts/brain-migrate.ts"
       - "db/brain/**"
+      - "tests/brain-sandbox/**"
+      - "tests/brain-db/**"
+      - "tests/unit/brain-*.test.ts"
       - "experiments/langgraph/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/brain-check.yml"
   workflow_dispatch:
 
@@ -16,37 +21,47 @@ permissions:
   contents: read
 
 jobs:
-  isolated-brain:
+  brain-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: brain_ci
+          POSTGRES_PASSWORD: ci_brain_only_never_for_Commerce
+          POSTGRES_DB: brain_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U brain_ci -d brain_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BRAIN_DATABASE_URL: postgresql://brain_ci:ci_brain_only_never_for_Commerce@127.0.0.1:5432/brain_ci
+      BRAIN_MIGRATE_APPROVED: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
-      - name: Install exact existing dependencies
+      - name: Install committed dependencies without mutation
         run: npm ci
-      - name: Compile full TypeScript project
+      - name: Typecheck full TypeScript repository
         run: npm run check
-      - name: Unit-test Brain contracts without any database or credentials
-        run: node --experimental-strip-types --test tests/brain-sandbox/*.test.mjs tests/unit/brain-context.test.ts tests/unit/brain-personalization.test.ts
-      - name: Install pinned LangGraph for isolated experiment without lock changes
-        run: npm install --save-exact --ignore-scripts @langchain/langgraph@1.5.0 @langchain/langgraph-checkpoint-postgres@1.1.0
-      - name: Smoke test real StateGraph with in-memory checkpointer (no database)
+      - name: Build unchanged frontend
+        run: npm run build
+      - name: Brain isolated regression and API tests
+        run: node --experimental-strip-types --test --test-concurrency=1 tests/brain-sandbox/*.test.mjs tests/unit/brain-*.test.ts
+      - name: Original Commerce unit regression
+        run: npm run test:unit
+      - name: Prepare strictly isolated disposable brain_ci PostgreSQL schema
+        run: node scripts/brain-migrate.ts
+      - name: Real PostgreSQL checkpoint, tenant and memory integration
+        run: node --experimental-strip-types --test --test-concurrency=1 tests/brain-db/*.test.mjs
+      - name: Real LangGraph MemorySaver smoke
         run: node --experimental-strip-types --test experiments/langgraph/smoke.test.mjs
-      - name: Emit dependency lock manifest for controlled branch-only commit
-        run: |
-          python3 - <<'PY'
-          import json
-          for name in ['package.json','package-lock.json']:
-              content=open(name,encoding='utf-8').read()
-              kind='PKG' if name=='package.json' else 'LOCK'
-              for i in range(0,len(content),650):
-                  print("BRNMANIFEST|" + kind + "|" + str(i//650) + "|" + json.dumps(content[i:i+650]))
-              print("BRNMANIFEST_END|" + kind + "|" + str(len(content)))
-          PY
-      - name: Verify production manifests remain unchanged
-        run: |
-          git diff --check
-          test -n "$(git diff --name-only -- package.json package-lock.json)"
+      - name: Verify dependency lock and package were not modified
+        run: git diff --exit-code -- package.json package-lock.json
