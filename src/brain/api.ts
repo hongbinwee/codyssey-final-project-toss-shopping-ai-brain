@@ -29,6 +29,7 @@ export function createBrainApi(deps:BrainApiDeps) {
     if(!required(actorUserId,256))return fail(401,"UNAUTHENTICATED","로그인이 필요합니다");
     const body=rec(rawBody);
     try {
+      if(method==="GET"&&path==="/api/brain/status")return success({enabled:true,read_only:true,mode:"grounded_research"});
       if(method==="POST"&&path==="/api/brain/conversations"){
         if(Object.keys(body).length) return fail(400,"VALIDATION","지원하지 않는 요청 형식");
         return success(await deps.conversations.create(actorUserId),201);
