@@ -103,3 +103,58 @@ test("fenced v9 rejects a stale generation after takeover and retains newer cano
     assert.equal(pending[0].status,"PENDING");
   }finally{await db.end();}
 });
+
+test("v9: delayed old worker after DB lock loss cannot publish over successor",async()=>{
+  valid();
+  const dbA=postgres(url,{max:4}),dbB=postgres(url,{max:4});
+  const locksA=postgres(url,{max:2}),locksB=postgres(url,{max:2});
+  const saverA=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+  const saverB=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+  let reservedA,releaseOld,signalStarted;
+  const blocked=new Promise(resolve=>{releaseOld=resolve;});
+  const started=new Promise(resolve=>{signalStarted=resolve;});
+  const bounded=(p,label)=>Promise.race([p,new Promise((_,reject)=>setTimeout(
+    ()=>reject(Error(label+" timeout")),12000))]);
+  try{
+    await saverA.setup();await saverB.setup();
+    const storeA=brainDatabaseFromPostgres(dbA),storeB=brainDatabaseFromPostgres(dbB);
+    const convA=new PersistentConversations(storeA);
+    const convB=new PersistentConversations(storeB);
+    const memA=new PersistentPreferences(storeA),memB=new PersistentPreferences(storeB);
+    const thread=await convA.create("v9-duel");
+    const retrieveOld=async()=>{signalStarted();await blocked;return {candidates:[],evidence:[]};};
+    const newResult=async()=>({candidates:[],evidence:[]});
+    const create=(conversations,memory,retriever,saver,lock,fence)=>
+      createPersistentResearchGraph({
+        conversations,memory,intent:{extract:async()=>({query:"monitor",
+          context:{maxTotalWon:500000,requiredConditions:[],currentPreferences:{}}})},
+        retriever:{search:retriever}
+      },saver,lock,fence);
+    const old=create(convA,memA,retrieveOld,saverA,postgresTurnLock({
+      reserve:async()=>{reservedA=await locksA.reserve();return reservedA;}
+    },dbA),new FencedTurns(storeA));
+    const next=create(convB,memB,newResult,saverB,
+      postgresTurnLock(locksB,dbB),new FencedTurns(storeB));
+    const make=(clientActionId)=>({actorUserId:"v9-duel",conversationId:thread.id,
+      requestId:crypto.randomUUID(),clientActionId,userMessage:clientActionId});
+    const task=old.invoke(make("old"));
+    task.catch(()=>{});
+    await bounded(started,"old worker retrieval");
+    const [{pid}]=await reservedA.unsafe("SELECT pg_backend_pid() AS pid");
+    const [{terminated}]=await dbB.unsafe("SELECT pg_terminate_backend($1::int) AS terminated",[pid]);
+    assert.equal(terminated,true);
+    const newTurn=await bounded(next.invoke(make("new")),"new worker");
+    assert.equal(newTurn.clientActionId,"new");
+    releaseOld();
+    await assert.rejects(()=>bounded(task,"stale worker"),/lock session lost|terminat|socket|connection/i);
+    const canonical=await new FencedTurns(storeB).latest(thread.id);
+    assert.equal(canonical.result.clientActionId,"new");
+    assert.equal((await next.getOwnedState("v9-duel",thread.id)).values.researchResult.clientActionId,"new");
+    const rows=await dbB.unsafe("SELECT client_action_id,status FROM shopping_brain.turn_receipts WHERE conversation_id=$1 ORDER BY client_action_id",[thread.id]);
+    assert.deepEqual(rows.map(x=>[x.client_action_id,x.status]),[["new","COMPLETED"],["old","PENDING"]]);
+  }finally{
+    releaseOld?.();
+    await Promise.allSettled([saverA.end(),saverB.end(),
+      locksA.end({timeout:1}),locksB.end({timeout:1}),dbA.end({timeout:1}),dbB.end({timeout:1})]);
+  }
+});
