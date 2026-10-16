@@ -67,7 +67,8 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
          key:"price_priority",value:selected})
      });
      if(r.ok)setPending(r.data.proposal_id);else setError("선호 저장 요청을 만들지 못했어요.");
-   }finally{setBusy(false);}
+   }catch{setError("네트워크 오류로 선호 저장 요청을 완료하지 못했어요.");}
+   finally{setBusy(false);}
  };
  const confirm=async()=>{
    if(!pending||busy)return;
@@ -77,14 +78,16 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
        method:"POST",body:JSON.stringify({proposal_id:pending})
      });
      if(r.ok){setPending(null);await refresh();}else setError("선호 저장 확인에 실패했어요.");
-   }finally{setBusy(false);}
+   }catch{setError("네트워크 오류로 확인하지 못했어요. 다시 확인해 주세요.");}
+   finally{setBusy(false);}
  };
  const clear=async()=>{
-   if(busy)return;setBusy(true);
+   if(busy)return;setBusy(true);setError("");
    try{
      const r=await apiSafe<{deleted:boolean}>("/api/brain/preferences/price_priority",{method:"DELETE"});
      if(r.ok)await refresh();else setError("선호 삭제에 실패했어요.");
-   }finally{setBusy(false);}
+   }catch{setError("네트워크 오류로 선호 삭제를 완료하지 못했어요.");}
+   finally{setBusy(false);}
  };
  return <aside className="agent-panel" aria-label="Shopping Brain Preview">
    <div className="agent-head"><div><b>Shopping Brain Preview</b>
@@ -97,6 +100,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
       {e.reply&&<>
         {e.reply.shopping_plan&&<p className="muted sm">유지된 구매 조건 · {e.reply.shopping_plan.query} ·  {e.reply.shopping_plan.maxTotalWon===null?"예산 미설정":fmtWon(e.reply.shopping_plan.maxTotalWon)} · {e.reply.shopping_plan.requiredConditions.length?e.reply.shopping_plan.requiredConditions.join(", "):"필수 조건 없음"}</p>}
         {e.reply.explanation&&<p>{e.reply.explanation.text}</p>}
+        <p className="muted sm">Brain 처리 시간(서버 측): {Math.round(e.reply.trace.totalMs)}ms · 네트워크 전송 시간 제외</p>
         {e.reply.ranking.ranked.length>0
           ?<><p>현재 선호에 따라 비교한 검증 후보</p>{e.reply.ranking.ranked.slice(0,3).map((p,j)=>
               <div key={p.candidate.variantId} className="compare-row">
