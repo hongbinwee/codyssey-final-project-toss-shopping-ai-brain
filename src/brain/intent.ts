@@ -2,6 +2,7 @@ import type {Preference,PreferenceKey,PreferenceValue,ShoppingContext} from './c
 import type {ShoppingIntent,IntentPort} from './read-flow.ts';
 import {assertPreference} from './memory.ts';
 import type {ShoppingPlan,PlanOperations} from './shopping-plan.ts';
+import {assembleIntentContext} from "./context.ts";
 
 export interface IntentModel { complete(system:string,user:string):Promise<string> }
 const keys=new Set<PreferenceKey>(['price_priority','eye_comfort','noise_sensitivity']);
@@ -66,14 +67,10 @@ export function parseShoppingIntent(raw:string):ShoppingIntent {
 }
 /** Tool-free intent planner: prior state is user/context data, not a system override. */
 export function createIntentPort(model:IntentModel):IntentPort {
- return {async extract(userMessage:string,_memory:Preference[],previous?:ShoppingPlan):Promise<ShoppingIntent>{
-   if(!userMessage||userMessage.length>3000)throw new Error('invalid user request');
-   const user=previous
-    ?'[untrusted_previous_shopping_plan]\n'+JSON.stringify({
-      query:previous.query,maxTotalWon:previous.maxTotalWon,
-      requiredConditions:previous.requiredConditions,currentPreferences:previous.currentPreferences
-    })+'\n[/untrusted_previous_shopping_plan]\n[latest_user_message]\n'+userMessage
-    :userMessage;
-   return parseShoppingIntent(await model.complete(SYSTEM,user));
+ return {async extract(userMessage:string,memory:Preference[],previous?:ShoppingPlan):Promise<ShoppingIntent>{
+   const context=assembleIntentContext(userMessage,memory,previous);
+   // A selected Skill is a fixed, trusted procedure; user data remains user-level.
+   const system=SYSTEM+"\nBuilt-in shopping procedure: "+context.trustedSkillInstruction;
+   return parseShoppingIntent(await model.complete(system,context.untrustedUserContent));
  }};
 }
