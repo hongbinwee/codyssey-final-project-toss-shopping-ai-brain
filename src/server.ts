@@ -161,6 +161,11 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
         brainDatabaseUrl: env.BRAIN_DATABASE_URL ?? "",
         commerceDatabaseUrl: env.DATABASE_URL,
         provider,
+        rag: env.BRAIN_RAG_URL ? {
+          endpoint:env.BRAIN_RAG_URL,
+          auditId:env.BRAIN_RAG_AUDIT_ID ?? "",
+          token:env.BRAIN_RAG_TOKEN,
+        } : undefined,
       })
     : null;
   const aiGate = createAiDemoGate();
