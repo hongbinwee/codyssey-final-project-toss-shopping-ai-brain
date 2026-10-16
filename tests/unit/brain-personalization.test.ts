@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {rankProducts,effectivePreferences,eligibility} from "../../src/brain/personalization.ts";
 import {rememberExplicitPreference,InMemoryMemoryRepository} from "../../src/brain/memory.ts";
-const ctx=(currentPreferences:Record<string,string>={},maxTotalWon=500000)=>({currentPreferences,requiredConditions:["FHD"],maxTotalWon});
+const ctx=(currentPreferences:Partial<Record<"price_priority"|"eye_comfort"|"noise_sensitivity","value"|"balanced"|"performance"|"important"|"normal">>={},maxTotalWon=500000)=>({currentPreferences,requiredConditions:["FHD"],maxTotalWon});
 const proof=(id:string,productId:string,kind:"SPEC"|"REVIEW"="REVIEW")=>({id,productId,variantId:null,kind,sourceKind:"REAL" as const});
 const evidence=[proof("a-spec","p-a","SPEC"),proof("b-spec","p-b","SPEC"),...["performance","eye_comfort","noise"].flatMap(a=>["a","b"].map(i=>proof(a+"-"+i,"p-"+i)))];
 const candidate=(id:string,price:number,performance:number,eye:number)=>({
