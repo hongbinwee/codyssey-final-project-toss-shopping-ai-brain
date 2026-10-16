@@ -52,7 +52,16 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
      }
      const r=await apiSafe<BrainReply>("/api/brain/conversations/"+encodeURIComponent(id)+"/turn",
        {method:"POST",body:JSON.stringify({user_message:text,client_action_id:newActionKey()})});
-     if(!r.ok){setError("Brain 처리를 완료하지 못했어요. 다시 시도해 주세요.");return;}
+     if(!r.ok){
+       const friendly=r.error.code==="MODEL_RATE_LIMIT"?
+         "AI 모델 요청이 일시적으로 제한됐어요. 잠시 후 같은 질문을 다시 보내 주세요.":
+         r.error.code==="MODEL_TIMEOUT"?
+         "AI 모델 응답 시간이 초과됐어요. 이전 쇼핑 조건은 유지되니 다시 시도해 주세요.":
+         r.error.code==="CONVERSATION_BUSY"?
+         "이전 요청 처리 중이에요. 잠시 후 다시 보내 주세요.":
+         "Brain 처리를 완료하지 못했어요. 다시 시도해 주세요.";
+       setError(friendly);return;
+     }
      setEntries(previous=>[...previous,{text,reply:r.data}]);
      setSourceMessage(r.data.message_id);setInput("");
      await refresh();
