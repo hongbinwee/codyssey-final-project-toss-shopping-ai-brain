@@ -10,6 +10,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
  const brainUrl=process.env.BRAIN_DATABASE_URL;
  if(!brainUrl||!new URL(brainUrl).pathname.startsWith("/brain_"))throw Error("brain_ci-only service required");
  const admin=postgres(brainUrl,{max:1});
+ console.log("BRAIN_HTTP_STEP 01 connected");
  const physical="commerce_brain_ci"; // newly created disposable database, never a protected Commerce DB
  const commerceUrl=new URL(brainUrl);commerceUrl.pathname="/"+physical;
  let shop,server,mock;
@@ -17,6 +18,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
   const [current]=await admin.unsafe("SELECT current_database() AS name");
   assert.equal(current.name,"brain_ci");
   await admin.unsafe("CREATE DATABASE "+physical);
+  console.log("BRAIN_HTTP_STEP 02 disposable-commerce-created");
   shop=postgres(commerceUrl.toString(),{max:2});
   await shop.unsafe(readFileSync(new URL("../../db/migrations/001_catalog_cart_actions.sql",import.meta.url),"utf8"));
   await shop.unsafe("INSERT INTO users(id,auth_subject,display_name,test_address_json) VALUES ('user-http-a','http-a','QA A','{}'::jsonb),('user-http-b','http-b','QA B','{}'::jsonb)");
@@ -34,6 +36,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
   });
   mock.listen(0,"127.0.0.1");await once(mock,"listening");
   const mockPort=mock.address().port;
+  console.log("BRAIN_HTTP_STEP 03 local-model-mock-ready");
   Object.assign(process.env,{
     DATABASE_URL:commerceUrl.toString(),BRAIN_DATABASE_URL:brainUrl,BRAIN_ENABLED:"1",
     AI_LIVE_DEMO:"0",LLM_PROVIDER:"live",LLM_API_KEY:"ci_local_mock_only",
@@ -44,6 +47,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
   const {sql}=await import("../../src/db.ts");
   try{
     server=await start(0,{build:async()=>{}}); // npm run build separately verifies UI bundle
+    console.log("BRAIN_HTTP_STEP 04 commerce-api-and-brain-started");
     const port=server.address().port,base="http://127.0.0.1:"+port;
     const request=(path,method="GET",payload,cookie,origin)=>fetch(base+path,{
        method,headers:{"content-type":"application/json",...(cookie?{cookie}:{}),...(origin?{origin}:{})},
@@ -57,6 +61,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
       return c.split(";")[0];
     };
     const userA=await login("qa-code-a"),userB=await login("qa-code-b");
+    console.log("BRAIN_HTTP_STEP 05 authenticated-sessions-issued");
     const status=await request("/api/brain/status","GET",undefined,userA);
     assert.equal(status.status,200);
     const badOrigin=await request("/api/brain/conversations","POST",{},userA,"https://attacker.invalid");
@@ -70,6 +75,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     const wrongTurn=await request("/api/brain/conversations/"+id+"/turn","POST",
       {user_message:"Monitor",client_action_id:"qa-b"},userB);
     assert.equal(wrongTurn.status,404);
+    console.log("BRAIN_HTTP_STEP 06 before-read-only-turn");
     const turn=await request("/api/brain/conversations/"+id+"/turn","POST",
       {user_message:"모니터 추천",client_action_id:"qa-a-1",actorUserId:"user-http-b"},userA);
     assert.equal(turn.status,200);
@@ -78,6 +84,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     assert.equal(result.ranking.ranked.length,0,"no verified Amazon-wide counts, so no recommendation");
     assert.ok(result.ranking.referenceOnly.some(p=>p.candidate.productId==="p-http-monitor"));
     const sourceMessage=result.message_id;
+    console.log("BRAIN_HTTP_STEP 07 graph-and-reference-result-received");
     const propose=await request("/api/brain/preferences/proposals","POST",
       {conversation_id:id,source_message_id:sourceMessage,key:"price_priority",value:"value"},userA);
     assert.equal(propose.status,201);
@@ -93,12 +100,13 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     const [carts]=await shop.unsafe("SELECT count(*)::int AS n FROM carts");
     const [writes]=await shop.unsafe("SELECT count(*)::int AS n FROM action_requests");
     assert.equal(carts.n,0);assert.equal(writes.n,0);
+    console.log("BRAIN_HTTP_STEP 08 no-commerce-writes");
   } finally {
-    if(server)await new Promise(resolve=>server.close(resolve));
+    if(server){server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
     await sql.end();
   }
  } finally {
-  if(mock)await new Promise(resolve=>mock.close(resolve));
+  if(mock){mock.closeAllConnections?.();await new Promise(resolve=>mock.close(resolve));}
   if(shop)await shop.end();
   await admin.end();
  }
