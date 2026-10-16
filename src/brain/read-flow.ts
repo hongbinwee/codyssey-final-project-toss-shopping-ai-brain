@@ -1,32 +1,68 @@
-import type {BrainTrace,MemoryRepository,Preference,RankingResult,RetrieverPort,ShoppingContext} from './contracts.ts';
-import type {PersistentConversations} from './persistent-store.ts';
-import {rankProducts} from './personalization.ts';
-export interface ShoppingIntent {query:string;context:ShoppingContext}
-export interface IntentPort {extract(userMessage:string,knownPreferences:Preference[]):Promise<ShoppingIntent>}
-export interface ResearchResult {conversationId:string;messageId:string;ranking:RankingResult;trace:{memoryMs:number;intentMs:number;retrievalMs:number;rankMs:number;totalMs:number}}
-export interface ResearchDeps {conversations:Pick<PersistentConversations,'assertOwned'|'appendUserMessage'>;memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort}
-/** Read-only on Commerce. Production live graph must use this as its research node, not bypass eligibility. */
-export async function researchTurn(req:BrainTrace & {userMessage:string;clientActionId:string},deps:ResearchDeps):Promise<ResearchResult>{
+import type {BrainTrace,EvidenceRecord,MemoryRepository,Preference,RankingResult,RetrieverPort} from "./contracts.ts";
+import type {PersistentConversations} from "./persistent-store.ts";
+import {rankProducts} from "./personalization.ts";
+import type {PlanExtraction,ShoppingPlan} from "./shopping-plan.ts";
+import {resolveShoppingPlan} from "./shopping-plan.ts";
+import type {GroundedExplanation} from "./grounded-response.ts";
+
+export type ShoppingIntent=PlanExtraction;
+export interface IntentPort {
+ extract(userMessage:string,knownPreferences:Preference[],previous?:ShoppingPlan):Promise<ShoppingIntent>
+}
+export interface ResearchResult {
+ conversationId:string;messageId:string;ranking:RankingResult;
+ shoppingPlan?:ShoppingPlan;
+ explanation?:GroundedExplanation;
+ trace:{memoryMs:number;intentMs:number;retrievalMs:number;rankMs:number;totalMs:number}
+}
+export interface ResearchDeps {
+ conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
+ memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
+}
+export interface PreparedTurn {
+ messageId:string;memories:Preference[];startedAt:number;memoryMs:number
+}
+export interface RetrievedTurn {
+ result:ResearchResult;evidence:EvidenceRecord[]
+}
+type Request=BrainTrace & {userMessage:string;clientActionId:string};
+export async function prepareTurn(req:Request,deps:ResearchDeps):Promise<PreparedTurn>{
  const t0=performance.now();
- if(!req.actorUserId||!req.conversationId||!req.requestId||!req.userMessage?.trim())throw new Error('invalid authenticated research request');
+ if(!req.actorUserId||!req.conversationId||!req.requestId||!req.userMessage?.trim()||!req.clientActionId)
+   throw new Error("invalid authenticated research request");
  await deps.conversations.assertOwned(req.actorUserId,req.conversationId);
  const messageId=await deps.conversations.appendUserMessage(req.actorUserId,req.conversationId,req.clientActionId,req.userMessage);
- const t1=performance.now();
- const remembered=await deps.memory.list(req.actorUserId);
- if(remembered.some(p=>p.userId!==req.actorUserId))throw new Error('cross-tenant memory response');
- const t2=performance.now();
- const extracted=await deps.intent.extract(req.userMessage,remembered);
- if(!extracted||!extracted.query?.trim()||extracted.query.length>250)throw new Error('invalid query plan');
- const c=extracted.context;
- if(!c||!Array.isArray(c.requiredConditions)||c.requiredConditions.some(x=>typeof x!=='string'||!x.trim())||
-   c.requiredConditions.length>12||typeof c.currentPreferences!=='object'||c.currentPreferences===null||
-   (c.maxTotalWon!==null&&(!Number.isSafeInteger(c.maxTotalWon)||c.maxTotalWon<0)))throw new Error('invalid structured intent');
- const t3=performance.now();
- const fetched=await deps.retriever.search({query:extracted.query,maxTotalWon:c.maxTotalWon,requiredConditions:c.requiredConditions});
- if(!fetched||!Array.isArray(fetched.candidates)||!Array.isArray(fetched.evidence)||fetched.candidates.length>100||fetched.evidence.length>2500)
-    throw new Error('invalid retrieval result');
- const t4=performance.now();
- const ranking=rankProducts(fetched.candidates,fetched.evidence,c,remembered);
- const t5=performance.now();
- return {conversationId:req.conversationId,messageId,ranking,trace:{memoryMs:t2-t1,intentMs:t3-t2,retrievalMs:t4-t3,rankMs:t5-t4,totalMs:t5-t0}};
+ const memories=await deps.memory.list(req.actorUserId);
+ if(memories.some(m=>m.userId!==req.actorUserId))throw new Error("cross-tenant memory response");
+ return {messageId,memories,startedAt:t0,memoryMs:performance.now()-t0};
+}
+export async function resolveTurnPlan(req:Request,prepared:PreparedTurn,previous:ShoppingPlan|null|undefined,deps:ResearchDeps):Promise<ShoppingPlan>{
+ const intent=await deps.intent.extract(req.userMessage,prepared.memories,previous??undefined);
+ const plan=resolveShoppingPlan(previous,intent);
+ if(!plan.query||plan.query.length>200)throw new Error("invalid shopping plan");
+ return plan;
+}
+export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:ShoppingPlan,deps:ResearchDeps):Promise<RetrievedTurn>{
+ const retrievalStart=performance.now();
+ const fetched=await deps.retriever.search({query:plan.query,maxTotalWon:plan.maxTotalWon,
+   requiredConditions:plan.requiredConditions});
+ if(!fetched||!Array.isArray(fetched.candidates)||!Array.isArray(fetched.evidence)||
+    fetched.candidates.length>100||fetched.evidence.length>2500)throw new Error("invalid retrieval result");
+ const retrievalMs=performance.now()-retrievalStart;
+ const rankedAt=performance.now();
+ const ranking=rankProducts(fetched.candidates,fetched.evidence,plan,prepared.memories);
+ const rankMs=performance.now()-rankedAt;
+ return {
+   result:{conversationId:req.conversationId,messageId:prepared.messageId,ranking,
+     shoppingPlan:plan,trace:{memoryMs:prepared.memoryMs,
+       intentMs:Math.max(0,retrievalStart-prepared.startedAt-prepared.memoryMs),
+       retrievalMs,rankMs,totalMs:performance.now()-prepared.startedAt}},
+   evidence:fetched.evidence
+ };
+}
+/** Legacy independent research path remains for unit tests and adapter consumers. */
+export async function researchTurn(req:Request,deps:ResearchDeps):Promise<ResearchResult>{
+ const prepared=await prepareTurn(req,deps);
+ const plan=await resolveTurnPlan(req,prepared,null,deps);
+ return (await retrieveTurn(req,prepared,plan,deps)).result;
 }
