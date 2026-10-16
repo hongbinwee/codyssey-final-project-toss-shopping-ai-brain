@@ -20,6 +20,8 @@ export async function createBrainRuntime(options:{
  if(!options.provider.name.startsWith("live:"))
    throw new Error("Brain API requires live intent provider; no silent stub fallback");
  const db=postgres(url,{max:5,connect_timeout:5});
+ // Reserved lock sessions must never exhaust the observer/store pool.
+ const lockDb=postgres(url,{max:5,connect_timeout:5});
  let saver:PostgresSaver|undefined;
  try{
    const rows=await db.unsafe<{name:string;conversations:string|null}[]>(
@@ -35,13 +37,13 @@ export async function createBrainRuntime(options:{
      conversations,memory:preferences,
      retriever:options.rag?verifiedRagRetriever(options.rag,getProduct):commerceRetriever(searchProducts),
      intent:createIntentPort(providerIntentModel(options.provider,45000))
-   },saver,postgresTurnLock(db));
+   },saver,postgresTurnLock(lockDb,db));
    return {
      handle:createBrainApi({conversations,preferences,graph}),
-     close:async()=>{await Promise.allSettled([db.end(),saver!.end()]);}
+     close:async()=>{await Promise.allSettled([db.end(),lockDb.end(),saver!.end()]);}
    };
  }catch(e){
-   await Promise.allSettled([db.end(),...(saver?[saver.end()]:[])]);
+   await Promise.allSettled([db.end(),lockDb.end(),...(saver?[saver.end()]:[])]);
    throw e;
  }
 }
