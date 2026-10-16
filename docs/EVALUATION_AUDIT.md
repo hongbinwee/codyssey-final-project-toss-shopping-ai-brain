@@ -27,3 +27,7 @@ This is a **separate-pass code and test audit** of the previously authored imple
 5. No live LLM/real RAG QA claim without a separate execution. Do not merge to `main`.
 
 **Status:** initial code-audit findings substantiated. Independent second human or agent blind label adjudication NOT_YET_PERFORMED.
+
+## Follow-up disposition
+
+See [EVALUATION_REPORT.md](./EVALUATION_REPORT.md) for the verified CI run, case counts and current block/no-go decision. AUD-02 is fixed and tested; AUD-01/AUD-04/AUD-08 are partially addressed; AUD-03/AUD-05/AUD-06/AUD-07/AUD-09 remain unresolved release blockers. The blind independent reviewer has not supplied or signed off on labels.
