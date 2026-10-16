@@ -158,3 +158,34 @@ test("v9: delayed old worker after DB lock loss cannot publish over successor",a
       locksA.end({timeout:1}),locksB.end({timeout:1}),dbA.end({timeout:1}),dbB.end({timeout:1})]);
   }
 });
+
+test("v9 refuses to silently reset a populated legacy v8 checkpoint",async()=>{
+  valid();
+  const db=postgres(url,{max:3}),locks=postgres(url,{max:2});
+  const saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+  try{
+    await saver.setup();
+    const store=brainDatabaseFromPostgres(db);
+    const conversations=new PersistentConversations(store);
+    const memory=new PersistentPreferences(store);
+    const thread=await conversations.create("legacy-v8-owner");
+    const deps={conversations,memory,
+      intent:{extract:async()=>({query:"monitor",context:{
+        maxTotalWon:600000,requiredConditions:[],currentPreferences:{}
+      }})},retriever:{search:async()=>({candidates:[],evidence:[]})}};
+    const legacy=createPersistentResearchGraph(deps,saver);
+    await legacy.invoke({actorUserId:"legacy-v8-owner",conversationId:thread.id,
+      requestId:crypto.randomUUID(),clientActionId:"legacy-a",userMessage:"legacy"});
+    const graph=createPersistentResearchGraph(deps,saver,
+      postgresTurnLock(locks,db),new FencedTurns(store));
+    await assert.rejects(()=>graph.getOwnedState("legacy-v8-owner",thread.id),/legacy Brain checkpoint migration required/);
+    await assert.rejects(()=>graph.invoke({actorUserId:"legacy-v8-owner",
+      conversationId:thread.id,requestId:crypto.randomUUID(),clientActionId:"new-v9",
+      userMessage:"another"}),/legacy Brain checkpoint migration required/);
+    const old=await legacy.getOwnedState("legacy-v8-owner",thread.id);
+    assert.equal(old.values.shoppingPlan.maxTotalWon,600000,"older saved plan must stay intact");
+    assert.equal(await new FencedTurns(store).latest(thread.id),null);
+    const [{n}]=await db.unsafe("SELECT count(*)::int AS n FROM shopping_brain.messages WHERE conversation_id=$1",[thread.id]);
+    assert.equal(n,1,"no new message added during migration block");
+  }finally{await Promise.allSettled([saver.end(),locks.end(),db.end()]);}
+});
