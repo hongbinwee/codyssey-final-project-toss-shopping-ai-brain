@@ -4,11 +4,16 @@ import {createHash} from "node:crypto";
  * Locks are session-scoped and released by postgres.js reserved connection close.
  * Only the AI-owned PostgreSQL pool may be used. Not a Commerce DB tool.
  */
+export interface TurnLease {
+  /** Checks that the original DB session still holds the advisory lock. */
+  assertHeld():Promise<void>;
+  release():Promise<void>;
+}
 export interface TurnLock {
-  tryAcquire(conversationId:string):Promise<null|(()=>Promise<void>)>
+  tryAcquire(conversationId:string):Promise<null|TurnLease>;
 }
 interface ReservedSession {
-  unsafe(query:string,args:unknown[]):Promise<{acquired:boolean}[]>;
+  unsafe(query:string,args:unknown[]):Promise<Array<{acquired?:boolean;pid?:number;held?:boolean}>>;
   release():Promise<unknown>;
 }
 interface ReservePool {
@@ -29,18 +34,36 @@ export function postgresTurnLock(pool:ReservePool):TurnLock{
     const connection=await pool.reserve() as ReservedSession;
     let acquired=false,released=false;
     try{
-      const rows=await connection.unsafe("SELECT pg_try_advisory_lock($1::bigint) AS acquired",[key]);
+      const rows=await connection.unsafe(
+        "SELECT pg_backend_pid() AS pid, pg_try_advisory_lock($1::bigint) AS acquired",[key]);
       acquired=rows.length===1&&rows[0].acquired===true;
+      const originalPid=rows[0]?.pid;
       if(!acquired){await connection.release();return null;}
-      return async()=>{
-        if(released)return;
-        released=true;
-        try{
-          const rows=await connection.unsafe("SELECT pg_advisory_unlock($1::bigint) AS acquired",[key]);
-          if(rows.length!==1||rows[0].acquired!==true)
-            throw new Error("Brain turn lock was not held at release");
-        }finally{
-          await connection.release();
+      return {
+        async assertHeld(){
+          if(released)throw new Error("Brain turn lock already released");
+          // Checking the same reserved connection catches disconnected/replaced
+          // sessions. Inspect pg_locks too: matching the PID alone is not proof.
+          const status=await connection.unsafe(`
+            SELECT pg_backend_pid() AS pid,
+              EXISTS(SELECT 1 FROM pg_locks
+                WHERE locktype='advisory' AND pid=pg_backend_pid()
+                  AND classid=(($1::bigint >> 32) & 4294967295)::oid
+                  AND objid=($1::bigint & 4294967295)::oid
+                  AND objsubid=1 AND granted) AS held`,[key]);
+          if(status.length!==1||status[0].pid!==originalPid||status[0].held!==true)
+            throw new Error("Brain turn lock session lost");
+        },
+        async release(){
+          if(released)return;
+          released=true;
+          try{
+            const rows=await connection.unsafe("SELECT pg_advisory_unlock($1::bigint) AS acquired",[key]);
+            if(rows.length!==1||rows[0].acquired!==true)
+              throw new Error("Brain turn lock was not held at release");
+          }finally{
+            await connection.release();
+          }
         }
       };
     }catch(e){
