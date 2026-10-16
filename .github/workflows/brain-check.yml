@@ -72,6 +72,13 @@ jobs:
           status=$?
           cat /tmp/brain-http.log
           exit "$status"
+      - name: Authenticated RAG E2E with two users and preference reversal
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=5s 70s node --experimental-strip-types --test tests/brain-db/brain-rag-http.test.mjs > /tmp/brain-rag-http.log 2>&1
+          status=$?
+          cat /tmp/brain-rag-http.log
+          exit "$status"
       - name: Real LangGraph MemorySaver smoke
         run: node --experimental-strip-types --test experiments/langgraph/smoke.test.mjs
       - name: Verify dependency lock and package were not modified
