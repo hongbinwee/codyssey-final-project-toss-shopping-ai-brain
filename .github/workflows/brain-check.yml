@@ -10,6 +10,8 @@ on:
       - "db/brain/**"
       - "tests/brain-sandbox/**"
       - "tests/brain-db/**"
+      - "tests/brain-browser/**"
+      - "src/web/components/BrainPreview.tsx"
       - "tests/unit/brain-*.test.ts"
       - "experiments/langgraph/**"
       - "package.json"
@@ -78,6 +80,15 @@ jobs:
           timeout --signal=TERM --kill-after=5s 70s node --experimental-strip-types --test tests/brain-db/brain-rag-http.test.mjs > /tmp/brain-rag-http.log 2>&1
           status=$?
           cat /tmp/brain-rag-http.log
+          exit "$status"
+      - name: Install isolated Chromium browser for Brain UI
+        run: npx playwright install --with-deps chromium
+      - name: Browser E2E for memory, personalized ranking and retry
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=5s 140s node --experimental-strip-types --test tests/brain-browser/brain-browser.test.mjs > /tmp/brain-browser.log 2>&1
+          status=$?
+          cat /tmp/brain-browser.log
           exit "$status"
       - name: Real LangGraph MemorySaver smoke
         run: node --experimental-strip-types --test experiments/langgraph/smoke.test.mjs
