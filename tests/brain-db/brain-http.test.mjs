@@ -49,10 +49,16 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     server=await start(0,{build:async()=>{}}); // npm run build separately verifies UI bundle
     console.log("BRAIN_HTTP_STEP 04 commerce-api-and-brain-started");
     const port=server.address().port,base="http://127.0.0.1:"+port;
-    const request=(path,method="GET",payload,cookie,origin)=>fetch(base+path,{
-       method,headers:{"content-type":"application/json",...(cookie?{cookie}:{}),...(origin?{origin}:{})},
-       ...(payload!==undefined?{body:JSON.stringify(payload)}:{})
-    });
+    // Drain EVERY response body: dangling keep-alive bodies can starve the local agent.
+    const request=async(path,method="GET",payload,cookie,origin)=>{
+      const response=await fetch(base+path,{
+        method,signal:AbortSignal.timeout(30000),
+        headers:{"content-type":"application/json",...(cookie?{cookie}:{}),...(origin?{origin}:{})},
+        ...(payload!==undefined?{body:JSON.stringify(payload)}:{})
+      });
+      const raw=await response.text();
+      return {status:response.status,headers:response.headers,json:async()=>JSON.parse(raw)};
+    };
     const unauth=await request("/api/brain/status");assert.equal(unauth.status,401);
     const login=async code=>{
       const r=await request("/api/session","POST",{code});
