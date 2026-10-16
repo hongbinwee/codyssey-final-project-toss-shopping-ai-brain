@@ -49,14 +49,22 @@ export function createPersistentResearchGraph(
    .addEdge("retrieve","respond")
    .addEdge("respond",END)
    .compile({checkpointer});
- // One-process consistency only; for multiple nodes use distributed locking.
- const active=new Set<string>();
+ // One-process deduplication ONLY; production multi-replica requires a DB lock.
+ // The map is scoped to one compiled graph instance and never authorizes a user.
+ const inFlight=new Map<string,{actorUserId:string;clientActionId:string;userMessage:string;promise:Promise<ResearchResult>}>();
  return {
    async invoke(input:GraphRequest){
      await deps.conversations.assertOwned(input.actorUserId,input.conversationId);
-     if(active.has(input.conversationId))throw new Error("conversation busy");
-     active.add(input.conversationId);
-     try{
+     const pending=inFlight.get(input.conversationId);
+     if(pending){
+       if(pending.actorUserId===input.actorUserId&&
+          pending.clientActionId===input.clientActionId&&pending.userMessage===input.userMessage)
+         return pending.promise;
+       if(pending.clientActionId===input.clientActionId)
+         throw new Error("duplicate action conflict");
+       throw new Error("conversation busy");
+     }
+     const task=(async()=>{
        const config={configurable:{thread_id:input.conversationId}};
        const prior=await compiled.getState(config);
        const request=prior.values?.request as GraphRequest|undefined;
@@ -72,7 +80,13 @@ export function createPersistentResearchGraph(
            run.researchResult.clientActionId!==input.clientActionId||!run.researchResult.explanation)
          throw new Error("invalid graph result");
        return run.researchResult;
-     }finally{active.delete(input.conversationId);}
+     })();
+     inFlight.set(input.conversationId,{
+       actorUserId:input.actorUserId,clientActionId:input.clientActionId,
+       userMessage:input.userMessage,promise:task
+     });
+     try{return await task;}
+     finally{inFlight.delete(input.conversationId);}
    },
    async getOwnedState(actorUserId:string,conversationId:string){
      await deps.conversations.assertOwned(actorUserId,conversationId);
