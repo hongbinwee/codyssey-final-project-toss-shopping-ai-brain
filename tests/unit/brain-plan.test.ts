@@ -88,8 +88,11 @@ test("grounded response references only matching evidence IDs and never invents 
 });
 test("nonqualifying candidates receive no fabricated recommendation",()=>{
  const p=candidate("a",90000);p.wholeReviewCountVerified=false;
- const result=rankProducts([p],[],{...oldPlan,requiredConditions:[]},[]);
- const explanation=buildGroundedExplanation(result,[],oldPlan);
+ const evidence=["perf","eye","noise"].map(name=>({
+   id:name+"-a",productId:"p-a",variantId:null,kind:"REVIEW" as const,sourceKind:"REAL" as const
+ }));
+ const result=rankProducts([p],evidence,{...oldPlan,requiredConditions:[]},[]);
+ const explanation=buildGroundedExplanation(result,evidence,oldPlan);
  assert.equal(explanation.kind,"REFERENCE_ONLY");
  assert.equal(explanation.items.length,0);
  assert.match(explanation.text,/참고 정보/);
