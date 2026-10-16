@@ -3,6 +3,14 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import {postgresTurnLock} from "../../src/brain/turn-lock.ts";
 
+function deadline(promise,label,ms=12000){
+  let timer;
+  const timeout=new Promise((_,reject)=>{
+    timer=setTimeout(()=>reject(new Error(label+" exceeded "+ms+"ms")),ms);
+  });
+  return Promise.race([promise,timeout]).finally(()=>clearTimeout(timer));
+}
+
 // Safety characterization, NOT an exactly-once guarantee. Uses CI-only brain_ci.
 test("killing an advisory-lock backend releases exclusivity while its old worker may still be alive", async () => {
   const url=process.env.BRAIN_DATABASE_URL;
@@ -93,12 +101,13 @@ test("a stale graph worker cannot commit a delayed RAG result after its lock ses
       requestId:crypto.randomUUID(),clientActionId:"stale-action",userMessage:"이전 요청"};
     const old=graphA.invoke(input);
     old.catch(()=>{}); // Observe rejection after intentional session termination.
-    await hasStarted;
+    await deadline(hasStarted,"stale Graph did not reach retrieval");
     const [{pid}]=await reserved.unsafe("SELECT pg_backend_pid() AS pid");
     const [terminated]=await sqlB.unsafe("SELECT pg_terminate_backend($1::int) AS terminated",[pid]);
     assert.equal(terminated.terminated,true);
-    const current=await graphB.invoke({...input,
-      requestId:crypto.randomUUID(),clientActionId:"newer-action",userMessage:"새 요청"});
+    const current=await deadline(graphB.invoke({...input,
+      requestId:crypto.randomUUID(),clientActionId:"newer-action",userMessage:"새 요청"}),
+      "replacement Graph could not complete");
     assert.equal(current.clientActionId,"newer-action");
     unblock();
     await assert.rejects(old,"a worker with a dead lock session must reject");
