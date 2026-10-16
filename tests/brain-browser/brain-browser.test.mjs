@@ -108,9 +108,10 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await panel.waitFor({timeout:15000});
    console.log("BROWSER_STAGE 05 preview visible");
    const send=async(message)=>{
+     const count=await panel.locator(".msg.ai").count();
      await panel.getByPlaceholder("쇼핑 조건을 입력하세요").fill(message);
      await panel.getByRole("button",{name:"보내기"}).click();
-     return panel.locator(".msg.ai").last();
+     return panel.locator(".msg.ai").nth(count);
    };
    const first=await send("모니터를 50만원 이하로 추천해줘");
    await first.locator(".compare-row").first().waitFor({timeout:25000});
