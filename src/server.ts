@@ -153,6 +153,16 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
   });
   const provider = getProvider();
   const aiDemo = env.AI_LIVE_DEMO === "1";
+  if (aiDemo && env.BRAIN_ENABLED === "1")
+    throw new Error("new Brain API cannot run in the existing read-only live demo");
+  // Never open AI storage unless explicitly enabled. No edits to Commerce DB.
+  const brainRuntime = env.BRAIN_ENABLED === "1"
+    ? await (await import("./brain/runtime.ts")).createBrainRuntime({
+        brainDatabaseUrl: env.BRAIN_DATABASE_URL ?? "",
+        commerceDatabaseUrl: env.DATABASE_URL,
+        provider,
+      })
+    : null;
   const aiGate = createAiDemoGate();
   const aiCalls = createAiDemoGate(30, 15);
 
@@ -222,6 +232,24 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       if (aiDemo && p.startsWith("/api/") && p !== "/api/agent/turn" &&
           !(req.method === "GET" && /^\/api\/products(?:\/[^/]+(?:\/reviews)?)?$/.test(p)))
         return json(res, 403, { ok: false, error: { code: "READ_ONLY_DEMO", message: "이 AI 시연에서는 상품·리뷰 조회만 제공해요. 일반 쇼핑은 기존 3105 앱을 이용해 주세요." } });
+
+      if (p === "/api/brain" || p.startsWith("/api/brain/")) {
+        if (!brainRuntime)
+          return json(res, 404, { ok: false, error: { code: "NOT_FOUND", message: "Brain API is disabled" } });
+        // Origin is not authentication, but reject cross-origin browser mutations.
+        if (req.method === "POST" || req.method === "DELETE") {
+          const origin = req.headers.origin;
+          if (origin) {
+            let match = false;
+            try { match = new URL(origin).host === req.headers.host; } catch { /* fail closed */ }
+            if (!match)
+              return json(res, 403, { ok: false, error: { code: "FORBIDDEN", message: "허용되지 않은 요청 출처" } });
+          }
+        }
+        const submitted = req.method === "POST" ? await body(req) : {};
+        const reply = await brainRuntime.handle(req.method ?? "", p, ctx.actorUserId, submitted);
+        return json(res, reply.status, reply.body);
+      }
 
       if (p === "/api/products" && req.method === "GET") {
         return send(res, await searchProducts({
@@ -412,6 +440,7 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
         ? server.listen(port, host, resolve)
         : server.listen(port, resolve),
   );
+  if (brainRuntime) server.on("close", () => { void brainRuntime.close(); });
   return server;
 }
 
