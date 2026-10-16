@@ -46,6 +46,7 @@ test("RAG ranking actually changes by user preference while candidate set is ide
  assert.equal(adapter.calls(),1);
  assert.equal(r.candidates.length,2);
  assert.equal(r.candidates[0].unitPriceWon,100000,"Commerce quote must override spoofed RAG price");
+ assert.equal(r.candidates[0].productName,"Mock a","name must also come from Commerce");
  assert.equal(r.candidates[0].shippingFeeWon,3000,"Commerce must own shipping");
  assert.equal(r.candidates[0].wholeReviewCountVerified,true);
  assert.equal(rankProducts(r.candidates,r.evidence,ctx("value"),[]).ranked[0].candidate.productId,"p-a");
