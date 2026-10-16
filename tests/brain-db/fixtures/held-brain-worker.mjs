@@ -5,6 +5,7 @@ import {brainDatabaseFromPostgres} from "../../../src/brain/pg-adapter.ts";
 import {PersistentConversations,PersistentPreferences} from "../../../src/brain/persistent-store.ts";
 import {createPersistentResearchGraph} from "../../../src/brain/graph.ts";
 import {postgresTurnLock} from "../../../src/brain/turn-lock.ts";
+import {FencedTurns} from "../../../src/brain/fenced-turns.ts";
 
 const url=process.env.BRAIN_DATABASE_URL;
 if(!url||new URL(url).pathname!=="/brain_ci"||!process.env.BRAIN_QA_THREAD)
@@ -23,7 +24,7 @@ const graph=createPersistentResearchGraph({
     await new Promise(()=>{}); // Parent will kill the actual OS process.
     return {candidates:[],evidence:[]};
   }}
-},saver,postgresTurnLock(lockDb,db));
+},saver,postgresTurnLock(lockDb,db),process.env.BRAIN_QA_FENCED==="1"?new FencedTurns(brainDatabaseFromPostgres(db)):undefined);
 await graph.invoke({actorUserId:"worker-kill-owner",
   conversationId:process.env.BRAIN_QA_THREAD,
   requestId:crypto.randomUUID(),clientActionId:"child-action",
