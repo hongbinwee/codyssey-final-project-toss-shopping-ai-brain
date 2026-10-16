@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useEffect,useState} from "react";
 import {apiSafe,newActionKey,fmtWon} from "../api.ts";
 
 type RankedProduct={
@@ -23,6 +23,14 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
  const [memories,setMemories]=useState<MemoryItem[]>([]);
  const [entries,setEntries]=useState<Entry[]>([]);
  const [busy,setBusy]=useState(false);
+ useEffect(()=>{
+   let active=true;
+   void apiSafe<MemoryItem[]>("/api/brain/preferences").then(r=>{
+     if(active&&r.ok)setMemories(r.data);
+   });
+   return ()=>{active=false;};
+ },[]);
+
  const [error,setError]=useState("");
 
  const refresh=async()=>{
