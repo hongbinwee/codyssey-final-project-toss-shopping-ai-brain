@@ -442,6 +442,9 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       res.writeHead(404);
       res.end("Not found");
     } catch {
+      // Static asset read failures may happen after writeHead(200). Never send
+      // a second header: close the incomplete response instead.
+      if (res.headersSent) { res.destroy(); return; }
       json(res, 500, { ok: false, error: { code: "INTERNAL", message: "요청을 처리하지 못했습니다" } });
     }
   });
