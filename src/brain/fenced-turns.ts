@@ -27,7 +27,8 @@ function checkedResult(raw:unknown,conversationId:string):ResearchResult {
   return r;
 }
 export class FencedTurns {
-  constructor(private readonly db:BrainSqlDatabase){}
+  private readonly db:BrainSqlDatabase;
+  constructor(db:BrainSqlDatabase){this.db=db;}
   async claim(action:Action):Promise<FencedClaim>{
     const fingerprint=digest(action);
     return this.db.transaction(async tx=>{
