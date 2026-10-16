@@ -19,6 +19,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/brain-check.yml"
+      - "docs/BRAIN_V7_DISTRIBUTED_RECOVERY_ERASURE.md"
   workflow_dispatch:
 
 permissions:
