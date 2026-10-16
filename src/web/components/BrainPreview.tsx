@@ -2,10 +2,10 @@ import {useEffect,useState} from "react";
 import {apiSafe,newActionKey,fmtWon} from "../api.ts";
 
 type RankedProduct={
- candidate:{productId:string;variantId:string;unitPriceWon:number|null;shippingFeeWon:number|null};
+ candidate:{productId:string;productName?:string;variantId:string;unitPriceWon:number|null;shippingFeeWon:number|null};
  score:number;evidenceCoverage:number;
 };
-type LimitedProduct={candidate:{productId:string;variantId:string};reasons:string[]};
+type LimitedProduct={candidate:{productId:string;productName?:string;variantId:string};reasons:string[]};
 type BrainReply={
  conversation_id:string;message_id:string;read_only:true;
  ranking:{ranked:RankedProduct[];referenceOnly:LimitedProduct[];rejected:LimitedProduct[];evaluatedCount:number};
@@ -96,7 +96,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
         {e.reply.ranking.ranked.length>0
           ?<><p>현재 선호에 따라 비교한 검증 후보</p>{e.reply.ranking.ranked.slice(0,3).map((p,j)=>
               <div key={p.candidate.variantId} className="compare-row">
-                <b>{j+1}. {p.candidate.productId}</b>
+                <b>{j+1}. {p.candidate.productName ?? p.candidate.productId}</b>
                 <span className="muted sm"> · {p.candidate.unitPriceWon===null?"가격 미확인":fmtWon(p.candidate.unitPriceWon)} · 옵션 {p.candidate.variantId}</span>
                 <button className="link" onClick={()=>onOpenProduct(p.candidate.productId)}>상품 보기</button>
               </div>)}
@@ -104,7 +104,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
           :<p>추천 적격성을 확인한 상품이 없어요. 데이터·근거가 충분하지 않을 수 있어요.</p>}
         {e.reply.ranking.referenceOnly.length>0&&<div className="muted sm">
           <b>참고 정보 (추천 아님)</b>{e.reply.ranking.referenceOnly.slice(0,3).map((p,j)=>
-            <div key={j}>{p.candidate.productId} · {p.reasons.join(", ")}</div>)}
+            <div key={j}>{p.candidate.productName ?? p.candidate.productId} · {p.reasons.join(", ")}</div>)}
         </div>}
         {e.reply.ranking.rejected.length>0&&<p className="muted sm">필수 조건/근거 미충족 후보 {e.reply.ranking.rejected.length}개 제외</p>}
       </>}
