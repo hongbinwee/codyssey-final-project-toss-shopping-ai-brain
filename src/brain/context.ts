@@ -16,8 +16,9 @@ export interface IntentContext {
 export function assembleIntentContext(userMessage:string,memories:Preference[],previous?:ShoppingPlan):IntentContext{
  if(typeof userMessage!=="string"||!userMessage.trim()||userMessage.length>3000)
    throw new Error("invalid user intent text");
- const preferred=previous?.query??userMessage;
- const selected=selectShoppingSkill(preferred);
+ const latestSkill=selectShoppingSkill(userMessage);
+ // A clearly named new category beats a stale previous category; generic follow-ups reuse the previous skill.
+ const selected=latestSkill.id!=="general"?latestSkill:selectShoppingSkill(previous?.query??userMessage);
  const latest=new Map<PreferenceKey,{value:PreferenceValue;updatedAt:string}>();
  for(const m of [...memories].sort((a,b)=>a.updatedAt.localeCompare(b.updatedAt))){
    assertPreference(m.key,m.value);
