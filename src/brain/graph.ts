@@ -1,5 +1,6 @@
 import {Annotation,StateGraph,START,END} from "@langchain/langgraph";
-import type {BrainTrace,RankingResult} from "./contracts.ts";
+import type {BrainTrace} from "./contracts.ts";
+import type {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
 import type {ResearchDeps,ResearchResult} from "./read-flow.ts";
 import {researchTurn} from "./read-flow.ts";
 import type {BrainGraphPort} from "./api.ts";
@@ -16,7 +17,7 @@ const State=Annotation.Root({
  */
 export function createPersistentResearchGraph(
  deps:ResearchDeps,
- checkpointer:Parameters<ReturnType<StateGraph<typeof State>["compile"]>>[0] = undefined as never,
+ checkpointer:PostgresSaver,
 ):BrainGraphPort {
  const compiled=new StateGraph(State)
    .addNode("research",async (state)=>({researchResult:await researchTurn(state.request,deps)}))
