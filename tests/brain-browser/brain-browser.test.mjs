@@ -165,6 +165,10 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await afterModelRetry.locator(".compare-row").first().waitFor({timeout:25000});
    assert.ok(await afterModelRetry.getByText(/500,000원/).count()>0,
      "failed LLM call cannot destroy previous completed budget plan");
+   await panel.getByRole("button",{name:"가격 선호 기억 삭제"}).click();
+   await panel.getByText(/저장된 장기 가격 선호만 삭제했어요/).waitFor({timeout:12000});
+   assert.equal(await panel.getByText("price_priority: performance").count(),0,
+     "canonical long-term memory removed; previous conversations remain separate");
    const samples=(await Promise.all(graphTraces)).filter(n=>n!==null);
    assert.ok(samples.length>=4,"four successful CI mock Graph executions must be timed");
    console.log("BRAIN_BROWSER_MOCK_GRAPH_LATENCY",JSON.stringify(summarizeLatency(samples)),
