@@ -34,6 +34,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
  },[]);
 
  const [error,setError]=useState("");
+ const [notice,setNotice]=useState("");
 
  const refresh=async()=>{
    const result=await apiSafe<MemoryItem[]>("/api/brain/preferences");
@@ -82,10 +83,10 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
    finally{setBusy(false);}
  };
  const clear=async()=>{
-   if(busy)return;setBusy(true);setError("");
+   if(busy)return;setBusy(true);setError("");setNotice("");
    try{
      const r=await apiSafe<{deleted:boolean}>("/api/brain/preferences/price_priority",{method:"DELETE"});
-     if(r.ok)await refresh();else setError("선호 삭제에 실패했어요.");
+     if(r.ok){await refresh();setNotice("저장된 장기 가격 선호만 삭제했어요. 이전 대화 메시지와 현재 Shopping Plan은 별도로 보존될 수 있어요.");}else setError("선호 삭제에 실패했어요.");
    }catch{setError("네트워크 오류로 선호 삭제를 완료하지 못했어요.");}
    finally{setBusy(false);}
  };
@@ -131,6 +132,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
       {memories.map(m=><div key={m.key} className="muted sm">{m.key}: {m.value}</div>)}
       <button className="link" onClick={clear} disabled={busy}>가격 선호 기억 삭제</button>
     </div>}
+    {notice&&<p role="status" className="muted sm">{notice}</p>}
     {error&&<p role="alert">{error}</p>}
     {busy&&<p role="status" className="muted sm">Brain이 데이터를 확인하고 있어요…</p>}
    </div>
