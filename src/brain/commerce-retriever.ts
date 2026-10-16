@@ -13,7 +13,7 @@ export function commerceRetriever(search:(input:{query:string;limit:number})=>Pr
    for(const p of result.data.items){
      for(const v of p.matched_variants){
        candidates.push({
-         productId:p.product_id,variantId:v.variant_id,unitPriceWon:v.unit_price_won,
+         productName:p.name,productId:p.product_id,variantId:v.variant_id,unitPriceWon:v.unit_price_won,
          shippingFeeWon:result.data.shipping_fee_won,rating:p.rating_summary.avg,
          ratingScale:5,wholeReviewCount:null,wholeReviewCountVerified:false,
          conditions:{},facets:{}
