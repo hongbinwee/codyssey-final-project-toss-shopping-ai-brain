@@ -28,11 +28,11 @@ test("killing an advisory-lock backend releases exclusivity while its old worker
   const conversationId=crypto.randomUUID();
   let releaseOld;
   try{
-    releaseOld=await postgresTurnLock(pool).tryAcquire(conversationId);
+    releaseOld=await postgresTurnLock(pool,second).tryAcquire(conversationId);
     assert.equal(typeof releaseOld?.release,"function");
     await releaseOld.assertHeld();
     const [{pid}]=await reserved.unsafe("SELECT pg_backend_pid() AS pid");
-    assert.equal(await postgresTurnLock(second).tryAcquire(conversationId),null,
+    assert.equal(await postgresTurnLock(second,first).tryAcquire(conversationId),null,
       "healthy held session must exclude a second worker");
 
     const killed=await second.unsafe(
@@ -41,7 +41,7 @@ test("killing an advisory-lock backend releases exclusivity while its old worker
 
     // A new session can now enter, although application code in the old
     // worker may still be executing an async provider/RAG operation.
-    const releaseNew=await postgresTurnLock(second).tryAcquire(conversationId);
+    const releaseNew=await postgresTurnLock(second,first).tryAcquire(conversationId);
     assert.equal(typeof releaseNew?.release,"function",
       "session loss invalidates exclusion; this is an operational blocker");
     try{
@@ -91,11 +91,11 @@ test("a stale graph worker cannot commit a delayed RAG result after its lock ses
       retriever:{search:async()=>{started();await parked;return {candidates:[],evidence:[]};}}
     },saverA,postgresTurnLock({reserve:async()=>{
       reserved=await sqlA.reserve();return reserved;
-    }}));
+    }},sqlB));
     const graphB=createPersistentResearchGraph({
       conversations:conversationsB,memory:memoryB,intent,
       retriever:{search:async()=>({candidates:[],evidence:[]})}
-    },saverB,postgresTurnLock(sqlB));
+    },saverB,postgresTurnLock(sqlB,sqlA));
     await saverA.setup();await saverB.setup();
     const input={actorUserId:"stale-graph-worker",conversationId:thread.id,
       requestId:crypto.randomUUID(),clientActionId:"stale-action",userMessage:"이전 요청"};
