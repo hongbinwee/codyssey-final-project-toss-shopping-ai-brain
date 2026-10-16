@@ -161,3 +161,94 @@ test("multi-turn Shopping Plan preserves budget/specs and survives PostgreSQL gr
    assert.deepEqual(newCategory.shoppingPlan.currentPreferences,{});
  }finally{await Promise.allSettled([saver.end(),db.end()]);}
 });
+
+test("concurrent identical Graph turns coalesce; different turns return 409, checkpoints remain valid",async()=>{
+ if(!url||new URL(url).pathname!=="/brain_ci")throw Error("disposable brain_ci required");
+ const db=postgres(url,{max:2});
+ const saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+ try{
+   const source=brainDatabaseFromPostgres(db);
+   const conversations=new PersistentConversations(source),memory=new PersistentPreferences(source);
+   const thread=await conversations.create("user-concurrent-check");
+   let unblock,markStarted;
+   const blocked=new Promise(resolve=>{unblock=resolve});
+   const started=new Promise(resolve=>{markStarted=resolve});
+   let searchCalls=0,extractCalls=0;
+   const deps={
+     conversations,memory,
+     intent:{extract:async(message,stored,previous)=>{
+       extractCalls++;
+       return {query:"monitor",context:{maxTotalWon:500000,requiredConditions:[],currentPreferences:{}},
+         queryMode:previous?"KEEP":"SET",budgetMode:previous?"KEEP":"SET",requirementsMode:"KEEP"};
+     }},
+     retriever:{search:async()=>{
+       searchCalls++;
+       if(searchCalls===1){markStarted();await blocked;}
+       return {candidates:[],evidence:[]};
+     }}
+   };
+   await saver.setup();
+   const graph=createPersistentResearchGraph(deps,saver);
+   const api=createBrainApi({conversations,preferences:memory,graph});
+   const send=(id,message,actor="user-concurrent-check")=>api("POST",
+     `/api/brain/conversations/${thread.id}/turn`,actor,
+     {client_action_id:id,user_message:message});
+   const a=send("same-action","모니터 추천");
+   await started;
+   const duplicate=send("same-action","모니터 추천");
+   // Allow ownership queries to reach the in-flight Map.
+   const conflict=await send("other-action","다른 조건으로");
+   assert.equal(conflict.status,409,"concurrent different action must not start another run");
+   assert.equal(conflict.body.error.code,"CONVERSATION_BUSY");
+   const mismatch=await send("same-action","동일 ID로 다른 메시지");
+   assert.equal(mismatch.status,400,"same action id with different message rejected");
+   const outsider=await send("same-action","모니터 추천","not-owner");
+   assert.equal(outsider.status,404,"tenant boundary remains enforced under contention");
+   unblock();
+   const [one,two]=await Promise.all([a,duplicate]);
+   assert.equal(one.status,200);assert.equal(two.status,200);
+   assert.equal(one.body.data.message_id,two.body.data.message_id);
+   assert.equal(searchCalls,1,"coalescing must avoid duplicate searches");
+   assert.equal(extractCalls,1,"coalescing must avoid duplicate model calls");
+   assert.equal((await graph.getOwnedState("user-concurrent-check",thread.id)).values.shoppingPlan.revision,1);
+   const next=await send("other-action","다음 턴");
+   assert.equal(next.status,200);
+   assert.equal(next.body.data.shopping_plan.revision,2);
+   assert.equal(searchCalls,2);
+ }finally{await Promise.allSettled([saver.end(),db.end()]);}
+});
+
+test("deleting canonical Memory does NOT constitute transcript or checkpoint erasure",async()=>{
+ if(!url||new URL(url).pathname!=="/brain_ci")throw Error("disposable brain_ci required");
+ const db=postgres(url,{max:2});
+ const saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+ try{
+   const backend=brainDatabaseFromPostgres(db);
+   const conversations=new PersistentConversations(backend),memory=new PersistentPreferences(backend);
+   const thread=await conversations.create("user-memory-erase-audit");
+   const message=await conversations.appendUserMessage("user-memory-erase-audit",thread.id,
+     "source-pref","이 대화에서는 가성비가 중요해");
+   const proposal=await conversations.proposePreference({actorUserId:"user-memory-erase-audit",
+     conversationId:thread.id,sourceMessageId:message,key:"price_priority",value:"value"});
+   await conversations.confirmPreference("user-memory-erase-audit",proposal);
+   assert.equal((await memory.list("user-memory-erase-audit")).length,1);
+   await saver.setup();
+   const graph=createPersistentResearchGraph({
+     conversations,memory,
+     intent:{extract:async()=>({query:"monitor",
+       context:{maxTotalWon:null,requiredConditions:[],currentPreferences:{}}})},
+     retriever:{search:async()=>({candidates:[],evidence:[]})}
+   },saver);
+   const response=await graph.invoke({actorUserId:"user-memory-erase-audit",conversationId:thread.id,
+     requestId:crypto.randomUUID(),clientActionId:"erasure-audit-turn",userMessage:"같은 대화 이어가자"});
+   assert.equal(response.ranking.evaluatedCount,0);
+   assert.equal(await memory.delete("user-memory-erase-audit","price_priority"),true);
+   assert.deepEqual(await memory.list("user-memory-erase-audit"),[]);
+   const saved=await db.unsafe("SELECT content FROM shopping_brain.messages WHERE id=$1 AND actor_user_id=$2",
+     [message,"user-memory-erase-audit"]);
+   assert.equal(saved.length,1,"source message still exists; no full erasure promise is valid");
+   const checkpoint=await graph.getOwnedState("user-memory-erase-audit",thread.id);
+   assert.ok(checkpoint.values.researchResult,"checkpoint persists after preference delete");
+   await assert.rejects(()=>graph.getOwnedState("user-memory-erase-audit-other",thread.id),/not owned/);
+ }finally{await Promise.allSettled([saver.end(),db.end()]);}
+});
