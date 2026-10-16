@@ -16,7 +16,7 @@ interface ReservedSession {
   release():Promise<unknown>;
 }
 interface ReservePool { reserve():Promise<unknown> }
-interface ObserverPool { unsafe(query:string,args:unknown[]):Promise<unknown> }
+interface ObserverPool { unsafe(query:string,args:(string|number)[]):Promise<unknown> }
 
 function lockKey(conversationId:string):string {
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(conversationId))
@@ -34,6 +34,10 @@ export function postgresTurnLock(pool:ReservePool,observer:ObserverPool):TurnLoc
         "SELECT pg_backend_pid() AS pid, pg_try_advisory_lock($1::bigint) AS acquired",[key]);
       acquired=rows.length===1&&rows[0].acquired===true;
       const originalPid=rows[0]?.pid;
+      if(acquired&&!Number.isInteger(originalPid)){
+        await connection.release();
+        throw new Error("missing original Brain lock session identity");
+      }
       if(!acquired){await connection.release();return null;}
       const verifyHeld=async()=>{
         if(lost)throw new Error("Brain turn lock session lost");
@@ -45,7 +49,7 @@ export function postgresTurnLock(pool:ReservePool,observer:ObserverPool):TurnLoc
               WHERE locktype='advisory' AND pid=$1::int
                 AND classid=(($2::bigint >> 32) & 4294967295)::oid
                 AND objid=($2::bigint & 4294967295)::oid
-                AND objsubid=1 AND granted) AS held`,[originalPid,key]) as Array<{held?:boolean}>;
+                AND objsubid=1 AND granted) AS held`,[originalPid as number,key]) as Array<{held?:boolean}>;
           if(rows.length!==1||rows[0].held!==true)
             throw new Error("Brain turn lock session lost");
         }catch(e){lost=true;throw e;}
