@@ -1,0 +1,40 @@
+import type {Preference,PreferenceKey,PreferenceValue} from "./contracts.ts";
+import type {ShoppingPlan} from "./shopping-plan.ts";
+import {assertPreference} from "./memory.ts";
+import {selectShoppingSkill,type SkillId} from "./skills.ts";
+
+export interface IntentContext {
+ trustedSkillId:SkillId;
+ trustedSkillInstruction:string;
+ untrustedUserContent:string
+}
+/**
+ * Stable system policy is supplied by the caller.
+ * Previous plan, memory and current user text are DATA (user-level context).
+ * Memory cannot silently turn into an explicit current turn preference.
+ */
+export function assembleIntentContext(userMessage:string,memories:Preference[],previous?:ShoppingPlan):IntentContext{
+ if(typeof userMessage!=="string"||!userMessage.trim()||userMessage.length>3000)
+   throw new Error("invalid user intent text");
+ const preferred=previous?.query??userMessage;
+ const selected=selectShoppingSkill(preferred);
+ const latest=new Map<PreferenceKey,{value:PreferenceValue;updatedAt:string}>();
+ for(const m of [...memories].sort((a,b)=>a.updatedAt.localeCompare(b.updatedAt))){
+   assertPreference(m.key,m.value);
+   latest.set(m.key,{value:m.value,updatedAt:m.updatedAt});
+ }
+ const remembered=[...latest].map(([key,record])=>({key,value:record.value})).slice(0,3);
+ const context=previous?{
+   query:previous.query,maxTotalWon:previous.maxTotalWon,
+   requiredConditions:previous.requiredConditions,currentPreferences:previous.currentPreferences
+ }:null;
+ return {
+   trustedSkillId:selected.id,
+   trustedSkillInstruction:selected.guidance,
+   untrustedUserContent:[
+     "[untrusted_previous_shopping_plan]",JSON.stringify(context),"[/untrusted_previous_shopping_plan]",
+     "[untrusted_confirmed_long_term_preferences]",JSON.stringify(remembered),"[/untrusted_confirmed_long_term_preferences]",
+     "[latest_user_message]",userMessage,"[/latest_user_message]"
+   ].join("\n")
+ };
+}
