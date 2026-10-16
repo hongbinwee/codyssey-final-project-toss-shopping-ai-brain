@@ -10,7 +10,7 @@ export interface IntentPort {
  extract(userMessage:string,knownPreferences:Preference[],previous?:ShoppingPlan):Promise<ShoppingIntent>
 }
 export interface ResearchResult {
- conversationId:string;messageId:string;ranking:RankingResult;
+ conversationId:string;messageId:string;clientActionId?:string;ranking:RankingResult;
  shoppingPlan?:ShoppingPlan;
  explanation?:GroundedExplanation;
  trace:{memoryMs:number;intentMs:number;retrievalMs:number;rankMs:number;totalMs:number}
@@ -53,7 +53,7 @@ export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:Shoppi
  const ranking=rankProducts(fetched.candidates,fetched.evidence,plan,prepared.memories);
  const rankMs=performance.now()-rankedAt;
  return {
-   result:{conversationId:req.conversationId,messageId:prepared.messageId,ranking,
+   result:{conversationId:req.conversationId,messageId:prepared.messageId,clientActionId:req.clientActionId,ranking,
      shoppingPlan:plan,trace:{memoryMs:prepared.memoryMs,
        intentMs:Math.max(0,retrievalStart-prepared.startedAt-prepared.memoryMs),
        retrievalMs,rankMs,totalMs:performance.now()-prepared.startedAt}},
