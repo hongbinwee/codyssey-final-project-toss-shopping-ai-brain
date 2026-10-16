@@ -47,7 +47,7 @@ test("a truly aborted hard timeout fails without answer and subsequent call can 
     globalThis.fetch=async(_url,opts)=>{
       calls++;
       if(calls>1)return new Response(JSON.stringify(responseBody),{status:200});
-      return await new Promise((_resolve,reject)=>{
+      return await new Promise<Response>((_resolve,reject)=>{
         const sig=opts?.signal;
         sig?.addEventListener("abort",()=>{
           abortSeen=true;
