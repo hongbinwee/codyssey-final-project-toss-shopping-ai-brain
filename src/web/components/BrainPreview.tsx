@@ -8,6 +8,8 @@ type RankedProduct={
 type LimitedProduct={candidate:{productId:string;productName?:string;variantId:string};reasons:string[]};
 type BrainReply={
  conversation_id:string;message_id:string;read_only:true;
+ shopping_plan?:{query:string;maxTotalWon:number|null;requiredConditions:string[];revision:number}|null;
+ explanation?:{text:string;kind:string;items:{productId:string;evidenceIds:string[]}[];limitations:string[]}|null;
  ranking:{ranked:RankedProduct[];referenceOnly:LimitedProduct[];rejected:LimitedProduct[];evaluatedCount:number};
  trace:{totalMs:number};
 };
@@ -93,6 +95,8 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
     {entries.map((e,i)=><div key={i} className="msg ai">
       <p><b>질문:</b> {e.text}</p>
       {e.reply&&<>
+        {e.reply.shopping_plan&&<p className="muted sm">유지된 구매 조건 · {e.reply.shopping_plan.query} ·  {e.reply.shopping_plan.maxTotalWon===null?"예산 미설정":fmtWon(e.reply.shopping_plan.maxTotalWon)} · {e.reply.shopping_plan.requiredConditions.length?e.reply.shopping_plan.requiredConditions.join(", "):"필수 조건 없음"}</p>}
+        {e.reply.explanation&&<p>{e.reply.explanation.text}</p>}
         {e.reply.ranking.ranked.length>0
           ?<><p>현재 선호에 따라 비교한 검증 후보</p>{e.reply.ranking.ranked.slice(0,3).map((p,j)=>
               <div key={p.candidate.variantId} className="compare-row">
