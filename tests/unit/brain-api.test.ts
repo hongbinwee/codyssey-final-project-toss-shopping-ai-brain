@@ -63,7 +63,7 @@ test("another actor cannot infer state or approval details",async()=>{
  const state=await api("GET","/api/brain/conversations/"+id+"/state","user-b",{});
  assert.equal(state.status,404);
  const confirm=await api("POST","/api/brain/preferences/confirm","user-b",{proposal_id:proof});
- assert.equal(confirm.status,409);
+ assert.equal(confirm.status,404); // Cross-user confirmation must not be enumerable.
 });
 test("state endpoint returns metadata only, never raw checkpoint",async()=>{
  const {api}=factory();
