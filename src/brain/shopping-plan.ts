@@ -56,9 +56,11 @@ export function resolveShoppingPlan(previous:ShoppingPlan|null|undefined,extract
   if(!validBudget(budget)||(extracted.budgetMode==="SET"&&budget===null))
     throw new Error("invalid resolved budget");
   const mode=extracted.requirementsMode??(now.requiredConditions.length?"ADD":"KEEP");
+  // A category switch must NEVER leak previous-category hard requirements.
+  // Mode ADD on a new task applies only to the new task's requirements.
   const requirements=mode==="CLEAR"?[]
     :mode==="REPLACE"?now.requiredConditions
-    :mode==="ADD"?[...previous.requiredConditions,...now.requiredConditions]
+    :mode==="ADD"?(newTask?now.requiredConditions:[...previous.requiredConditions,...now.requiredConditions])
     :newTask?[]:previous.requiredConditions;
   const prefs=extracted.preferencesMode==="CLEAR"||newTask?{}:{...previous.currentPreferences};
   if(extracted.preferencesMode!=="CLEAR")Object.assign(prefs,now.currentPreferences);
