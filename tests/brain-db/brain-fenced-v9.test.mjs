@@ -113,8 +113,12 @@ test("v9: delayed old worker after DB lock loss cannot publish over successor",a
   let reservedA,releaseOld,signalStarted;
   const blocked=new Promise(resolve=>{releaseOld=resolve;});
   const started=new Promise(resolve=>{signalStarted=resolve;});
-  const bounded=(p,label)=>Promise.race([p,new Promise((_,reject)=>setTimeout(
-    ()=>reject(Error(label+" timeout")),12000))]);
+  const bounded=(p,label)=>{
+    let timer;
+    return Promise.race([p,new Promise((_,reject)=>{
+      timer=setTimeout(()=>reject(Error(label+" timeout")),12000);
+    })]).finally(()=>clearTimeout(timer));
+  };
   try{
     await saverA.setup();await saverB.setup();
     const storeA=brainDatabaseFromPostgres(dbA),storeB=brainDatabaseFromPostgres(dbB);
