@@ -132,7 +132,7 @@ export function verifiedRagRetriever(
         typeof row.rating==="number"&&Number.isFinite(row.rating)&&
         row.rating>=1&&row.rating<=5&&row.ratingScale===5;
       candidates.push({
-        productId,variantId,unitPriceWon:variant.unit_price_won,
+        productName:verified.product.name,productId,variantId,unitPriceWon:variant.unit_price_won,
         shippingFeeWon:verified.shipping_fee_won,
         rating:typeof row.rating==="number"&&Number.isFinite(row.rating)?row.rating:null,
         ratingScale:row.ratingScale===5?5:null,
