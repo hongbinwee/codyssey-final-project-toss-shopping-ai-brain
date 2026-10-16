@@ -85,7 +85,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     const confirm=await request("/api/brain/preferences/confirm","POST",{proposal_id:token},userA);
     assert.equal(confirm.status,200);
     const reused=await request("/api/brain/preferences/confirm","POST",{proposal_id:token},userA);
-    assert.equal(reused.status,409);
+    assert.equal(reused.status,404); // Replayed or foreign proof is deliberately non-enumerable.
     const memory=await request("/api/brain/preferences","GET",undefined,userA);
     assert.equal((await memory.json()).data[0].value,"value");
     const memoryB=await request("/api/brain/preferences","GET",undefined,userB);
