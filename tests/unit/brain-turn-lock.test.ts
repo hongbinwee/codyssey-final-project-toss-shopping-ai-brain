@@ -22,16 +22,20 @@ test("turn lock unlocks using identical 64-bit key and finally releases session"
  const pool={async reserve(){return {
    async unsafe(query:string,args:unknown[]){
      calls.push({query,key:String(args[0])});
+     if(query.includes("pg_try_advisory_lock"))return [{acquired:true,pid:12345}];
+     if(query.includes("FROM pg_locks"))return [{pid:12345,held:true}];
      return [{acquired:true}];
    },async release(){released++;}
  }}};
- const release=await postgresTurnLock(pool).tryAcquire("22222222-2222-4222-8222-222222222222");
- assert.ok(release);
- await release();
- await release();
- assert.equal(calls.length,2);
+ const lease=await postgresTurnLock(pool).tryAcquire("22222222-2222-4222-8222-222222222222");
+ assert.ok(lease);
+ await lease.assertHeld();
+ await lease.release();
+ await lease.release();
+ assert.equal(calls.length,3);
  assert.match(calls[0].query,/pg_try_advisory_lock/);
- assert.match(calls[1].query,/pg_advisory_unlock/);
- assert.equal(calls[0].key,calls[1].key);
+ assert.match(calls[1].query,/FROM pg_locks/);
+ assert.match(calls[2].query,/pg_advisory_unlock/);
+ assert.equal(calls[0].key,calls[2].key);
  assert.equal(released,1);
 });
