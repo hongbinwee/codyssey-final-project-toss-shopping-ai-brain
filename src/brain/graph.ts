@@ -87,6 +87,14 @@ export function createPersistentResearchGraph(
        if(turnLock&&!lease)throw new Error("conversation busy");
        const execute=async()=>{
 
+       if(fencing && !(await fencing.latest(input.conversationId))){
+         // Never silently reset a pre-v9 multi-turn conversation. Migrating a
+         // legacy shared checkpoint requires a separately audited procedure.
+         const legacy=await compiled.getState({configurable:{thread_id:input.conversationId}});
+         const previous=legacy.values?.researchResult as ResearchResult|undefined;
+         if(previous?.explanation&&previous.conversationId===input.conversationId)
+           throw Error("legacy Brain checkpoint migration required");
+       }
        const claim=fencing?await fencing.claim(input):null;
        if(claim?.kind==="replay")return claim.result;
        // Fenced executions use a new physical checkpoint thread for EACH
@@ -132,7 +140,13 @@ export function createPersistentResearchGraph(
    async getOwnedState(actorUserId:string,conversationId:string){
      await deps.conversations.assertOwned(actorUserId,conversationId);
      const canonical=fencing?await fencing.latest(conversationId):null;
-     if(fencing&&!canonical)return {values:{}};
+     if(fencing&&!canonical){
+       const legacy=await compiled.getState({configurable:{thread_id:conversationId}});
+       const previous=legacy.values?.researchResult as ResearchResult|undefined;
+       if(previous?.explanation&&previous.conversationId===conversationId)
+         throw Error("legacy Brain checkpoint migration required");
+       return {values:{}};
+     }
      const snapshot=await compiled.getState({configurable:{
        thread_id:canonical?.threadId??conversationId
      }});
