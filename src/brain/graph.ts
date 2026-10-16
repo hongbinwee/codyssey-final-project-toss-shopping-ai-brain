@@ -29,7 +29,8 @@ export function createPersistentResearchGraph(
      prepared:await prepareTurn(state.request,deps)
    }))
    .addNode("plan",async state=>({
-     shoppingPlan:await resolveTurnPlan(state.request,state.prepared,state.shoppingPlan??null,deps)
+     shoppingPlan:await resolveTurnPlan(state.request,state.prepared,
+       state.researchResult?.explanation ? state.researchResult.shoppingPlan : null,deps)
    }))
    .addNode("retrieve",async state=>{
      const fetched=await retrieveTurn(state.request,state.prepared,state.shoppingPlan,deps);
@@ -63,10 +64,12 @@ export function createPersistentResearchGraph(
        if(request?.clientActionId===input.clientActionId){
          if(request.actorUserId!==input.actorUserId||request.userMessage!==input.userMessage)
            throw new Error("duplicate action conflict");
-         if(completed?.conversationId===input.conversationId)return completed;
+         if(completed?.conversationId===input.conversationId&&
+           completed.clientActionId===input.clientActionId&&completed.explanation)return completed;
        }
        const run=await compiled.invoke({request:input},config);
-       if(!run.researchResult||run.researchResult.conversationId!==input.conversationId)
+       if(!run.researchResult||run.researchResult.conversationId!==input.conversationId||
+           run.researchResult.clientActionId!==input.clientActionId||!run.researchResult.explanation)
          throw new Error("invalid graph result");
        return run.researchResult;
      }finally{active.delete(input.conversationId);}
