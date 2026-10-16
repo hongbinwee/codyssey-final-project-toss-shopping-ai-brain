@@ -11,6 +11,8 @@ on:
       - "tests/brain-sandbox/**"
       - "tests/brain-db/**"
       - "tests/brain-browser/**"
+      - "eval/brain/**"
+      - "scripts/brain-intent-eval.ts"
       - "src/web/components/BrainPreview.tsx"
       - "tests/unit/brain-*.test.ts"
       - "experiments/langgraph/**"
@@ -57,6 +59,10 @@ jobs:
         run: npm run build
       - name: Brain isolated regression and API tests
         run: node --experimental-strip-types --test --test-concurrency=1 tests/brain-sandbox/*.test.mjs tests/unit/brain-*.test.ts
+      - name: Deterministic Shopping Brain intent goldset (not live model accuracy)
+        run: |
+          mkdir -p /tmp/brain-eval
+          BRAIN_EVAL_REPORT_PATH=/tmp/brain-eval/gold-replay.json node --experimental-strip-types scripts/brain-intent-eval.ts --gold-replay
       - name: Legacy Commerce unit audit (known fixture/env blockers, non-gating)
         continue-on-error: true
         run: |
