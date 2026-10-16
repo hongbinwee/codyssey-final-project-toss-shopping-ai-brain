@@ -14,11 +14,12 @@ const classes:Record<DatasetTarget,DatasetClass>={
  ci:"CI_FIXTURE",real:"AUDITED_REAL"
 };
 const id=/^[a-zA-Z0-9._-]{3,100}$/;
+const versionId=/^[a-zA-Z0-9._-]{1,100}$/;
 const sha=/^[a-f0-9]{64}$/i;
 export function requireDatasetIsolation(manifest:DatasetManifest,target:DatasetTarget):DatasetManifest{
  if(!manifest||typeof manifest!=="object"||!Object.values(classes).includes(manifest.data_class)||
-   !id.test(manifest.dataset_id)||!id.test(manifest.version)||
-   !id.test(manifest.schema_version)||!sha.test(manifest.sha256)||
+   !id.test(manifest.dataset_id)||!versionId.test(manifest.version)||
+   !versionId.test(manifest.schema_version)||!sha.test(manifest.sha256)||
    !Number.isSafeInteger(manifest.records)||manifest.records<0)
    throw new Error("invalid versioned dataset manifest");
  if(manifest.data_class!==classes[target])
