@@ -62,10 +62,12 @@ export function createBrainApi(deps:BrainApiDeps) {
       if(method==="POST"&&turn){
         if(!uuid(turn[1])||!required(body.user_message)||!required(body.client_action_id,128))
           return fail(400,"VALIDATION","대화·질문·작업 ID가 필요합니다");
+        const started=performance.now();
         const result=await deps.graph.invoke({actorUserId,conversationId:turn[1],
           requestId:crypto.randomUUID(),clientActionId:body.client_action_id,userMessage:body.user_message});
+        const graphWallMs=performance.now()-started;
         return success({conversation_id:result.conversationId,message_id:result.messageId,
-          ranking:result.ranking,trace:result.trace,read_only:true,
+          ranking:result.ranking,trace:{...result.trace,graphWallMs},read_only:true,
           shopping_plan:result.shoppingPlan??null,explanation:result.explanation??null});
       }
       const state=path.match(/^\/api\/brain\/conversations\/([a-fA-F0-9-]+)\/state$/);
