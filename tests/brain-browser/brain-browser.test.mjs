@@ -6,6 +6,7 @@ import {randomBytes} from "node:crypto";
 import {readFileSync} from "node:fs";
 import postgres from "postgres";
 import {chromium} from "@playwright/test";
+import {summarizeLatency} from "../../src/brain/latency.ts";
 
 const listen=async(server)=>{server.listen(0,"127.0.0.1");await once(server,"listening");return server.address().port;};
 const close=async server=>{if(!server)return;server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));};
@@ -95,6 +96,13 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    console.log("BROWSER_STAGE 02 chromium launched");
    const ctx=await browser.newContext({baseURL:base});
    const page=await ctx.newPage();
+   const graphTraces=[];
+   page.on("response",res=>{
+     if(res.request().method()==="POST"&&/\\/api\\/brain\\/conversations\\/[^/]+\\/turn$/.test(res.url()))
+       graphTraces.push(res.json().then(payload=>
+         payload.ok&&Number.isFinite(payload.data?.trace?.graphWallMs)?payload.data.trace.graphWallMs:null
+       ).catch(()=>null));
+   });
    page.on("requestfailed",r=>console.log("BROWSER_REQUEST_FAILED",r.url().split("?")[0],r.failure()?.errorText));
    page.on("pageerror",err=>console.log("BROWSER_PAGE_ERROR",err.message.slice(0,250)));
    await page.goto("/");
@@ -141,6 +149,10 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await panel.getByRole("button",{name:"보내기"}).click();
    await panel.locator(".msg.ai").nth(countBefore).locator(".compare-row").first().waitFor({timeout:25000});
    assert.ok(ragCalls>=5);
+   const samples=(await Promise.all(graphTraces)).filter(n=>n!==null);
+   assert.ok(samples.length>=4,"four successful CI mock Graph executions must be timed");
+   console.log("BRAIN_BROWSER_MOCK_GRAPH_LATENCY",JSON.stringify(summarizeLatency(samples)),
+      "(Mock Responses/RAG, network/render excluded; not live-model latency)");
    // Storefront GET /api/cart may create an empty cart by design; measure actual writes instead.
    assert.equal((await shop.unsafe("SELECT count(*)::int AS n FROM cart_items"))[0].n,0);
    assert.equal((await shop.unsafe("SELECT count(*)::int AS n FROM action_requests"))[0].n,0);
