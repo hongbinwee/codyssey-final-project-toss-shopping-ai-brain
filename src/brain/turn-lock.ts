@@ -12,7 +12,9 @@ interface ReservedSession {
   release():Promise<unknown>;
 }
 interface ReservePool {
-  reserve():Promise<ReservedSession>
+  // postgres.js returns a driver-specific ReservedSql with generic query types.
+  // Constrain the small SQL subset only at this adapter boundary.
+  reserve():Promise<unknown>
 }
 function lockKey(conversationId:string):string {
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(conversationId))
@@ -24,7 +26,7 @@ function lockKey(conversationId:string):string {
 export function postgresTurnLock(pool:ReservePool):TurnLock{
   return {async tryAcquire(conversationId:string){
     const key=lockKey(conversationId);
-    const connection=await pool.reserve();
+    const connection=await pool.reserve() as ReservedSession;
     let acquired=false,released=false;
     try{
       const rows=await connection.unsafe("SELECT pg_try_advisory_lock($1::bigint) AS acquired",[key]);
