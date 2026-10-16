@@ -7,13 +7,13 @@
 1. **Gold replay** (CI): verifies that versioned, human-authored expected intent JSON parses and resolves to the expected shopping plan. This measures **contract / regression correctness, not LLM accuracy**.
 2. **Live model** (opt-in): calls the already configured OpenAI-compatible Responses Provider for exactly the same fixed queries, then scores final Shopping Plan against held-out human gold labels. It is the first mode capable of measuring model intent accuracy. It must never be silently enabled in CI.
 3. **Grounded explanation** (CI): deterministic assertions on candidate eligibility, evidence/product-ID ownership, synthetic-vs-real review separation, top-3 limit, and verified-vs-reference-only claims. This does **not** establish whether real product claims are true: source-grounding requires the RAG team's audited actual review corpus.
-4. **Multi-turn recovery** (CI): pre-existing PostgreSQL LangGraph checkpoint tests exercise plan retention/restart/replay; Chromium E2E simulates RAG HTTP 503, checks that a failed turn is not displayed as a successful answer, input is preserved, and user retry succeeds. Failure-injected LLM 429/timeout across process restarts remains an additional test goal.
+4. **Multi-turn recovery** (CI): pre-existing PostgreSQL LangGraph checkpoint tests exercise plan retention/restart/replay; Chromium E2E simulates RAG HTTP 503, checks that a failed turn is not displayed as a successful answer, input is preserved, and user retry succeeds. A separate Chromium test now injects a transient LLM Responses HTTP 503, checks that the last completed plan is preserved and that user retry succeeds. Actual timeout/429 across a new server process remains an additional test goal.
 
 ## Dataset and rubric
 
 File: `eval/brain/intent-v1.json` (versioned `brain-intent-eval-v1`).
 
-Each case includes user utterance, previous Shopping Plan or null, the intended structured LLM output `goldOutput`, and independently written expected final `query`, `maxTotalWon`, `requiredConditions`, `currentPreferences`. It includes first turns, budget carryover/change/clear, requirement add/replace/clear, new category, explicit preference override, and non-hallucination.
+Each case includes user utterance, previous Shopping Plan or null, the intended structured LLM output `goldOutput`, and associated expected final `query`, `maxTotalWon`, `requiredConditions`, `currentPreferences`. It includes first turns, budget carryover/change/clear, requirement add/replace/clear, new category, explicit preference override, and non-hallucination.
 
 **Exact Plan Accuracy** = count of cases with *all four final fields correct* / evaluated cases. Report per-field accuracy separately when investigating failures. An unparsable model output or timeout is a failed case, never a silently skipped record. Preserve goldset version for model-to-model comparison. A sample of 12 hand-written cases is useful for smoke testing, **not statistically representative** of users, products, domains or adversarial traffic.
 
@@ -57,3 +57,9 @@ The script uses the existing `providerIntentModel(..., 45000)` (tool-free planni
 - No third-party LLM API key or actual model timing is available inside CI.
 - No changing `Commerce` schema/business rules or protected database connections.
 - No automatic merge into `main`.
+
+## Verification record (2026-10-16)
+
+[GitHub Actions #38905510181](https://github.com/hongbinwee/codyssey_final-mission-main/actions/runs/38905510181): **PASS** on `feature/brain-core`. Brain unit/contract regression 54/54, gold-replay 12/12, disposable PostgreSQL/checkpoint, authenticated Mock RAG HTTP and Chromium UI with both RAG and LLM 503 retry PASS. Historical Commerce non-gating unit audit 615 passed, 6 failed due missing historical fixtures/environment; this is not full Commerce QA clearance.
+
+**Mock-only latency**: five successful Graph wall-time observations, p50 35.68ms, p95 64.07ms in CI; not live model or complete client experience. No external LLM quality or latency results yet.
