@@ -73,7 +73,7 @@ jobs:
       - name: Prepare strictly isolated disposable brain_ci PostgreSQL schema
         run: node scripts/brain-migrate.ts
       - name: Real PostgreSQL tenant and checkpoint regression
-        run: timeout --signal=TERM 120s node --experimental-strip-types --test tests/brain-db/brain-pg.test.mjs
+        run: timeout --signal=TERM 120s node --experimental-strip-types --test --test-concurrency=1 tests/brain-db/brain-pg.test.mjs tests/brain-db/brain-lock-loss.test.mjs
       - name: HTTP session and Brain API with local Responses mock
         run: |
           set +e
