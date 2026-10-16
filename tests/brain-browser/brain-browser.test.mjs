@@ -49,11 +49,11 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
             ('p-browser-b','QA performance monitor','CI','monitor','Not a real product')`);
    await shop.unsafe(`INSERT INTO product_variants(id,product_id,unit_price_won,stock_qty)
      VALUES ('v-browser-a','p-browser-a',100000,5),('v-browser-b','p-browser-b',390000,5)`);
-   let failNextModel=false;
+   let failNextModelStatus=null;
    modelServer=createServer(async(req,res)=>{
      for await(const _ of req){}
      if(req.url!=="/v1/responses"){res.writeHead(404);return res.end();}
-     if(failNextModel){failNextModel=false;res.writeHead(503);return res.end("CI injected model error");}
+     if(failNextModelStatus){const status=failNextModelStatus;failNextModelStatus=null;res.writeHead(status);return res.end("CI injected model error");}
      const answer={
        query:"monitor",maxTotalWon:500000,requiredConditions:[],currentPreferences:{},
        queryMode:"KEEP",budgetMode:"KEEP",requirementsMode:"KEEP"
@@ -152,7 +152,7 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await panel.locator(".msg.ai").nth(countBefore).locator(".compare-row").first().waitFor({timeout:25000});
    assert.ok(ragCalls>=5);
    // LLM planner failure after a completed turn must preserve the last completed plan.
-   failNextModel=true;
+   failNextModelStatus=503;
    const beforeModelFailure=await panel.locator(".msg.ai").count();
    await send("모니터 예산 유지하며 다시 비교");
    await panel.getByRole("alert").waitFor({timeout:25000});
@@ -169,6 +169,19 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await panel.getByText(/저장된 장기 가격 선호만 삭제했어요/).waitFor({timeout:12000});
    assert.equal(await panel.getByText("price_priority: performance").count(),0,
      "canonical long-term memory removed; previous conversations remain separate");
+   failNextModelStatus=429;
+   const before429=await panel.locator(".msg.ai").count();
+   await send("같은 모니터 조건 유지해줘");
+   await panel.getByRole("alert").waitFor({timeout:25000});
+   assert.equal(await panel.locator(".msg.ai").count(),before429,
+     "HTTP 429 must not generate a successful recommendation");
+   assert.equal(await panel.getByPlaceholder("쇼핑 조건을 입력하세요").inputValue(),
+     "같은 모니터 조건 유지해줘");
+   await panel.getByRole("button",{name:"보내기"}).click();
+   const after429=panel.locator(".msg.ai").nth(before429);
+   await after429.locator(".compare-row").first().waitFor({timeout:25000});
+   assert.ok(await after429.getByText(/500,000원/).count()>0,
+     "existing budget persists through model 429");
    const samples=(await Promise.all(graphTraces)).filter(n=>n!==null);
    assert.ok(samples.length>=4,"four successful CI mock Graph executions must be timed");
    console.log("BRAIN_BROWSER_MOCK_GRAPH_LATENCY",JSON.stringify(summarizeLatency(samples)),
