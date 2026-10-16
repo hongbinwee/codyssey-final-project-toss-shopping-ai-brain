@@ -43,6 +43,10 @@ export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceReco
  const idx=new Map<string,EvidenceRecord>(),duplicates=new Set<string>();
  for(const e of evidence){if(idx.has(e.id))duplicates.add(e.id);idx.set(e.id,e);}
  const ranked:RankedCandidate[]=[],referenceOnly:RankingResult["referenceOnly"]=[],rejected:RankingResult["rejected"]=[];
+ // Shared reference cost axis for no-budget user requests; costs are confirmed Commerce values.
+ const totals=candidates.filter(p=>eligibility(p).length===0&&money(p.unitPriceWon)&&money(p.shippingFeeWon))
+  .map(p=>p.unitPriceWon!+p.shippingFeeWon!);
+ const minCost=totals.length?Math.min(...totals):0,maxCost=totals.length?Math.max(...totals):0;
  for(const p of candidates){
   const reasons:string[]=[];
   if(!p.productId||!p.variantId)reasons.push("missing_commerce_identity");
@@ -55,7 +59,11 @@ export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceReco
   const gate=eligibility(p);
   if(gate.length){referenceOnly.push({candidate:p,reasons:gate});continue;}
   const signals:{name:Dimension;weight:number;score:number}[]=[];
-  if(ctx.maxTotalWon!==null&&ctx.maxTotalWon>0&&total!==null)signals.push({name:"cost",weight:w.cost,score:Math.max(0,1-total/ctx.maxTotalWon)});
+  if(total!==null){
+   const costScore=ctx.maxTotalWon!==null?(ctx.maxTotalWon>0?Math.max(0,1-total/ctx.maxTotalWon):0)
+     :(maxCost>minCost?Math.max(0,Math.min(1,(maxCost-total)/(maxCost-minCost))):1);
+   signals.push({name:"cost",weight:w.cost,score:costScore});
+  }
   for(const facet of facets){const f=p.facets[facet];if(f)signals.push({name:facet,weight:w[facet],score:f.score});}
   const coverage=signals.reduce((a,b)=>a+b.weight,0)/denom;
   const critical=facets.filter(f=>w[f]/denom>=.25&&!p.facets[f]);
