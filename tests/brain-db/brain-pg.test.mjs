@@ -78,3 +78,86 @@ test("isolated real PostgreSQL persists preferences and LangGraph checkpoints ac
   await Promise.allSettled([saver.end(),sql.end()]);
  }
 });
+
+
+test("multi-turn Shopping Plan preserves budget/specs and survives PostgreSQL graph restart",async()=>{
+ const db=postgres(url,{max:3});
+ let saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+ try{
+   const conversations=new PersistentConversations(brainDatabaseFromPostgres(db));
+   const memory=new PersistentPreferences(brainDatabaseFromPostgres(db));
+   const thread=await conversations.create("user-plan-owner");
+   const calls=[];
+   const evidence=[{id:"verified-spec",productId:"p-plan",variantId:null,kind:"SPEC",sourceKind:"REAL"},
+     ...["performance","eye_comfort","noise"].map(name=>({
+       id:"e-"+name,productId:"p-plan",variantId:null,kind:"REVIEW",sourceKind:"REAL",sourceRef:"ci-only"
+     }))];
+   const candidate={productId:"p-plan",variantId:"v-plan",productName:"Fictional monitor",
+     unitPriceWon:290000,shippingFeeWon:3000,rating:4.4,ratingScale:5,
+     wholeReviewCount:25,wholeReviewCountVerified:true,
+     conditions:{FHD:["verified-spec"]},
+     facets:{performance:{score:.8,evidenceIds:["e-performance"]},
+       eye_comfort:{score:.6,evidenceIds:["e-eye_comfort"]},
+       noise:{score:.7,evidenceIds:["e-noise"]}}};
+   const deps={
+     conversations,memory,
+     intent:{extract:async(message,remembered,previous)=>{
+       if(message==="첫 질문")return {query:"monitor",
+         context:{maxTotalWon:500000,requiredConditions:["FHD"],currentPreferences:{}},
+         queryMode:"SET",budgetMode:"SET",requirementsMode:"REPLACE"};
+       assert.equal(previous?.query,"monitor");
+       if(message==="눈 피로도 중요해")return {query:"monitor",
+         context:{maxTotalWon:null,requiredConditions:[],currentPreferences:{eye_comfort:"important"}},
+         queryMode:"KEEP",budgetMode:"KEEP",requirementsMode:"KEEP"};
+       if(message==="예산을 30만원으로")return {query:"monitor",
+         context:{maxTotalWon:300000,requiredConditions:[],currentPreferences:{}},
+         queryMode:"KEEP",budgetMode:"SET",requirementsMode:"KEEP"};
+       if(message==="다른 상품: 헤드폰")return {query:"headphones",
+         context:{maxTotalWon:null,requiredConditions:[],currentPreferences:{}},
+         queryMode:"SET",budgetMode:"CLEAR",requirementsMode:"CLEAR",preferencesMode:"CLEAR"};
+       throw Error("unexpected message");
+     }},
+     retriever:{search:async(input)=>{calls.push(input);return {candidates:[candidate],evidence};}}
+   };
+   await saver.setup();
+   let graph=createPersistentResearchGraph(deps,saver);
+   const invoke=async(userMessage,clientActionId)=>graph.invoke({
+     actorUserId:"user-plan-owner",conversationId:thread.id,
+     requestId:crypto.randomUUID(),clientActionId,userMessage
+   });
+   const first=await invoke("첫 질문","plan-action-1");
+   assert.equal(first.shoppingPlan.maxTotalWon,500000);
+   assert.deepEqual(first.shoppingPlan.requiredConditions,["FHD"]);
+   assert.equal(first.ranking.ranked.length,1);
+   const second=await invoke("눈 피로도 중요해","plan-action-2");
+   assert.equal(second.shoppingPlan.maxTotalWon,500000,"followup cannot drop budget");
+   assert.deepEqual(second.shoppingPlan.requiredConditions,["FHD"]);
+   assert.equal(second.shoppingPlan.currentPreferences.eye_comfort,"important");
+   assert.equal(second.shoppingPlan.revision,2);
+   assert.equal(second.explanation.kind,"VERIFIED_CANDIDATES");
+   assert.match(second.explanation.text,/500,000원/);
+   assert.equal(calls[1].maxTotalWon,500000);
+   assert.deepEqual(calls[1].requiredConditions,["FHD"]);
+   const replay=await invoke("눈 피로도 중요해","plan-action-2");
+   assert.equal(replay.messageId,second.messageId);
+   assert.equal(calls.length,2,"completed action replay must not refetch");
+   const changed=await invoke("예산을 30만원으로","plan-action-3");
+   assert.equal(changed.shoppingPlan.maxTotalWon,300000);
+   assert.deepEqual(changed.shoppingPlan.requiredConditions,["FHD"]);
+   await saver.end();
+   saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+   await saver.setup();
+   graph=createPersistentResearchGraph(deps,saver);
+   const checkpoint=await graph.getOwnedState("user-plan-owner",thread.id);
+   assert.equal(checkpoint.values.shoppingPlan.maxTotalWon,300000);
+   assert.equal(checkpoint.values.shoppingPlan.revision,3);
+   await assert.rejects(()=>graph.getOwnedState("someone-else",thread.id),/not owned/);
+   const newCategory=await graph.invoke({actorUserId:"user-plan-owner",
+     conversationId:thread.id,requestId:crypto.randomUUID(),
+     clientActionId:"plan-action-4",userMessage:"다른 상품: 헤드폰"});
+   assert.equal(newCategory.shoppingPlan.query,"headphones");
+   assert.equal(newCategory.shoppingPlan.maxTotalWon,null);
+   assert.deepEqual(newCategory.shoppingPlan.requiredConditions,[]);
+   assert.deepEqual(newCategory.shoppingPlan.currentPreferences,{});
+ }finally{await Promise.allSettled([saver.end(),db.end()]);}
+});
