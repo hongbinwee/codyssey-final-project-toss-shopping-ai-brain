@@ -39,3 +39,11 @@ test("Model sees saved preference as context without misclassifying it as a new 
  await port.extract("조금 더 싼 걸 볼래",memory,previous);
  assert.ok(checked);
 });
+
+test("explicit new product category wins over the previous shopping Skill",()=>{
+ const change=assembleIntentContext("이제 헤드폰을 추천해 줘",[],previous);
+ assert.equal(change.trustedSkillId,"audio");
+ assert.doesNotMatch(change.trustedSkillInstruction,/monitor quality/);
+ const followup=assembleIntentContext("눈 피로가 더 중요해",[],previous);
+ assert.equal(followup.trustedSkillId,"monitor");
+});
