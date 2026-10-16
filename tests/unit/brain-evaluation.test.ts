@@ -20,7 +20,7 @@ test("goldset: each hand-labeled extracted intent resolves to its expected Shopp
   assert.deepEqual(got,c.expected,"bad case "+c.id);
  }
 });
-function mockCandidate(id,verified=true){
+function mockCandidate(id:string,verified=true){
  return {productId:"p-"+id,variantId:"v-"+id,productName:"CI item "+id,
   unitPriceWon:id==="a"?100000:290000,shippingFeeWon:3000,rating:4.5,ratingScale:5,
   wholeReviewCount:30,wholeReviewCountVerified:verified,
