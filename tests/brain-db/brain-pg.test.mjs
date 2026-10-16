@@ -332,10 +332,10 @@ test("two isolated Brain workers use the same PostgreSQL advisory session lock",
    await saver1.setup();await saver2.setup();
    const a=createPersistentResearchGraph({
      ...source,conversations:conversations1,memory:memory1
-   },saver1,postgresTurnLock(sql1));
+   },saver1,postgresTurnLock(sql1,sql2));
    const b=createPersistentResearchGraph({
      ...source,conversations:conversations2,memory:memory2
-   },saver2,postgresTurnLock(sql2));
+   },saver2,postgresTurnLock(sql2,sql1));
    const request={actorUserId:"user-multi-replica",conversationId:thread.id,
      requestId:crypto.randomUUID(),clientActionId:"distributed-1",
      userMessage:"모니터 추천"};
