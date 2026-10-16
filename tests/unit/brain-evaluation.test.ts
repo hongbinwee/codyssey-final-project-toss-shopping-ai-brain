@@ -20,6 +20,31 @@ test("goldset: each hand-labeled extracted intent resolves to its expected Shopp
   assert.deepEqual(got,c.expected,"bad case "+c.id);
  }
 });
+
+test("v2: 60 labeled shopping cases resolve consistently; no real-product data",async()=>{
+ const v2=JSON.parse(readFileSync(new URL("../../eval/brain/intent-v2.json",import.meta.url),"utf8"));
+ assert.equal(v2.version,"brain-intent-eval-v2");
+ assert.equal(v2.dataClass,"EVALUATION_ONLY");
+ assert.equal(v2.cases.length,60);
+ assert.equal(v2.counts.candidate_holdout,15);
+ assert.equal(v2.counts.development,45);
+ assert.equal(new Set(v2.cases.map((c:{id:string})=>c.id)).size,60);
+ for(const c of v2.cases){
+   assert.equal(c.dataClass,"EVALUATION_ONLY");
+   assert.equal(c.annotationStatus,"author_review_required");
+   const port=createIntentPort({complete:async()=>JSON.stringify(c.goldOutput)});
+   const plan=resolveShoppingPlan(c.previous,
+     await port.extract(c.message,[],c.previous??undefined));
+   const got={query:plan.query,maxTotalWon:plan.maxTotalWon,
+     requiredConditions:plan.requiredConditions,currentPreferences:plan.currentPreferences};
+   assert.deepEqual(got,c.expected,"evaluation label mismatch "+c.id);
+ }
+});
+test("negative control: mutated expected budget must be scored wrong",()=>{
+ const original={query:"monitor",maxTotalWon:500000,requiredConditions:["FHD"],currentPreferences:{}};
+ const mutated={...original,maxTotalWon:600000};
+ assert.notDeepEqual(original,mutated,"a changed label must not be accepted silently");
+});
 function mockCandidate(id:string,verified=true){
  return {productId:"p-"+id,variantId:"v-"+id,productName:"CI item "+id,
   unitPriceWon:id==="a"?100000:290000,shippingFeeWon:3000,rating:4.5,ratingScale:5,
