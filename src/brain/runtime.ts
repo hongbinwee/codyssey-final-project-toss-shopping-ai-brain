@@ -1,0 +1,44 @@
+import postgres from "postgres";
+import {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
+import {searchProducts} from "../catalog.ts";
+import type {Provider} from "../llm.ts";
+import {brainDatabaseFromPostgres} from "./pg-adapter.ts";
+import {PersistentConversations,PersistentPreferences} from "./persistent-store.ts";
+import {createBrainApi} from "./api.ts";
+import {createPersistentResearchGraph} from "./graph.ts";
+import {parseBrainDatabaseUrl} from "./database-isolation.ts";
+import {commerceRetriever} from "./commerce-retriever.ts";
+import {providerIntentModel} from "./provider-intent.ts";
+import {createIntentPort} from "./intent.ts";
+
+export async function createBrainRuntime(options:{
+ brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider
+}) {
+ const {url,dbName}=parseBrainDatabaseUrl(options.brainDatabaseUrl,options.commerceDatabaseUrl);
+ if(!options.provider.name.startsWith("live:"))
+   throw new Error("Brain API requires live intent provider; no silent stub fallback");
+ const db=postgres(url,{max:5,connect_timeout:5});
+ let saver:PostgresSaver|undefined;
+ try{
+   const rows=await db.unsafe<{name:string;conversations:string|null}[]>(
+     "SELECT current_database() AS name,to_regclass('shopping_brain.conversations')::text AS conversations");
+   if(rows.length!==1||rows[0].name!==dbName||!rows[0].conversations)
+     throw new Error("AI-owned Brain schema is not initialized");
+   saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+   // Creates/checks LangGraph tables in AI-only database, never Commerce.
+   await saver.setup();
+   const store=brainDatabaseFromPostgres(db);
+   const conversations=new PersistentConversations(store),preferences=new PersistentPreferences(store);
+   const graph=createPersistentResearchGraph({
+     conversations,memory:preferences,retriever:commerceRetriever(searchProducts),
+     intent:createIntentPort(providerIntentModel(options.provider,45000))
+   },saver);
+   return {
+     handle:createBrainApi({conversations,preferences,graph}),
+     close:async()=>{await Promise.allSettled([db.end(),saver!.end()]);}
+   };
+ }catch(e){
+   await Promise.allSettled([db.end(),...(saver?[saver.end()]:[])]);
+   throw e;
+ }
+}
