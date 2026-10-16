@@ -66,7 +66,12 @@ jobs:
       - name: Real PostgreSQL tenant and checkpoint regression
         run: timeout --signal=TERM 120s node --experimental-strip-types --test tests/brain-db/brain-pg.test.mjs
       - name: HTTP session and Brain API with local Responses mock
-        run: timeout --signal=TERM 120s node --experimental-strip-types --test tests/brain-db/brain-http.test.mjs
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=5s 70s node --experimental-strip-types --test tests/brain-db/brain-http.test.mjs > /tmp/brain-http.log 2>&1
+          status=$?
+          cat /tmp/brain-http.log
+          exit "$status"
       - name: Real LangGraph MemorySaver smoke
         run: node --experimental-strip-types --test experiments/langgraph/smoke.test.mjs
       - name: Verify dependency lock and package were not modified
