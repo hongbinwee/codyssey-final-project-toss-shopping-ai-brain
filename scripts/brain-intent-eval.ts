@@ -5,6 +5,7 @@ import {createIntentPort,parseShoppingIntent} from "../src/brain/intent.ts";
 import {resolveShoppingPlan} from "../src/brain/shopping-plan.ts";
 import {providerIntentModel} from "../src/brain/provider-intent.ts";
 import {summarizeLatency} from "../src/brain/latency.ts";
+import {gradeShoppingPlan,fullPlanPass} from "../src/brain/evaluation-rubric.ts";
 import type {ShoppingPlan} from "../src/brain/shopping-plan.ts";
 
 type Case={
@@ -52,19 +53,14 @@ for(const c of file.cases){
  try{
    const extraction=await createIntentPort(model).extract(c.message,[],c.previous??undefined);
    const p=resolveShoppingPlan(c.previous,extraction);
-   fields={
-     query:p.query===c.expected.query,
-     maxTotalWon:p.maxTotalWon===c.expected.maxTotalWon,
-     requiredConditions:matches(p.requiredConditions,c.expected.requiredConditions),
-     currentPreferences:matches(p.currentPreferences,c.expected.currentPreferences)
-   };
+   fields=gradeShoppingPlan(p,c.expected);
    if(mode==="gold-replay"){
      const parsed=parseShoppingIntent(JSON.stringify(c.goldOutput));
      if(!matches(parsed,extraction))throw Error("gold replay parsed differently");
    }
  }catch(e){error=e instanceof Error?e.message:"unknown evaluator error";fields={plan:false};}
  const elapsed=performance.now()-start;
- results.push({id:c.id,group:c.group,split:c.split,passed:Object.values(fields).every(Boolean),fields,latencyMs:elapsed,
+ results.push({id:c.id,group:c.group,split:c.split,passed:fullPlanPass(fields),fields,latencyMs:elapsed,
    ...(error?{error}:{}),...(mode==="live"?{model:process.env.LLM_MODEL}: {})});
 }
 const failures=results.filter(r=>!r.passed);
