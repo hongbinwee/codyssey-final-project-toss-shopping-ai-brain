@@ -86,6 +86,8 @@ export function createBrainApi(deps:BrainApiDeps) {
         return fail(404,"NOT_FOUND","대화를 찾을 수 없습니다");
       if(e instanceof Error&&/confirmation expired|already used| or not owned/.test(e.message))
         return fail(409,"CONFIRMATION_REQUIRED","선호 확인이 만료되었거나 완료되었습니다");
+      if(e instanceof Error&&e.message==="conversation busy")
+        return fail(409,"CONVERSATION_BUSY","이전 질문을 처리 중입니다. 완료 후 다시 시도해 주세요");
       if(e instanceof Error&&/invalid|duplicate action conflict|source message not verified/i.test(e.message))
         return fail(400,"VALIDATION","유효하지 않은 요청입니다");
       return fail(503,"BRAIN_UNAVAILABLE","Brain 요청을 처리하지 못했습니다");
