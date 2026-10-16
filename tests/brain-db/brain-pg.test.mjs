@@ -252,3 +252,54 @@ test("deleting canonical Memory does NOT constitute transcript or checkpoint era
    await assert.rejects(()=>graph.getOwnedState("user-memory-erase-audit-other",thread.id),/not owned/);
  }finally{await Promise.allSettled([saver.end(),db.end()]);}
 });
+
+test("retry unfinished RAG turn after checkpoint restart does not double-apply budget changes",async()=>{
+ if(!url||new URL(url).pathname!=="/brain_ci")throw Error("disposable brain_ci required");
+ const db=postgres(url,{max:2});
+ let saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+ try{
+   const runner=brainDatabaseFromPostgres(db);
+   const conversations=new PersistentConversations(runner),memory=new PersistentPreferences(runner);
+   const thread=await conversations.create("user-recovery-audit");
+   let retrievalCalls=0;
+   const deps={conversations,memory,
+     intent:{extract:async(message,preferences,prior)=>{
+       if(message==="first")return {query:"monitor",queryMode:"SET",
+         budgetMode:"SET",context:{maxTotalWon:500000,requiredConditions:[],currentPreferences:{}}};
+       assert.equal(prior?.revision,1,"retry MUST use last COMPLETED plan after crash");
+       return {query:"monitor",queryMode:"KEEP",budgetMode:"SET",requirementsMode:"KEEP",
+         context:{maxTotalWon:300000,requiredConditions:[],currentPreferences:{}}};
+     }},
+     retriever:{search:async()=>{
+       retrievalCalls++;
+       if(retrievalCalls===2)throw new Error("CI injected RAG HTTP timeout");
+       return {candidates:[],evidence:[]};
+     }}
+   };
+   await saver.setup();
+   let graph=createPersistentResearchGraph(deps,saver);
+   const invoke=async(message,action)=>graph.invoke({
+     actorUserId:"user-recovery-audit",conversationId:thread.id,
+     requestId:crypto.randomUUID(),clientActionId:action,userMessage:message
+   });
+   const first=await invoke("first","recover-first");
+   assert.equal(first.shoppingPlan.maxTotalWon,500000);
+   await assert.rejects(()=>invoke("second","recover-second"),/timeout/);
+   const prior=await graph.getOwnedState("user-recovery-audit",thread.id);
+   assert.equal(prior.values.researchResult.clientActionId,"recover-first");
+   // Model a new process by replacing its connection/checkpointer after the failure.
+   await saver.end();
+   saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
+   await saver.setup();
+   graph=createPersistentResearchGraph(deps,saver);
+   const recovered=await invoke("second","recover-second");
+   assert.equal(recovered.shoppingPlan.maxTotalWon,300000);
+   assert.equal(recovered.shoppingPlan.revision,2,"an unfinished operation must not change plan twice");
+   assert.equal(recovered.explanation.kind,"NO_MATCH");
+   assert.equal(retrievalCalls,3);
+   const messages=await db.unsafe(
+     "SELECT count(*)::int AS n FROM shopping_brain.messages WHERE conversation_id=$1 AND client_action_id='recover-second'",
+     [thread.id]);
+   assert.equal(messages[0].n,1,"source message idempotency must survive provider failure and restart");
+ }finally{await Promise.allSettled([saver.end(),db.end()]);}
+});
