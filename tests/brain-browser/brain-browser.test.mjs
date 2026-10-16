@@ -98,7 +98,7 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    const page=await ctx.newPage();
    const graphTraces=[];
    page.on("response",res=>{
-     if(res.request().method()==="POST"&&/\\/api\\/brain\\/conversations\\/[^/]+\\/turn$/.test(res.url()))
+     if(res.request().method()==="POST"&&/\/api\/brain\/conversations\/[^/]+\/turn$/.test(res.url()))
        graphTraces.push(res.json().then(payload=>
          payload.ok&&Number.isFinite(payload.data?.trace?.graphWallMs)?payload.data.trace.graphWallMs:null
        ).catch(()=>null));
