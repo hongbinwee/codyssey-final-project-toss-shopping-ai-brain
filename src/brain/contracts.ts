@@ -8,7 +8,7 @@ export interface PreferenceProofPort { verify(input:{actorUserId:string;key:Pref
 export interface ShoppingContext { maxTotalWon:number|null; requiredConditions:string[]; currentPreferences:Partial<Record<PreferenceKey,PreferenceValue>> }
 export interface EvidenceRecord { id:string;productId:string;variantId:string|null;kind:"SPEC"|"REVIEW";sourceKind?:"REAL"|"SYNTHETIC";sourceRef?:string }
 export interface GroundedFacet {score:number;evidenceIds:string[]}
-export interface ProductCandidate {productId:string;variantId:string;unitPriceWon:number|null;shippingFeeWon:number|null;rating:number|null;ratingScale:number|null;wholeReviewCount:number|null;wholeReviewCountVerified:boolean;conditions:Record<string,string[]>;facets:Partial<Record<Aspect,GroundedFacet>>}
+export interface ProductCandidate {productName?:string;productId:string;variantId:string;unitPriceWon:number|null;shippingFeeWon:number|null;rating:number|null;ratingScale:number|null;wholeReviewCount:number|null;wholeReviewCountVerified:boolean;conditions:Record<string,string[]>;facets:Partial<Record<Aspect,GroundedFacet>>}
 export interface RankedCandidate {candidate:ProductCandidate;score:number;evidenceCoverage:number;missingAspects:Aspect[];effectivePreferences:Record<PreferenceKey,PreferenceValue>}
 export interface BlockedCandidate {candidate:ProductCandidate;reasons:string[]}
 export interface RankingResult {ranked:RankedCandidate[];referenceOnly:BlockedCandidate[];rejected:BlockedCandidate[];evaluatedCount:number}
