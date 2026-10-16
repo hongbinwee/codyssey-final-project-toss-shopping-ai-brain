@@ -63,8 +63,10 @@ jobs:
           node --test "${suites[@]}"
       - name: Prepare strictly isolated disposable brain_ci PostgreSQL schema
         run: node scripts/brain-migrate.ts
-      - name: Real PostgreSQL checkpoint, tenant and memory integration
-        run: node --experimental-strip-types --test --test-concurrency=1 tests/brain-db/*.test.mjs
+      - name: Real PostgreSQL tenant and checkpoint regression
+        run: timeout --signal=TERM 120s node --experimental-strip-types --test tests/brain-db/brain-pg.test.mjs
+      - name: HTTP session and Brain API with local Responses mock
+        run: timeout --signal=TERM 120s node --experimental-strip-types --test tests/brain-db/brain-http.test.mjs
       - name: Real LangGraph MemorySaver smoke
         run: node --experimental-strip-types --test experiments/langgraph/smoke.test.mjs
       - name: Verify dependency lock and package were not modified
