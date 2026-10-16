@@ -83,17 +83,30 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    const {start}=await import("../../src/server.ts");
    dbModule=await import("../../src/db.ts");
    apiServer=await start(0); // rebuild real React bundle for browser use
+   console.log("BROWSER_STAGE 01 server started");
    const base="http://127.0.0.1:"+apiServer.address().port;
+   for(const path of ["/","/web/app.js","/web/styles.css"]){
+     const r=await fetch(base+path,{signal:AbortSignal.timeout(5000)});
+     console.log("BROWSER_STATIC "+path+" "+r.status);
+     assert.equal(r.status,200,"static file "+path+" must be served");
+     await r.arrayBuffer();
+   }
    browser=await chromium.launch({headless:true,args:["--no-sandbox"]});
+   console.log("BROWSER_STAGE 02 chromium launched");
    const ctx=await browser.newContext({baseURL:base});
    const page=await ctx.newPage();
+   page.on("requestfailed",r=>console.log("BROWSER_REQUEST_FAILED",r.url().split("?")[0],r.failure()?.errorText));
+   page.on("pageerror",err=>console.log("BROWSER_PAGE_ERROR",err.message.slice(0,250)));
    await page.goto("/");
+   console.log("BROWSER_STAGE 03 navigated");
    await page.getByPlaceholder("접근 코드").fill("browser-code-a");
    await page.getByRole("button",{name:"시작하기"}).click();
    await page.getByPlaceholder("상품 검색").waitFor({timeout:15000});
+   console.log("BROWSER_STAGE 04 logged in");
    await page.getByTitle("AI 쇼핑 도우미").click();
    const panel=page.locator('aside[aria-label="Shopping Brain Preview"]');
    await panel.waitFor({timeout:15000});
+   console.log("BROWSER_STAGE 05 preview visible");
    const send=async(message)=>{
      await panel.getByPlaceholder("쇼핑 조건을 입력하세요").fill(message);
      await panel.getByRole("button",{name:"보내기"}).click();
