@@ -33,7 +33,7 @@ export function eligibility(p:ProductCandidate):string[]{
 function evidenceValid(ids:string[],p:ProductCandidate,idx:Map<string,EvidenceRecord>,duplicates:Set<string>){
  return ids.length>0&&ids.every(id=>{
   const e=idx.get(id);
-  return !!e&&!duplicates.has(id)&&e.productId===p.productId&&(e.variantId===null||e.variantId===p.variantId)&&(e.kind!=="REVIEW"||!!e.sourceKind);
+  return !!e&&!duplicates.has(id)&&e.productId===p.productId&&(e.variantId===null||e.variantId===p.variantId)&&(e.kind!=="REVIEW"||e.sourceKind==="REAL");
  });
 }
 /** Fixed global denominator; missing evidence cannot improve a candidate's score. */
