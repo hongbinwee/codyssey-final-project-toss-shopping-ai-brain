@@ -86,6 +86,10 @@ export function createBrainApi(deps:BrainApiDeps) {
         return fail(404,"NOT_FOUND","대화를 찾을 수 없습니다");
       if(e instanceof Error&&/confirmation expired|already used| or not owned/.test(e.message))
         return fail(409,"CONFIRMATION_REQUIRED","선호 확인이 만료되었거나 완료되었습니다");
+      if(e instanceof Error&&e.message==="LLM http 429")
+        return fail(429,"MODEL_RATE_LIMIT","AI 모델 요청이 일시적으로 제한됐습니다. 잠시 후 다시 시도해 주세요");
+      if(e instanceof Error&&(e.message==="LLM timeout"||e.name==="TimeoutError"))
+        return fail(504,"MODEL_TIMEOUT","AI 모델의 응답 시간이 초과됐습니다. 다시 시도해 주세요");
       if(e instanceof Error&&e.message==="conversation busy")
         return fail(409,"CONVERSATION_BUSY","이전 질문을 처리 중입니다. 완료 후 다시 시도해 주세요");
       if(e instanceof Error&&/invalid|duplicate action conflict|source message not verified/i.test(e.message))
