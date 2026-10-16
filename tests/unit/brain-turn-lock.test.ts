@@ -1,0 +1,37 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {postgresTurnLock} from "../../src/brain/turn-lock.ts";
+test("turn lock validates UUID and releases reserved session when busy",async()=>{
+ let releaseCalls=0,queried=0;
+ const pool={async reserve(){return {
+   async unsafe(query:string,args:unknown[]){
+     queried++;assert.match(query,/pg_try_advisory_lock/);
+     assert.match(String(args[0]),/^-?\d+$/);
+     return [{acquired:false}];
+   },
+   async release(){releaseCalls++;}
+ }}};
+ const lock=postgresTurnLock(pool);
+ assert.equal(await lock.tryAcquire("11111111-1111-4111-8111-111111111111"),null);
+ assert.equal(releaseCalls,1);
+ assert.equal(queried,1);
+ await assert.rejects(()=>lock.tryAcquire("not-a-uuid"),/invalid conversation/);
+});
+test("turn lock unlocks using identical 64-bit key and finally releases session",async()=>{
+ const calls:{query:string;key:string}[]=[];let released=0;
+ const pool={async reserve(){return {
+   async unsafe(query:string,args:unknown[]){
+     calls.push({query,key:String(args[0])});
+     return [{acquired:true}];
+   },async release(){released++;}
+ }}};
+ const release=await postgresTurnLock(pool).tryAcquire("22222222-2222-4222-8222-222222222222");
+ assert.ok(release);
+ await release();
+ await release();
+ assert.equal(calls.length,2);
+ assert.match(calls[0].query,/pg_try_advisory_lock/);
+ assert.match(calls[1].query,/pg_advisory_unlock/);
+ assert.equal(calls[0].key,calls[1].key);
+ assert.equal(released,1);
+});
