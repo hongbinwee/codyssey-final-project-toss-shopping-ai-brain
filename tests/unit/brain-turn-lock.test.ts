@@ -11,7 +11,7 @@ test("turn lock validates UUID and releases reserved session when busy",async()=
    },
    async release(){releaseCalls++;}
  }}};
- const lock=postgresTurnLock(pool);
+ const lock=postgresTurnLock(pool,{async unsafe(){return [{held:true}];}});
  assert.equal(await lock.tryAcquire("11111111-1111-4111-8111-111111111111"),null);
  assert.equal(releaseCalls,1);
  assert.equal(queried,1);
@@ -27,7 +27,11 @@ test("turn lock unlocks using identical 64-bit key and finally releases session"
      return [{acquired:true}];
    },async release(){released++;}
  }}};
- const lease=await postgresTurnLock(pool).tryAcquire("22222222-2222-4222-8222-222222222222");
+ const observer={async unsafe(query:string,args:unknown[]){
+   calls.push({query,key:String(args[1])});
+   return [{held:true}];
+ }};
+ const lease=await postgresTurnLock(pool,observer).tryAcquire("22222222-2222-4222-8222-222222222222");
  assert.ok(lease);
  await lease.assertHeld();
  await lease.release();
