@@ -13,5 +13,6 @@ try{
  await db.unsafe(readFileSync(new URL("../db/brain/001_brain_memory.sql",import.meta.url),"utf8"));
  await db.unsafe(readFileSync(new URL("../db/brain/002_brain_fencing.sql",import.meta.url),"utf8"));
  await db.unsafe(readFileSync(new URL("../db/brain/003_brain_rate_windows.sql",import.meta.url),"utf8"));
+ await db.unsafe(readFileSync(new URL("../db/brain/004_brain_attempt_history.sql",import.meta.url),"utf8"));
  console.log("brain schema ready:",dbName);
 }finally{await db.end();}
