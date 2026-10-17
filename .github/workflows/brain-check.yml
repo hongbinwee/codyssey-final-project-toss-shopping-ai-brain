@@ -13,6 +13,7 @@ on:
       - "tests/brain-browser/**"
       - "eval/brain/**"
       - "scripts/brain-intent-eval.ts"
+      - "scripts/brain-eval-audit.ts"
       - "src/web/components/BrainPreview.tsx"
       - "tests/unit/brain-*.test.ts"
       - "experiments/langgraph/**"
@@ -68,6 +69,8 @@ jobs:
           mkdir -p /tmp/brain-eval
           BRAIN_EVAL_REPORT_PATH=/tmp/brain-eval/gold-replay-v1.json node --experimental-strip-types scripts/brain-intent-eval.ts --gold-replay --dataset=v1
           BRAIN_EVAL_REPORT_PATH=/tmp/brain-eval/gold-replay-v2.json node --experimental-strip-types scripts/brain-intent-eval.ts --gold-replay --dataset=v2
+      - name: Brain v2 evaluation provenance and holdout integrity audit
+        run: node --experimental-strip-types scripts/brain-eval-audit.ts
       - name: Legacy Commerce unit audit (known fixture/env blockers, non-gating)
         continue-on-error: true
         run: |
