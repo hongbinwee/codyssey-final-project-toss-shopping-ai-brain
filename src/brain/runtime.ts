@@ -14,6 +14,7 @@ import {commerceRetriever} from "./commerce-retriever.ts";
 import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
 import {requireBrainV9Schema} from "./schema-guard.ts";
+import {createDistributedBrainRateLimit} from "./rate-limit.ts";
 
 export async function createBrainRuntime(options:{
  brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider;rag?:RagConnection
@@ -38,6 +39,7 @@ export async function createBrainRuntime(options:{
      intent:createIntentPort(providerIntentModel(options.provider,45000))
    },saver,postgresTurnLock(lockDb,db),new FencedTurns(store));
    return {
+     takeRate:createDistributedBrainRateLimit(store).take,
      handle:createBrainApi({conversations,preferences,graph}),
      close:async()=>{await Promise.allSettled([db.end(),lockDb.end(),saver!.end()]);}
    };
