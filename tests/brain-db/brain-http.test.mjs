@@ -117,6 +117,17 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     const [carts]=await shop.unsafe("SELECT count(*)::int AS n FROM carts");
     const [writes]=await shop.unsafe("SELECT count(*)::int AS n FROM action_requests");
     assert.equal(carts.n,0);assert.equal(writes.n,0);
+    // The shared DB budget is charged before validation/model execution.
+    // Use invalid client turns so quota QA spends no model tokens.
+    for(let i=0;i<11;i++){
+      const rejected=await request("/api/brain/conversations/"+id+"/turn","POST",{},userA);
+      assert.equal(rejected.status,400,"valid-origin budget probes must reach validation");
+    }
+    const limited=await request("/api/brain/conversations/"+id+"/turn","POST",{},userA);
+    assert.equal(limited.status,429,"12 per-user turns/minute across replicas");
+    assert.match(limited.headers.get("retry-after")??"",/^[0-9]+$/);
+    const unaffected=await request("/api/brain/status","GET",undefined,userA);
+    assert.equal(unaffected.status,200,"read-only status is not part of mutation budget");
     console.log("BRAIN_HTTP_STEP 08 no-commerce-writes");
   } finally {
     if(server){server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
