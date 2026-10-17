@@ -193,3 +193,37 @@ test("v9 refuses to silently reset a populated legacy v8 checkpoint",async()=>{
     assert.equal(n,1,"no new message added during migration block");
   }finally{await Promise.allSettled([saver.end(),locks.end(),db.end()]);}
 });
+
+test("M14 closing an AI conversation between claim and publish blocks stale publication",async()=>{
+ valid();
+ const db=postgres(url,{max:3});
+ try{
+  const store=brainDatabaseFromPostgres(db);
+  const conversations=new PersistentConversations(store);
+  const thread=await conversations.create("closed-turn-owner");
+  const fence=new FencedTurns(store);
+  const old={actorUserId:"closed-turn-owner",conversationId:thread.id,
+   clientActionId:"claimed",userMessage:"모니터"};
+  await assert.rejects(()=>fence.claim({...old,actorUserId:"another-user"}),/not owned or closed/);
+  const claim=await fence.claim(old);
+  assert.equal(claim.kind,"run");
+  const [{updated}]=await db.unsafe(
+   "UPDATE shopping_brain.conversations SET closed_at=now() WHERE id=$1 RETURNING id AS updated",
+   [thread.id]);
+  assert.equal(updated,thread.id);
+  const fake={conversationId:thread.id,messageId:crypto.randomUUID(),
+   clientActionId:old.clientActionId,
+   ranking:{evaluatedCount:0,ranked:[],referenceOnly:[],rejected:[]},
+   shoppingPlan:{query:"monitor",maxTotalWon:500000,requiredConditions:[],
+    currentPreferences:{},revision:1},
+   explanation:{kind:"NO_MATCH",text:"No evidence",items:[],limitations:[]},
+   trace:{memoryMs:0,intentMs:0,retrievalMs:0,rankMs:0,totalMs:0}};
+  await assert.rejects(()=>fence.publish(old,claim,fake),/not owned or closed/);
+  await assert.rejects(()=>fence.claim({...old,clientActionId:"new"}),/not owned or closed/);
+  assert.equal(await fence.latest(thread.id),null,"closed task must not become canonical");
+  const [status]=await db.unsafe(
+   "SELECT status FROM shopping_brain.turn_receipts WHERE conversation_id=$1 AND client_action_id=$2",
+   [thread.id,old.clientActionId]);
+  assert.equal(status.status,"PENDING");
+ }finally{await db.end();}
+});
