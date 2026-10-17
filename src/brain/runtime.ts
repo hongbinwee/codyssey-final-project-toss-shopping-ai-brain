@@ -13,6 +13,7 @@ import {parseBrainDatabaseUrl} from "./database-isolation.ts";
 import {commerceRetriever} from "./commerce-retriever.ts";
 import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
+import {requireBrainV9Schema} from "./schema-guard.ts";
 
 export async function createBrainRuntime(options:{
  brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider;rag?:RagConnection
@@ -25,10 +26,7 @@ export async function createBrainRuntime(options:{
  const lockDb=postgres(url,{max:5,connect_timeout:5});
  let saver:PostgresSaver|undefined;
  try{
-   const rows=await db.unsafe<{name:string;conversations:string|null}[]>(
-     "SELECT current_database() AS name,to_regclass('shopping_brain.conversations')::text AS conversations");
-   if(rows.length!==1||rows[0].name!==dbName||!rows[0].conversations)
-     throw new Error("AI-owned Brain schema is not initialized");
+   await requireBrainV9Schema(db,dbName);
    saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
    // Creates/checks LangGraph tables in AI-only database, never Commerce.
    await saver.setup();
