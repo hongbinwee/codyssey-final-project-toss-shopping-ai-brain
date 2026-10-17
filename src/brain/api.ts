@@ -2,6 +2,7 @@ import type {PreferenceKey,PreferenceValue,Preference,RankingResult} from "./con
 import type {PersistentConversations,PersistentPreferences} from "./persistent-store.ts";
 import type {ShoppingPlan} from "./shopping-plan.ts";
 import type {GroundedExplanation} from "./grounded-response.ts";
+import {BrainModelOutputError} from "./intent.ts";
 
 export interface BrainGraphPort {
   invoke(input:{actorUserId:string;conversationId:string;requestId:string;clientActionId:string;userMessage:string}):Promise<{
@@ -86,6 +87,8 @@ export function createBrainApi(deps:BrainApiDeps) {
         return fail(404,"NOT_FOUND","대화를 찾을 수 없습니다");
       if(e instanceof Error&&/confirmation expired|already used| or not owned/.test(e.message))
         return fail(409,"CONFIRMATION_REQUIRED","선호 확인이 만료되었거나 완료되었습니다");
+      if(e instanceof BrainModelOutputError)
+        return fail(502,"MODEL_OUTPUT_INVALID","AI 응답을 해석할 수 없습니다. 다시 시도해 주세요");
       if(e instanceof Error&&e.message==="LLM http 429")
         return fail(429,"MODEL_RATE_LIMIT","AI 모델 요청이 일시적으로 제한됐습니다. 잠시 후 다시 시도해 주세요");
       if(e instanceof Error&&(e.message==="LLM timeout"||e.name==="TimeoutError"))
