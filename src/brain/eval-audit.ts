@@ -42,3 +42,43 @@ export function auditIntentDataset(cases:readonly GoldCase[]){
  };
  return summary;
 }
+
+/**
+ * Heuristic only: character-bigram Dice similarity proposes human review pairs.
+ * This is NOT semantic equivalence, a model embedding, nor independent labeling.
+ * Never output the question/gold content from holdout cases.
+ */
+export function suggestCrossSplitNearDuplicates(cases:readonly GoldCase[],threshold=.64){
+ if(!Number.isFinite(threshold)||threshold<0||threshold>1)throw Error("invalid similarity threshold");
+ const gram=(value:string)=>{
+  const text=norm(value);
+  const result=new Set<string>();
+  for(let i=0;i<text.length-1;i++)result.add(text.slice(i,i+2));
+  return result;
+ };
+ const pairs:{developmentId:string;holdoutId:string;similarity:number}[]=[];
+ const dev=cases.filter(c=>c.split==="development"&&typeof c.message==="string");
+ const held=cases.filter(c=>c.split==="candidate_holdout"&&typeof c.message==="string");
+ for(const left of dev){
+  const x=gram(left.message);
+  if(!x.size)continue;
+  for(const right of held){
+   // Different previous-plan states may represent different intended actions;
+   // do not call a superficial surface-text match a confirmed leak.
+   const y=gram(right.message);
+   if(!y.size)continue;
+   let intersection=0;
+   for(const g of x)if(y.has(g))intersection++;
+   const dice=2*intersection/(x.size+y.size);
+   if(dice>=threshold)pairs.push({
+    developmentId:left.id,holdoutId:right.id,similarity:Math.round(dice*1000)/1000
+   });
+  }
+ }
+ pairs.sort((a,b)=>b.similarity-a.similarity||
+   a.developmentId.localeCompare(b.developmentId)||
+   a.holdoutId.localeCompare(b.holdoutId));
+ return {method:"character_bigram_dice_heuristic" as const,
+  threshold,reviewRequiredPairs:pairs.length,candidates:pairs.slice(0,30),
+  truncated:pairs.length>30,independentSemanticAuditComplete:false as const};
+}
