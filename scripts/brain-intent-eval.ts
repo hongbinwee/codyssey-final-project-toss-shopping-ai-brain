@@ -6,6 +6,7 @@ import {resolveShoppingPlan} from "../src/brain/shopping-plan.ts";
 import {providerIntentModel} from "../src/brain/provider-intent.ts";
 import {summarizeLatency} from "../src/brain/latency.ts";
 import {gradeShoppingPlan,fullPlanPass} from "../src/brain/evaluation-rubric.ts";
+import {summarizeIntentQuality} from "../src/brain/eval-summary.ts";
 import type {ShoppingPlan} from "../src/brain/shopping-plan.ts";
 
 type Case={
@@ -58,7 +59,13 @@ for(const c of file.cases){
      const parsed=parseShoppingIntent(JSON.stringify(c.goldOutput));
      if(!matches(parsed,extraction))throw Error("gold replay parsed differently");
    }
- }catch(e){error=e instanceof Error?e.message:"unknown evaluator error";fields={plan:false};}
+ }catch(e){
+   // Do not export raw model/provider error text (may contain credentials or user data).
+   const message=e instanceof Error?e.message:"";
+   error=/timeout/i.test(message)?"TIMEOUT":/429|rate.limit/i.test(message)?"RATE_LIMIT":
+     /invalid|JSON|schema/i.test(message)?"INVALID_OUTPUT":"OTHER_ERROR";
+   fields={plan:false};
+ }
  const elapsed=performance.now()-start;
  results.push({id:c.id,group:c.group,split:c.split,passed:fullPlanPass(fields),fields,latencyMs:elapsed,
    ...(error?{error}:{}),...(mode==="live"?{model:process.env.LLM_MODEL}: {})});
@@ -77,7 +84,7 @@ const summary={
  dataset:file.version,model:mode==="live"?process.env.LLM_MODEL:null,
  cases:results.length,passed:results.length-failures.length,failed:failures.length,
  exactPlanAccuracy:(results.length-failures.length)/results.length,
- latencyMs:lat,results
+ latencyMs:lat,quality:summarizeIntentQuality(results),results
 };
 const destination=process.env.BRAIN_EVAL_REPORT_PATH;
 if(destination){
