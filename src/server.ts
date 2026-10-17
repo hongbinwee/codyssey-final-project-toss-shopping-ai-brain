@@ -19,6 +19,7 @@ import { getActionResult } from "./actions.ts";
 import { runAgentTurn } from "./agent.ts";
 import { getProvider } from "./llm.ts";
 import { createAiDemoGate } from "./ai-demo-access.ts";
+import {brainMutationAllowed} from "./brain/csrf.ts";
 import {
   isolatedEnvTouched,
   planIsolatedConnect,
@@ -170,8 +171,6 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
     : null;
   const aiGate = createAiDemoGate();
   const aiCalls = createAiDemoGate(30, 15);
-  // Bounded in-process demonstration budget; public deployment requires durable rate limiting.
-  const brainTurns = createAiDemoGate(80, 15);
 
   const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://local");
@@ -244,25 +243,21 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       if (p === "/api/brain" || p.startsWith("/api/brain/")) {
         if (!brainRuntime)
           return json(res, 404, { ok: false, error: { code: "NOT_FOUND", message: "Brain API is disabled" } });
-        // Origin is not authentication, but reject cross-origin browser mutations.
-        if (req.method === "POST" || req.method === "DELETE") {
-          const origin = req.headers.origin;
-          if (origin) {
-            let match = false;
-            try { match = new URL(origin).host === req.headers.host; } catch { /* fail closed */ }
-            if (!match)
-              return json(res, 403, { ok: false, error: { code: "FORBIDDEN", message: "허용되지 않은 요청 출처" } });
-          }
+        const mutating = req.method === "POST" || req.method === "DELETE";
+        if(mutating&&!brainMutationAllowed(req.headers,env.BRAIN_PUBLIC_ORIGIN))
+          return json(res,403,{ok:false,error:{code:"CSRF_REJECTED",message:"허용되지 않은 요청 출처"}});
+        if(mutating){
+          const isTurn=req.method==="POST" &&
+            /^\\/api\\/brain\\/conversations\\/[^/]+\\/turn$/.test(p);
+          // Shared across all replicas. Fails closed if AI PostgreSQL is down.
+          const quota=await brainRuntime.takeRate(ctx.actorUserId,isTurn?"turn":"mutation");
+          if(!quota.ok)return json(res,429,{
+            ok:false,error:{code:"BRAIN_RATE_LIMIT",message:"Brain 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요"}
+          },{"retry-after":String(quota.retryAfterSeconds)});
         }
-        const isBrainTurn = req.method === "POST" && /^\/api\/brain\/conversations\/[^/]+\/turn$/.test(p);
-        const brainTicket = isBrainTurn ? brainTurns.take(ctx.actorUserId) : null;
-        if (brainTicket && !brainTicket.ok)
-          return json(res, 429, { ok: false, error: { code: brainTicket.code, message: "Brain 시연 호출 한도에 도달했거나 이전 요청을 처리 중입니다" } });
-        try {
-          const submitted = req.method === "POST" ? await body(req) : {};
-          const reply = await brainRuntime.handle(req.method ?? "", p, ctx.actorUserId, submitted);
-          return json(res, reply.status, reply.body);
-        } finally { if (brainTicket?.ok) brainTicket.release(); }
+        const submitted = req.method === "POST" ? await body(req) : {};
+        const reply = await brainRuntime.handle(req.method ?? "", p, ctx.actorUserId, submitted);
+        return json(res, reply.status, reply.body);
       }
 
       if (p === "/api/products" && req.method === "GET") {
