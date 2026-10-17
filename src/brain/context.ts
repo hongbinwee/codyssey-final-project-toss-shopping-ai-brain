@@ -32,10 +32,13 @@ export function assembleIntentContext(userMessage:string,memories:Preference[],p
  return {
    trustedSkillId:selected.id,
    trustedSkillInstruction:selected.guidance,
-   untrustedUserContent:[
-     "[untrusted_previous_shopping_plan]",JSON.stringify(context),"[/untrusted_previous_shopping_plan]",
-     "[untrusted_confirmed_long_term_preferences]",JSON.stringify(remembered),"[/untrusted_confirmed_long_term_preferences]",
-     "[latest_user_message]",userMessage,"[/latest_user_message]"
-   ].join("\n")
+   // One encoded document prevents user-supplied strings from forging
+   // delimiter sections (e.g. [/latest_user_message] + fake plan).
+   // This remains lower-trust model INPUT, never system instructions.
+   untrustedUserContent:JSON.stringify({
+     untrusted_previous_shopping_plan:context,
+     untrusted_confirmed_long_term_preferences:remembered,
+     latest_user_message:userMessage
+   })
  };
 }
