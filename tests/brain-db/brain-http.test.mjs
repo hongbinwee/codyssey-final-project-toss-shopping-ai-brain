@@ -53,7 +53,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     const request=async(path,method="GET",payload,cookie,origin)=>{
       const response=await fetch(base+path,{
         method,signal:AbortSignal.timeout(30000),
-        headers:{"content-type":"application/json",...(cookie?{cookie}:{}),...(origin?{origin}:{})},
+        headers:{"content-type":"application/json",...(cookie?{cookie}:{}),...((cookie&&(method==="POST"||method==="DELETE"))?{origin:origin??base}:(origin?{origin}:{}))},
         ...(payload!==undefined?{body:JSON.stringify(payload)}:{})
       });
       const raw=await response.text();
@@ -72,6 +72,17 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     assert.equal(status.status,200);
     const badOrigin=await request("/api/brain/conversations","POST",{},userA,"https://attacker.invalid");
     assert.equal(badOrigin.status,403);
+    const noOrigin=await fetch(base+"/api/brain/conversations",{
+      method:"POST",headers:{cookie:userA,"content-type":"application/json"},body:"{}"
+    });
+    assert.equal(noOrigin.status,403,"cookie mutations without origin/referrer must fail closed");
+    await noOrigin.text();
+    const spoofed=await fetch(base+"/api/brain/conversations",{
+      method:"POST",headers:{cookie:userA,origin:base,"sec-fetch-site":"cross-site",
+        "content-type":"application/json"},body:"{}"
+    });
+    assert.equal(spoofed.status,403,"Fetch Metadata must reject cross-site forgery");
+    await spoofed.text();
     const convo=await request("/api/brain/conversations","POST",{},userA);
     assert.equal(convo.status,201);
     const id=(await convo.json()).data.id;
