@@ -68,6 +68,10 @@ export class FencedTurns {
         "INSERT INTO shopping_brain.turn_receipts(conversation_id,client_action_id,input_digest,generation,attempt_id,status) VALUES($1,$2,$3,$4::bigint,$5,'PENDING') "+
         "ON CONFLICT(conversation_id,client_action_id) DO UPDATE SET generation=excluded.generation,attempt_id=excluded.attempt_id,status='PENDING',checkpoint_thread_id=NULL,completed_result=NULL,updated_at=now()",
         [action.conversationId,action.clientActionId,fingerprint,generation,attemptId]);
+      await tx.query(
+        "INSERT INTO shopping_brain.turn_attempts(attempt_id,conversation_id,client_action_id,generation,status) "+
+        "VALUES($1,$2,$3,$4::bigint,'PENDING')",
+        [attemptId,action.conversationId,action.clientActionId,generation]);
       return {kind:"run" as const,generation,attemptId,prior};
     });
   }
@@ -90,6 +94,11 @@ export class FencedTurns {
         "WHERE conversation_id=$1 AND client_action_id=$2 AND input_digest=$3 AND generation=$6::bigint AND attempt_id=$4 AND status='PENDING' RETURNING client_action_id",
         [action.conversationId,action.clientActionId,digest(action),claim.attemptId,JSON.stringify(result),claim.generation]);
       if(updated.length!==1)throw Error("stale or mismatched Brain receipt");
+      const attempts=await tx.query<{attempt_id:string}>(
+        "UPDATE shopping_brain.turn_attempts SET status='COMPLETED',completed_at=now() "+
+        "WHERE attempt_id=$1 AND conversation_id=$2 AND generation=$3::bigint AND status='PENDING' RETURNING attempt_id",
+        [claim.attemptId,action.conversationId,claim.generation]);
+      if(attempts.length!==1)throw Error("Brain attempt history integrity conflict");
       await tx.query(
         "UPDATE shopping_brain.turn_fence SET published_action_id=$2,updated_at=now() WHERE conversation_id=$1",
         [action.conversationId,action.clientActionId]);
