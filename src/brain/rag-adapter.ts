@@ -78,9 +78,13 @@ function parseEvidence(rows:unknown):EvidenceRecord[]{
 }
 function parseCandidates(rows:unknown):Record<string,unknown>[] {
   if(!Array.isArray(rows)||rows.length>30)throw new Error("RAG candidate limit");
+  const seen=new Set<string>();
   return rows.map(raw=>{
     const r=obj(raw);
     if(!r||!text(r.productId,128)||!text(r.variantId,128))throw new Error("invalid Commerce ID mapping");
+    const key=JSON.stringify([r.productId,r.variantId]);
+    if(seen.has(key))throw new Error("duplicate RAG candidate");
+    seen.add(key);
     return r;
   });
 }
@@ -104,6 +108,7 @@ export function verifiedRagRetriever(
     const raw=obj(await boundedJson(response));
     if(!raw||raw.version!=="brain-rag-v1")throw new Error("RAG contract version mismatch");
     const evidence=parseEvidence(raw.evidence),candidateRows=parseCandidates(raw.candidates);
+    const evidenceById=new Map(evidence.map(e=>[e.id,e]));
     const byProduct=new Map<string,ProductDetail|null>();
     const candidates:ProductCandidate[]=[];
     for(const row of candidateRows){
@@ -120,11 +125,25 @@ export function verifiedRagRetriever(
       for(const aspect of aspects){
         const f=pickRecord(rawFacets[aspect]);if(f)facets[aspect]=f;
       }
+      // A retrieved claim must cite evidence for this exact Commerce product
+      // and, when variant-scoped, for this exact variant. Never borrow another
+      // candidate's review or a stale variant's specification.
+      const checkIds=(ids:readonly string[])=>{
+        for(const id of ids){
+          const ev=evidenceById.get(id);
+          if(!ev||ev.productId!==productId||(ev.variantId!==null&&ev.variantId!==variantId))
+            throw new Error("RAG cross-product evidence mismatch");
+        }
+      };
+      for(const facet of Object.values(facets))if(facet)checkIds(facet.evidenceIds);
       const conditions:Record<string,string[]>={};
       const rawConditions=obj(row.conditions);
       if(rawConditions){
         for(const [k,v] of Object.entries(rawConditions)){
-          if(text(k,80)&&Array.isArray(v)&&v.length<=25&&v.every(x=>text(x,128)))conditions[k]=v as string[];
+          if(text(k,80)&&Array.isArray(v)&&v.length<=25&&v.every(x=>text(x,128))){
+            checkIds(v as string[]);
+            conditions[k]=v as string[];
+          }
         }
       }
       const audited=row.reviewCountAuditId===connection.auditId&&
