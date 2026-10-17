@@ -22,6 +22,7 @@ on:
       - "docs/BRAIN_V7_DISTRIBUTED_RECOVERY_ERASURE.md"
       - "docs/BRAIN_V8_FENCING_FAILURE_QA.md"
       - "docs/BRAIN_V9_FENCED_CHECKPOINTS_QA.md"
+      - "docs/BRAIN_M10_M13_HANDOFF.md"
   workflow_dispatch:
 
 permissions:
