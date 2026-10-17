@@ -19,7 +19,7 @@ const probe=(meta=names,columns=fields)=>({
 });
 test("M10 starts only with complete v9 AI schema and matching DB identity",async()=>{
  await requireBrainV9Schema(probe() as never,"brain_ci");
- await assert.rejects(()=>requireBrainV9Schema(probe({...names,receipts:null}) as never,"brain_ci"),/migration required/);
+ await assert.rejects(()=>requireBrainV9Schema(probe({...names,receipts:null as string|null} as typeof names) as never,"brain_ci"),/migration required/);
  await assert.rejects(()=>requireBrainV9Schema(probe() as never,"commerce"),/migration required/);
  await assert.rejects(()=>requireBrainV9Schema(probe(names,fields.filter(x=>x.column_name!=="generation")) as never,"brain_ci"),/schema incompatible/);
  await assert.rejects(()=>requireBrainV9Schema(probe(names,fields.map(x=>x.column_name==="completed_result"?{...x,data_type:"text"}:x)) as never,"brain_ci"),/schema incompatible/);
