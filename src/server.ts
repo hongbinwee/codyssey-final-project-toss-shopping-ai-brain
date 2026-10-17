@@ -247,8 +247,7 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
         if(mutating&&!brainMutationAllowed(req.headers,env.BRAIN_PUBLIC_ORIGIN))
           return json(res,403,{ok:false,error:{code:"CSRF_REJECTED",message:"허용되지 않은 요청 출처"}});
         if(mutating){
-          const isTurn=req.method==="POST" &&
-            /^\\/api\\/brain\\/conversations\\/[^/]+\\/turn$/.test(p);
+          const isTurn=req.method==="POST" && p.startsWith("/api/brain/conversations/") && p.endsWith("/turn");
           // Shared across all replicas. Fails closed if AI PostgreSQL is down.
           const quota=await brainRuntime.takeRate(ctx.actorUserId,isTurn?"turn":"mutation");
           if(!quota.ok)return json(res,429,{
