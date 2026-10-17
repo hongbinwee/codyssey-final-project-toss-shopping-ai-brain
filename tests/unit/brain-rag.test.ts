@@ -111,7 +111,7 @@ test("M13 RAG rejects evidence for a different Commerce variant",async()=>{
 });
 test("M13 RAG rejects a hard-condition proof belonging to another product",async()=>{
  const payload=resultRows();
- payload.candidates[0].conditions={FHD:["performance-b"]};
+ Object.assign(payload.candidates[0],{conditions:{FHD:["performance-b"]}});
  await assert.rejects(()=>create(payload).retriever.search({
   query:"monitor",maxTotalWon:500000,requiredConditions:["FHD"]
  }),/cross-product evidence mismatch/);
