@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import {requireBrainV9Schema} from "../../src/brain/schema-guard.ts";
 const names={db_name:"brain_ci",conversations:"shopping_brain.conversations",
  messages:"shopping_brain.messages",preferences:"shopping_brain.user_preferences",
- fence:"shopping_brain.turn_fence",receipts:"shopping_brain.turn_receipts",rateWindows:"shopping_brain.rate_limit_windows"};
+ fence:"shopping_brain.turn_fence",receipts:"shopping_brain.turn_receipts",rateWindows:"shopping_brain.rate_limit_windows",attempts:"shopping_brain.turn_attempts"};
 const fields=[
+ ["turn_attempts","attempt_id","uuid"],["turn_attempts","conversation_id","uuid"],
+ ["turn_attempts","generation","bigint"],["turn_attempts","status","text"],
  ["rate_limit_windows","scope","text"],["rate_limit_windows","subject_digest","text"],
  ["rate_limit_windows","window_start","timestamp with time zone"],["rate_limit_windows","hits","integer"],
  ["turn_fence","generation","bigint"],["turn_fence","active_attempt_id","uuid"],
@@ -21,6 +23,7 @@ const probe=(meta=names,columns=fields)=>({
 });
 test("M10 starts only with complete v9 AI schema and matching DB identity",async()=>{
  await requireBrainV9Schema(probe() as never,"brain_ci");
+ await assert.rejects(()=>requireBrainV9Schema(probe({...names,attempts:null as string|null} as typeof names) as never,"brain_ci"),/migration required/);
  await assert.rejects(()=>requireBrainV9Schema(probe({...names,receipts:null as string|null} as typeof names) as never,"brain_ci"),/migration required/);
  await assert.rejects(()=>requireBrainV9Schema(probe() as never,"commerce"),/migration required/);
  await assert.rejects(()=>requireBrainV9Schema(probe({...names,rateWindows:null as string|null} as typeof names) as never,"brain_ci"),/migration required/);
