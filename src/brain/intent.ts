@@ -33,7 +33,10 @@ const enums={
  requirementsMode:["KEEP","ADD","REPLACE","CLEAR"],
  preferencesMode:["MERGE","CLEAR"]
 } as const;
-export function parseShoppingIntent(raw:string):ShoppingIntent {
+export class BrainModelOutputError extends Error {
+ constructor(message:string){super(message);this.name="BrainModelOutputError";}
+}
+function parseShoppingIntentInner(raw:string):ShoppingIntent {
  if(typeof raw!=='string'||raw.length>6000)throw new Error('invalid intent response');
  let data:unknown;
  try{data=JSON.parse(raw);}catch{throw new Error('invalid intent JSON');}
@@ -64,6 +67,13 @@ export function parseShoppingIntent(raw:string):ShoppingIntent {
  }
  return {query:x.query.trim(),context:{maxTotalWon:x.maxTotalWon as number|null,
    requiredConditions:(x.requiredConditions as string[]).map(s=>s.trim()),currentPreferences:preferences},...modes};
+}
+/** Invalid model-generated fields are upstream output failures, never HTTP 400 user errors. */
+export function parseShoppingIntent(raw:string):ShoppingIntent {
+ try {return parseShoppingIntentInner(raw);}
+ catch(e) {
+  throw new BrainModelOutputError(e instanceof Error ? e.message : "invalid intent output");
+ }
 }
 /** Tool-free intent planner: prior state is user/context data, not a system override. */
 export function createIntentPort(model:IntentModel):IntentPort {
