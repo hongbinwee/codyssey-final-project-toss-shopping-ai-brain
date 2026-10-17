@@ -32,6 +32,12 @@ export class FencedTurns {
   async claim(action:Action):Promise<FencedClaim>{
     const fingerprint=digest(action);
     return this.db.transaction(async tx=>{
+      // Ownership must still hold at the mutation boundary, not only at
+      // Graph entry. Row lock serializes with an eventual close/erasure.
+      const owner=await tx.query<{id:string}>(
+        "SELECT id FROM shopping_brain.conversations WHERE id=$1 AND actor_user_id=$2 AND closed_at IS NULL FOR SHARE",
+        [action.conversationId,action.actorUserId]);
+      if(owner.length!==1)throw Error("conversation is not owned or closed");
       await tx.query("INSERT INTO shopping_brain.turn_fence(conversation_id) VALUES($1) ON CONFLICT DO NOTHING",
         [action.conversationId]);
       const [fence]=await tx.query<FenceRow>(
@@ -70,6 +76,10 @@ export class FencedTurns {
     if(result.conversationId!==action.conversationId||result.clientActionId!==action.clientActionId||
        !result.explanation||!result.shoppingPlan)throw Error("invalid graph result");
     await this.db.transaction(async tx=>{
+      const owner=await tx.query<{id:string}>(
+        "SELECT id FROM shopping_brain.conversations WHERE id=$1 AND actor_user_id=$2 AND closed_at IS NULL FOR SHARE",
+        [action.conversationId,action.actorUserId]);
+      if(owner.length!==1)throw Error("conversation is not owned or closed");
       const [row]=await tx.query<{generation:string|number;active_attempt_id:string|null}>(
         "SELECT generation,active_attempt_id FROM shopping_brain.turn_fence WHERE conversation_id=$1 FOR UPDATE",
         [action.conversationId]);
