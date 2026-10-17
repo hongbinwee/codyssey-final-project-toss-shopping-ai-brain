@@ -23,8 +23,8 @@ export function createDistributedBrainRateLimit(db:BrainSqlDatabase){
      if(!clock)throw Error("Brain rate DB clock unavailable");
      // Lock global row before actor row in every worker to avoid deadlocks.
      for(const [scope,subject,maxHits] of [
-        [kind+"_global",hash("global"),limits.global],
-        [kind+"_user",hash(actorId),limits.user]
+        ["brain_"+kind+"_global",hash("global"),limits.global],
+        ["brain_"+kind+"_user",hash(actorId),limits.user]
       ] as const){
        const rows=await tx.query<{hits:number}>(
          `INSERT INTO shopping_brain.rate_limit_windows
