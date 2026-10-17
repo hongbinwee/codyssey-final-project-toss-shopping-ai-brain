@@ -8,6 +8,7 @@ import {PersistentConversations,PersistentPreferences} from "../../src/brain/per
 import {createPersistentResearchGraph} from "../../src/brain/graph.ts";
 import {postgresTurnLock} from "../../src/brain/turn-lock.ts";
 import {FencedTurns} from "../../src/brain/fenced-turns.ts";
+import {brainErasureFootprint} from "../../src/brain/erasure-audit.ts";
 
 const url=process.env.BRAIN_DATABASE_URL;
 const check=()=>{if(!url||new URL(url).pathname!=="/brain_ci")throw Error("disposable brain_ci required");};
@@ -70,6 +71,8 @@ test("v9: real SIGKILL mid-RAG cannot publish unfinished private checkpoint; rep
     assert.equal(rows[0].n,1);
     const gens=await db.unsafe("SELECT generation FROM shopping_brain.turn_fence WHERE conversation_id=$1",[conv.id]);
     assert.equal(Number(gens[0].generation),2,"restart requires a new generation");
+    assert.equal((await brainErasureFootprint(store,"worker-kill-owner")).attempts,2,
+      "crashed generation must remain indexed for privacy audit");
   }finally{
     if(child&&!child.killed)child.kill("SIGKILL");
     await Promise.allSettled([saver.end(),lockDb.end({timeout:1}),db.end({timeout:1})]);
@@ -121,5 +124,14 @@ test("v9: failed PostgresSaver write cannot move canonical pointer; retry starts
     assert.equal(Number(actions[0].generation),3);
     const msgs=await db.unsafe("SELECT count(*)::int AS n FROM shopping_brain.messages WHERE conversation_id=$1 AND client_action_id='retry-me'",[conv.id]);
     assert.equal(msgs[0].n,1);
+    const lineage=await db.unsafe(
+      "SELECT generation,status,attempt_id FROM shopping_brain.turn_attempts WHERE conversation_id=$1 ORDER BY generation",
+      [conv.id]);
+    assert.deepEqual(lineage.map(r=>r.status),["COMPLETED","PENDING","COMPLETED"]);
+    assert.equal(new Set(lineage.map(r=>r.attempt_id)).size,3);
+    const privacy=await brainErasureFootprint(store,"fenced-partial-owner");
+    assert.equal(privacy.attempts,3,"superseded saver attempt must remain discoverable");
+    assert.ok(privacy.checkpoints>0,"physical checkpoint rows remain inventoried");
+
   }finally{await Promise.allSettled([saver.end(),lockDb.end(),db.end()]);}
 });
