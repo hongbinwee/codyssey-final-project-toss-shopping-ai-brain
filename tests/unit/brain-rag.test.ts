@@ -94,3 +94,32 @@ test("unavailable upstream never silently falls back to unverified Commerce rank
  const adapter=verifiedRagRetriever({endpoint:"https://retriever.example.org/v1",auditId:"qa-v1"},async()=>commerce("p-a"),failing);
  await assert.rejects(()=>adapter.search({query:"monitor",maxTotalWon:null,requiredConditions:[]}),/RAG unavailable/);
 });
+
+test("M13 RAG must reject a facet citation borrowed from another product",async()=>{
+ const payload=resultRows();
+ payload.evidence[0].productId="p-b";
+ await assert.rejects(()=>create(payload).retriever.search({
+  query:"monitor",maxTotalWon:null,requiredConditions:[]
+ }),/cross-product evidence mismatch/);
+});
+test("M13 RAG rejects evidence for a different Commerce variant",async()=>{
+ const payload=resultRows();
+ (payload.evidence[0] as {variantId:string|null}).variantId="v-obsolete";
+ await assert.rejects(()=>create(payload).retriever.search({
+  query:"monitor",maxTotalWon:null,requiredConditions:[]
+ }),/cross-product evidence mismatch/);
+});
+test("M13 RAG rejects a hard-condition proof belonging to another product",async()=>{
+ const payload=resultRows();
+ payload.candidates[0].conditions={FHD:["performance-b"]};
+ await assert.rejects(()=>create(payload).retriever.search({
+  query:"monitor",maxTotalWon:500000,requiredConditions:["FHD"]
+ }),/cross-product evidence mismatch/);
+});
+test("M13 duplicate product/variant responses do not inflate candidate rankings",async()=>{
+ const payload=resultRows();
+ payload.candidates.push({...payload.candidates[0]});
+ await assert.rejects(()=>create(payload).retriever.search({
+  query:"monitor",maxTotalWon:null,requiredConditions:[]
+ }),/duplicate RAG candidate/);
+});
