@@ -12,6 +12,7 @@ export interface BrainGraphPort {
   getOwnedState(actorUserId:string,conversationId:string):Promise<{values?:Record<string,unknown>}>;
 }
 export interface BrainApiDeps {
+  recentHistory?:(actorUserId:string)=>Promise<unknown>;
   conversations:Pick<PersistentConversations,"create"|"assertOwned"|"proposePreference"|"confirmPreference">;
   preferences:Pick<PersistentPreferences,"list"|"delete">;
   graph:BrainGraphPort;
@@ -34,6 +35,8 @@ export function createBrainApi(deps:BrainApiDeps) {
     const body=rec(rawBody);
     try {
       if(method==="GET"&&path==="/api/brain/status")return success({enabled:true,read_only:true,mode:"grounded_research"});
+      if(method==="GET"&&path==="/api/brain/history")
+        return success(deps.recentHistory?await deps.recentHistory(actorUserId):{conversationId:null,entries:[]});
       if(method==="POST"&&path==="/api/brain/conversations"){
         if(Object.keys(body).length) return fail(400,"VALIDATION","지원하지 않는 요청 형식");
         return success(await deps.conversations.create(actorUserId),201);

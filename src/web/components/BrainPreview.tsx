@@ -1,22 +1,58 @@
 import {useEffect,useState} from "react";
 import {apiSafe,newActionKey,fmtWon} from "../api.ts";
 
+type ProductCandidate={
+ productId:string;productName?:string;variantId:string;
+ sourceKind?:"REAL"|"SYNTHETIC";datasetVersion?:string;commerceVerified?:boolean;isSimulated?:boolean;
+};
 type RankedProduct={
- candidate:{productId:string;productName?:string;variantId:string;unitPriceWon:number|null;shippingFeeWon:number|null};
+ candidate:ProductCandidate&{unitPriceWon:number|null;shippingFeeWon:number|null};
  score:number;evidenceCoverage:number;
 };
-type LimitedProduct={candidate:{productId:string;productName?:string;variantId:string};reasons:string[]};
+type LimitedProduct={candidate:ProductCandidate;reasons:string[]};
+type BrainRankingResult={ranked:RankedProduct[];referenceOnly:LimitedProduct[];rejected:LimitedProduct[];evaluatedCount:number};
 type BrainReply={
  conversation_id:string;message_id:string;read_only:true;
  shopping_plan?:{query:string;maxTotalWon:number|null;requiredConditions:string[];revision:number}|null;
  explanation?:{text:string;kind:string;items:{productId:string;evidenceIds:string[]}[];limitations:string[]}|null;
- ranking:{ranked:RankedProduct[];referenceOnly:LimitedProduct[];rejected:LimitedProduct[];evaluatedCount:number};
+ ranking:BrainRankingResult;
  trace:{totalMs:number;graphWallMs?:number};
 };
 type MemoryItem={key:string;value:string;updatedAt:string};
 type Entry={text:string;reply?:BrainReply;error?:boolean};
 
-export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenProduct:(id:string)=>void}){
+export function BrainRanking({ranking,onOpenProduct}:{ranking:BrainRankingResult;onOpenProduct:(id:string,variantId?:string)=>void}){
+ const syntheticRanked=ranking.ranked.filter(p=>p.candidate.sourceKind==="SYNTHETIC");
+ const ranked=ranking.ranked.filter(p=>p.candidate.sourceKind!=="SYNTHETIC");
+ const referenceOnly=[...syntheticRanked.map(p=>({candidate:p.candidate,reasons:[]})),...ranking.referenceOnly];
+ return <>
+   {ranked.length>0
+     ?<><p>현재 선호에 따라 비교한 검증 후보</p>{ranked.slice(0,3).map((p,j)=>(
+         <div key={p.candidate.variantId} className="compare-row">
+           <b>{j+1}. {p.candidate.productName ?? p.candidate.productId}</b>
+           <span className="muted sm"> · {p.candidate.unitPriceWon===null?"가격 미확인":fmtWon(p.candidate.unitPriceWon)} · 옵션 {p.candidate.variantId}</span>
+           <button className="link" onClick={()=>onOpenProduct(p.candidate.productId,p.candidate.variantId)}>상품 보기</button>
+         </div>))}
+       <p className="muted sm">점수는 초기 검증용 휴리스틱이며 최종 사용자 추천 품질을 보증하지 않아요.</p></>
+     :<p>추천 적격성을 확인한 상품이 없어요. 데이터·근거가 충분하지 않을 수 있어요.</p>}
+   {referenceOnly.length>0&&<div className="muted sm">
+     <b>참고 정보 (추천 아님)</b>{referenceOnly.slice(0,3).map((p,j)=>{
+       const synthetic=p.candidate.sourceKind==="SYNTHETIC";
+       return <div key={p.candidate.productId+":"+p.candidate.variantId+":"+j}>
+         {synthetic&&<span className="chip">v4 합성 데이터 · 참고용</span>}
+         {p.candidate.isSimulated&&<span className="chip">가격·재고 시연용 · 주문 불가</span>}
+         <span>{p.candidate.productName ?? p.candidate.productId} · 옵션 {p.candidate.variantId}{p.reasons.length?" · "+p.reasons.join(", "):""}</span>
+         {synthetic&&(p.candidate.commerceVerified===true
+           ?<button className="link" onClick={()=>onOpenProduct(p.candidate.productId,p.candidate.variantId)}>상품 보기</button>
+           :<span className="muted sm">Commerce 상품 확인 전 · 상품 보기 비활성</span>)}
+       </div>;
+     })}
+   </div>}
+   {ranking.rejected.length>0&&<p className="muted sm">필수 조건/근거 미충족 후보 {ranking.rejected.length}개 제외</p>}
+ </>;
+}
+
+export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenProduct:(id:string,variantId?:string)=>void}){
  const [input,setInput]=useState("");
  const [conversation,setConversation]=useState<string|null>(null);
  const [sourceMessage,setSourceMessage]=useState<string|null>(null);
@@ -25,8 +61,17 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
  const [memories,setMemories]=useState<MemoryItem[]>([]);
  const [entries,setEntries]=useState<Entry[]>([]);
  const [busy,setBusy]=useState(false);
+ const [restoring,setRestoring]=useState(true);
  useEffect(()=>{
    let active=true;
+   // Server-owned history: no transcript, identity, credentials or prompts in localStorage.
+   void apiSafe<{conversationId:string|null;entries:Entry[]}>("/api/brain/history").then(r=>{
+     if(!active)return;
+     if(r.ok){setConversation(r.data.conversationId);setEntries(r.data.entries);
+       setSourceMessage(r.data.entries.at(-1)?.reply?.message_id??null);}
+     else setError("이전 대화를 복원하지 못했어요. 다시 열어 주세요.");
+   }).catch(()=>{if(active)setError("대화 복원 중 오류가 발생했어요.");})
+     .finally(()=>{if(active)setRestoring(false);});
    void apiSafe<MemoryItem[]>("/api/brain/preferences").then(r=>{
      if(active&&r.ok)setMemories(r.data);
    });
@@ -41,7 +86,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
    if(result.ok)setMemories(result.data);
  };
  const send=async()=>{
-   const text=input.trim();if(!text||busy)return;
+   const text=input.trim();if(!text||busy||restoring)return;
    setBusy(true);setError("");setPending(null);setSourceMessage(null);
    try{
      let id=conversation;
@@ -111,20 +156,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
         {e.reply.shopping_plan&&<p className="muted sm">유지된 구매 조건 · {e.reply.shopping_plan.query} ·  {e.reply.shopping_plan.maxTotalWon===null?"예산 미설정":fmtWon(e.reply.shopping_plan.maxTotalWon)} · {e.reply.shopping_plan.requiredConditions.length?e.reply.shopping_plan.requiredConditions.join(", "):"필수 조건 없음"}</p>}
         {e.reply.explanation&&<p>{e.reply.explanation.text}</p>}
         <p className="muted sm">Brain Graph 처리 시간(서버 측): {Math.round(e.reply.trace.graphWallMs ?? e.reply.trace.totalMs)}ms · 네트워크 전송 시간 제외</p>
-        {e.reply.ranking.ranked.length>0
-          ?<><p>현재 선호에 따라 비교한 검증 후보</p>{e.reply.ranking.ranked.slice(0,3).map((p,j)=>
-              <div key={p.candidate.variantId} className="compare-row">
-                <b>{j+1}. {p.candidate.productName ?? p.candidate.productId}</b>
-                <span className="muted sm"> · {p.candidate.unitPriceWon===null?"가격 미확인":fmtWon(p.candidate.unitPriceWon)} · 옵션 {p.candidate.variantId}</span>
-                <button className="link" onClick={()=>onOpenProduct(p.candidate.productId)}>상품 보기</button>
-              </div>)}
-            <p className="muted sm">점수는 초기 검증용 휴리스틱이며 최종 사용자 추천 품질을 보증하지 않아요.</p></>
-          :<p>추천 적격성을 확인한 상품이 없어요. 데이터·근거가 충분하지 않을 수 있어요.</p>}
-        {e.reply.ranking.referenceOnly.length>0&&<div className="muted sm">
-          <b>참고 정보 (추천 아님)</b>{e.reply.ranking.referenceOnly.slice(0,3).map((p,j)=>
-            <div key={j}>{p.candidate.productName ?? p.candidate.productId} · {p.reasons.join(", ")}</div>)}
-        </div>}
-        {e.reply.ranking.rejected.length>0&&<p className="muted sm">필수 조건/근거 미충족 후보 {e.reply.ranking.rejected.length}개 제외</p>}
+        <BrainRanking ranking={e.reply.ranking} onOpenProduct={onOpenProduct}/>
       </>}
     </div>)}
     {sourceMessage&&conversation&&<div className="state-box">
@@ -146,10 +178,10 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
     {busy&&<p role="status" className="muted sm">Brain이 데이터를 확인하고 있어요…</p>}
    </div>
    <div className="agent-input">
-     <input value={input} disabled={busy} onChange={e=>setInput(e.target.value)}
+     <input value={input} disabled={busy||restoring} onChange={e=>setInput(e.target.value)}
        onKeyDown={e=>{if(e.key==="Enter"&&!e.nativeEvent.isComposing)void send();}}
        placeholder="쇼핑 조건을 입력하세요"/>
-     <button className="btn primary" disabled={busy||!input.trim()} onClick={()=>void send()}>보내기</button>
+     <button className="btn primary" disabled={busy||restoring||!input.trim()} onClick={()=>void send()}>보내기</button>
    </div>
  </aside>;
 }

@@ -26,6 +26,33 @@ export interface RetrievedTurn {
  result:ResearchResult;evidence:EvidenceRecord[]
 }
 type Request=BrainTrace & {userMessage:string;clientActionId:string};
+
+function isConditionOnlySyntheticReference(
+ blocked:RankingResult["rejected"][number],
+ requiredConditions:string[],
+ evidence:EvidenceRecord[],
+):boolean {
+ const candidate=blocked.candidate;
+ if(candidate.commerceVerified!==true||candidate.sourceKind!=="SYNTHETIC"||
+    typeof candidate.datasetVersion!=="string"||!candidate.datasetVersion||
+    requiredConditions.length===0||blocked.reasons.length===0||
+    !blocked.reasons.every(reason=>reason.startsWith("unverified_required_condition:")))return false;
+
+ const byId=new Map<string,EvidenceRecord>(),duplicates=new Set<string>();
+ for(const row of evidence){if(byId.has(row.id))duplicates.add(row.id);byId.set(row.id,row);}
+ for(const condition of requiredConditions){
+   const ids=candidate.conditions[condition]??[];
+   if(!Array.isArray(ids))return false;
+   for(const id of ids){
+     const row=byId.get(id);
+     if(duplicates.has(id)||!row||row.productId!==candidate.productId||
+        (row.variantId!==null&&row.variantId!==candidate.variantId)||
+        (row.kind==="REVIEW"&&row.sourceKind!=="REAL"))return false;
+   }
+ }
+ return true;
+}
+
 export async function prepareTurn(req:Request,deps:ResearchDeps):Promise<PreparedTurn>{
  const t0=performance.now();
  if(!req.actorUserId||!req.conversationId||!req.requestId||!req.userMessage?.trim()||!req.clientActionId)
@@ -45,12 +72,19 @@ export async function resolveTurnPlan(req:Request,prepared:PreparedTurn,previous
 export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:ShoppingPlan,deps:ResearchDeps):Promise<RetrievedTurn>{
  const retrievalStart=performance.now();
  const fetched=await deps.retriever.search({query:plan.query,maxTotalWon:plan.maxTotalWon,
-   requiredConditions:plan.requiredConditions});
+   requiredConditions:plan.requiredConditions,requestId:req.requestId,originalQuestion:req.userMessage});
  if(!fetched||!Array.isArray(fetched.candidates)||!Array.isArray(fetched.evidence)||
     fetched.candidates.length>100||fetched.evidence.length>2500)throw new Error("invalid retrieval result");
  const retrievalMs=performance.now()-retrievalStart;
  const rankedAt=performance.now();
  const ranking=rankProducts(fetched.candidates,fetched.evidence,plan,prepared.memories);
+ const conditionOnlyReferences=ranking.rejected.filter(item=>
+   isConditionOnlySyntheticReference(item,plan.requiredConditions,fetched.evidence));
+ if(conditionOnlyReferences.length){
+   const moved=new Set(conditionOnlyReferences);
+   ranking.rejected=ranking.rejected.filter(item=>!moved.has(item));
+   ranking.referenceOnly.push(...conditionOnlyReferences);
+ }
  const rankMs=performance.now()-rankedAt;
  return {
    result:{conversationId:req.conversationId,messageId:prepared.messageId,clientActionId:req.clientActionId,ranking,

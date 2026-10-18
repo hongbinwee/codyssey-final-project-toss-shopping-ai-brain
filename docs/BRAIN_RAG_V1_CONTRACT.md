@@ -100,3 +100,32 @@ This sample is an **invented CI fixture**, *not a real Amazon product, review or
 - Existing `tests/brain-db/brain-pg.test.mjs`: PostgreSQL state/checkpoint recovery, tenant isolation and one-shot confirmation.
 
 **Note:** This integration intentionally keeps all new Brain Tool actions read-only. Cart updates/checkout/cancellation remain under the existing Commerce action/approval policy.
+
+## Temporary v4 test_items catalog (2026-10-17)
+
+This is a separate opt-in path, not a change to the legacy contract above.
+`COMMERCE_CATALOG_SOURCE=test_items` makes the dedicated QA server use explicitly
+qualified `test_items.products`, `test_items.product_variants`, and `test_items.reviews`.
+No global search_path change, public copy, migration, seed or fallback is performed.
+The same catalog is injected into Brain retrieval and the existing product HTTP routes.
+Original product/variant/review IDs are preserved and matched; review excerpts must
+also match the source row. All prices, stock and options in this catalog are simulated.
+API metadata, UI notices and grounded answers identify this; Commerce cart/wishlist,
+order/payment/cancel APIs and the legacy Agent endpoint are blocked in this mode.
+Normal `public` mode keeps its existing purchase flow.
+
+DB team prerequisites (not executed by this change):
+- Dedicated non-superuser LOGIN role, no CREATEDB/CREATEROLE/BYPASSRLS or administrative memberships.
+- CONNECT on `toss`; USAGE on `test_items` and `public`.
+- SELECT on only the three test_items tables; SELECT(id, display_name, auth_subject)
+  on public.users for existing session login/validation. No business-table writes, DDL or RAG grants.
+- Approved Tailscale/TLS path and a narrowly scoped pg_hba rule. The previously
+  rejected server-observed client address was 172.20.0.1; the DB owner must verify
+  that routing/NAT scope before authorizing it. Do not disable TLS certificate checks.
+- Separate `brain_*` DB/service role and approved Brain migrations/checkpointer setup.
+  Existing startup uses PostgresSaver.setup (DDL); its provisioning privileges must
+  be resolved separately, never by granting the Commerce read role admin privileges.
+
+Current evidence: RAG API search/version checks passed previously. The catalog/ID,
+simulated-price and write-denial paths are tested with mocks; direct DB ID matching,
+browser E2E and deployment remain NOT_RUN pending the service role/network setup.

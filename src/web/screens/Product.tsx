@@ -29,7 +29,7 @@ import { apiSafe, fmtWon, newActionKey, shipFeeLabel, AMBIGUOUS_CODES, type ApiR
 import type {
   CartView, MatchedVariant, ProductDetail, ProductSummary, ReviewsResult, SearchResult,
 } from "../../contracts.ts";
-import { Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
+import { CatalogNotice, Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
 import { ReviewRow, Stars } from "../components/ReviewBits.tsx";
 import { PRODUCT_META, SPEC_LABEL, productImg } from "../display-meta.ts";
@@ -42,6 +42,7 @@ import { WishButton } from "../components/WishButton.tsx";
 
 import {
   resolveDetailResume,
+  resolveInitialVariant,
   saveDetailResume,
   takeDetailResumeIfFresh,
 } from "../detail-resume.ts";
@@ -56,6 +57,7 @@ type RatingLoad =
 
 export function Product({
   productId,
+  initialVariantId,
   userId,
   onBack,
   onOpenSearch,
@@ -67,6 +69,7 @@ export function Product({
   onOpenWish,
 }: {
   productId: string;
+  initialVariantId?: string;
   userId: string | null;
   onBack: () => void;
   onOpenSearch: () => void;
@@ -120,8 +123,7 @@ export function Product({
     return () => removeEventListener("pending-writes", on);
   }, []);
 
-  const pickDefault = (d: ProductDetail) =>
-    d.variants.find((v) => v.availability === "AVAILABLE")?.variant_id ?? null;
+  const pickDefault = (d: ProductDetail) => resolveInitialVariant(d.variants).variantId;
 
   // 초기 로드: detail+reviews. 재시도도 같은 경로를 타야 초기화 규칙이 동일하다.
   const loadInitial = useCallback(
@@ -152,11 +154,14 @@ export function Product({
         else if (plan.notice === "QTY_REDUCED")
           setFeedback("선택한 수량이 현재 재고에 맞춰 조정됐어요.");
       } else {
-        setVariantId(pickDefault(r.data));
+        const initial = resolveInitialVariant(r.data.variants, initialVariantId);
+        setVariantId(initial.variantId);
         setQty(1);
+        if (initial.unavailable)
+          setFeedback("선택한 옵션은 지금 구매할 수 없어요. 옵션을 다시 선택해 주세요.");
       }
     },
-    [userId],
+    [userId, initialVariantId],
   );
   const loadReviews = useCallback(async (pid: string, my: number, limit = 4) => {
     const r = await apiSafe<ReviewsResult>(
@@ -284,7 +289,7 @@ export function Product({
       revSeq.current++;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId]);
+  }, [productId, initialVariantId]);
 
   // 이 상품의 미확정 담기 + actor의 모든 미확정 cart write (전역 잠금)
   const pendingAdd =
@@ -312,7 +317,7 @@ export function Product({
   }
 
   async function add() {
-    if (!selected || adding || busyRef.current || anyPending || !detail?.ok)
+    if (!selected || adding || busyRef.current || anyPending || !detail?.ok || detail.data.catalog_context?.read_only)
       return;
     busyRef.current = true;
     setAdding(true);
@@ -626,6 +631,7 @@ export function Product({
       </div>
 
       <h2 className="detail-name">{p.name}</h2>
+      {detail.data.catalog_context?.read_only && <CatalogNotice />}
       <div className="muted">
         {p.brand} · {p.description}
       </div>
@@ -655,7 +661,7 @@ export function Product({
               )}
             </span>
             <small className="review-provenance-note">
-              실사용·시연 리뷰 기준
+              {detail.data.catalog_context?.source === "test_items" ? "합성 시연 리뷰 기준" : "실사용·시연 리뷰 기준"}
             </small>
           </span>
           <IcChevronRight size={15} className="info-next" />
@@ -783,7 +789,7 @@ export function Product({
                   <span className="muted">({reviewTotal}개)</span>
                 </div>
               )}
-              <small className="review-provenance-note">실사용·시연 리뷰 기준</small>
+              <small className="review-provenance-note">{detail.data.catalog_context?.source === "test_items" ? "합성 시연 리뷰 기준" : "실사용·시연 리뷰 기준"}</small>
               <ul className="review-list">
                 {reviews.data.reviews.map((rv) => (
                   <ReviewRow
@@ -825,7 +831,9 @@ export function Product({
         </section>
       )}
 
-      <div className={"bottom-bar" + (anyPending ? " has-note" : "")}>
+      {detail.data.catalog_context?.read_only ? <div className="bottom-bar">
+        <span>v4 테스트 상품 · 조회 전용 · 주문·결제 불가</span>
+      </div> : <div className={"bottom-bar" + (anyPending ? " has-note" : "")}>
         {anyPending && (
           // 미확정 write가 있으면 고정 바 최상단에서 바로 복구로 진입 — 상세
           // state-box는 문서 하단이라 첫 화면에서 발견되지 않는다.
@@ -880,7 +888,7 @@ export function Product({
             구매하기
           </button>
         </div>
-      </div>
+      </div>}
 
       {sheetOpen && detail.ok && (
         <BottomSheet title="옵션 한번에 보기" onClose={() => setSheetOpen(false)}>

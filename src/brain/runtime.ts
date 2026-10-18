@@ -1,8 +1,15 @@
 import postgres from "postgres";
+import {isAbsolute,join} from "node:path";
+import {spawn} from "node:child_process";
+import {createInterface} from "node:readline";
+import {fileURLToPath} from "node:url";
 import {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
-import {searchProducts,getProduct} from "../catalog.ts";
-import {verifiedRagRetriever,type RagConnection} from "./rag-adapter.ts";
+import {createCatalog,type CatalogSource} from "../catalog.ts";
+import {assertServiceRole} from "../db.ts";
+import {verifiedRagRetriever,localRagFetcher,type LocalRagSearch,type RagConnection} from "./rag-adapter.ts";
+import {createLocalRagSearch} from "./local-rag.ts";
 import type {Provider} from "../llm.ts";
+import {createLlmGroundedResponder} from "./grounded-response.ts";
 import {brainDatabaseFromPostgres} from "./pg-adapter.ts";
 import {PersistentConversations,PersistentPreferences} from "./persistent-store.ts";
 import {createBrainApi} from "./api.ts";
@@ -13,37 +20,176 @@ import {parseBrainDatabaseUrl} from "./database-isolation.ts";
 import {commerceRetriever} from "./commerce-retriever.ts";
 import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
-import {requireBrainV9Schema} from "./schema-guard.ts";
+import {requireBrainV9Schema,type SchemaProbe} from "./schema-guard.ts";
 import {createDistributedBrainRateLimit} from "./rate-limit.ts";
 
+/** One offline CPU encoder per runtime. Only query vectors, never corpus re-embedding. */
+export async function createLocalQueryEncoder(
+ options:{pythonPath:string;revision:string;modelCache:string},spawnProcess:typeof spawn=spawn,
+):Promise<{embedQuery:(query:string)=>Promise<number[]>;close:()=>void}>{
+ if(!isAbsolute(options.pythonPath)||!isAbsolute(options.modelCache)||!/^[a-f0-9]{40}$/.test(options.revision))
+   throw new Error("local encoder requires absolute Python/cache paths and pinned model revision");
+ const env:NodeJS.ProcessEnv={HF_HOME:options.modelCache,HF_HUB_CACHE:join(options.modelCache,"hub"),HF_HUB_OFFLINE:"1",TRANSFORMERS_OFFLINE:"1",
+   CODEX_V4_MODEL_REVISION:options.revision,PYTHONUTF8:"1",TOKENIZERS_PARALLELISM:"false"};
+ for(const key of ["PATH","Path","SystemRoot","WINDIR","TEMP","TMP"])
+   if(process.env[key])env[key]=process.env[key];
+ const child=spawnProcess(options.pythonPath,["-u",fileURLToPath(new URL("../../scripts/embed-v4-query.py",import.meta.url))],
+   {stdio:"pipe",env,windowsHide:true});
+ if(!child.stdin||!child.stdout||!child.stderr){child.kill();throw new Error("local encoder pipes unavailable");}
+ const lines=createInterface({input:child.stdout});child.stderr.resume();
+ let closed=false,tail:Promise<unknown>=Promise.resolve();
+ let pending:{resolve:(v:number[])=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}|undefined;
+ const close=()=>{
+   if(closed)return;closed=true;
+   if(pending){clearTimeout(pending.timer);pending.reject(new Error("local encoder unavailable"));pending=undefined;}
+   lines.close();child.kill();
+ };
+ child.on("error",close);child.on("close",close);child.stdin.on("error",close);
+ lines.on("line",line=>{
+   if(closed)return;
+   const request=pending;
+   if(!request){close();return;}
+   try{
+     if(line.length>40000)throw new Error();
+     const data=JSON.parse(line);
+     if(data.model!=="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"||
+        data.revision!==options.revision||data.dimensions!==384||!Array.isArray(data.embedding)||
+        data.embedding.length!==384||!data.embedding.every((v:unknown)=>typeof v==="number"&&Number.isFinite(v)))throw new Error();
+     clearTimeout(request.timer);pending=undefined;request.resolve(data.embedding);
+   }catch{close();}
+ });
+ const encode=(query:string,timeout=20000):Promise<number[]>=>{
+   const result=tail.then(()=>new Promise<number[]>((resolve,reject)=>{
+     if(closed){reject(new Error("local encoder unavailable"));return;}
+     if(!query.trim()||query.length>4000){reject(new Error("invalid local embedding query"));return;}
+     const timer=setTimeout(close,timeout);pending={resolve,reject,timer};
+     try{child.stdin!.write(JSON.stringify({query})+"\n");}catch{close();}
+   }));
+   tail=result.catch(()=>undefined);return result;
+ };
+ try{await encode("query encoder warmup",120000);}catch{close();throw new Error("local encoder warmup failed");}
+ return {embedQuery:query=>encode(query),close};
+}
+
+// Provisioned by W01 only. Runtime probes these rights with SELECT; it never grants them.
+export const BRAIN_SERVICE_RIGHTS={
+ conversations:["SELECT","INSERT","UPDATE"],messages:["SELECT","INSERT"],
+ preference_proposals:["SELECT","INSERT","UPDATE"],user_preferences:["SELECT","INSERT","UPDATE","DELETE"],
+ turn_fence:["SELECT","INSERT","UPDATE"],turn_receipts:["SELECT","INSERT","UPDATE"],
+ turn_attempts:["SELECT","INSERT","UPDATE"],rate_limit_windows:["SELECT","INSERT","UPDATE"],
+ checkpoints:["SELECT","INSERT","UPDATE"],checkpoint_blobs:["SELECT","INSERT","UPDATE"],
+ checkpoint_writes:["SELECT","INSERT","UPDATE"],checkpoint_migrations:["SELECT"],
+} as const;
+
+/** Latest owned conversation only, bounded transcript. Never return raw checkpoints or internal context. */
+export async function readBrainHistory(db:SchemaProbe,actorUserId:string){
+ if(!actorUserId||actorUserId.length>256)throw new Error("invalid history actor");
+ const conversations=await db.unsafe<Array<{id:string}>>(
+   "SELECT id FROM shopping_brain.conversations WHERE actor_user_id=$1 AND closed_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1",[actorUserId]);
+ const id=conversations[0]?.id;
+ if(!id)return {conversationId:null,entries:[]};
+ const rows=await db.unsafe<Array<{message_id:string;client_action_id:string;content:string;completed_result:unknown}>>(
+   `SELECT m.id AS message_id,m.client_action_id,m.content,r.completed_result FROM shopping_brain.messages m
+    JOIN shopping_brain.conversations c ON c.id=m.conversation_id AND c.actor_user_id=m.actor_user_id
+    JOIN shopping_brain.turn_receipts r ON r.conversation_id=c.id AND r.client_action_id=m.client_action_id
+    WHERE c.id=$1 AND c.actor_user_id=$2 AND m.actor_user_id=$2 AND c.closed_at IS NULL
+      AND m.role='user' AND r.status='COMPLETED' ORDER BY m.created_at DESC,m.id DESC LIMIT 20`,[id,actorUserId]);
+ const entries=rows.reverse().flatMap(row=>{
+   let result;
+   try{result=typeof row.completed_result==="string"?JSON.parse(row.completed_result):row.completed_result;}
+   catch{throw new Error("invalid canonical Brain receipt");}
+   if(!result||typeof result!=="object"||result.conversationId!==id||result.messageId!==row.message_id||
+     result.clientActionId!==row.client_action_id||typeof row.content!=="string"||
+     !result.ranking||!["ranked","referenceOnly","rejected"].every(key=>Array.isArray(result.ranking[key]))||
+     !result.shoppingPlan||typeof result.shoppingPlan.query!=="string"||
+     !result.explanation||typeof result.explanation.text!=="string"||typeof result.explanation.kind!=="string")
+     throw new Error("invalid canonical Brain receipt");
+   return [{text:row.content,reply:{conversation_id:id,message_id:result.messageId,read_only:true,
+     ranking:result.ranking,shopping_plan:result.shoppingPlan??null,explanation:result.explanation,trace:result.trace??{totalMs:0}}}];
+ });
+ return {conversationId:id,entries};
+}
+
+/** Read-only readiness check for pre-provisioned AI storage. No setup()/DDL fallback. */
+export async function verifyPreparedBrainStorage(db:SchemaProbe):Promise<void>{
+ const values=Object.entries(BRAIN_SERVICE_RIGHTS).flatMap(([table,rights])=>
+   rights.map(right=>`('${table}','${right}')`)).join(",");
+ const rows=await db.unsafe<Array<{table_name:string;ready:boolean}>>(
+   `SELECT table_name,coalesce(has_schema_privilege(current_user,'shopping_brain','USAGE'),false)
+       AND bool_and(coalesce(has_table_privilege(current_user,
+         to_regclass('shopping_brain.'||table_name),privilege),false)) AS ready
+      FROM (VALUES ${values}) required(table_name,privilege) GROUP BY table_name`);
+ if(rows.length!==Object.keys(BRAIN_SERVICE_RIGHTS).length||
+    !Object.keys(BRAIN_SERVICE_RIGHTS).every(name=>rows.some(r=>r.table_name===name&&r.ready===true)))
+   throw new Error("Brain bootstrap tables or service permissions required before startup");
+ const migrations=await db.unsafe<Array<{version:number|null;task_path:boolean}>>(
+   `SELECT (SELECT max(v) FROM shopping_brain.checkpoint_migrations) AS version,
+     EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='shopping_brain'
+       AND table_name='checkpoint_writes' AND column_name='task_path' AND data_type='text') AS task_path`);
+ if(migrations.length!==1||typeof migrations[0].version!=="number"||
+    migrations[0].version<5||migrations[0].task_path!==true)
+   throw new Error("Brain checkpoint bootstrap migration required before startup");
+}
+
 export async function createBrainRuntime(options:{
- brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider;rag?:RagConnection
+ brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider;rag?:RagConnection;
+ catalogSource?:CatalogSource;
+ localRagSearch?:LocalRagSearch;
+ embedQuery?:(query:string)=>Promise<number[]>
 }) {
  const {url,dbName}=parseBrainDatabaseUrl(options.brainDatabaseUrl,options.commerceDatabaseUrl);
  if(!options.provider.name.startsWith("live:"))
    throw new Error("Brain API requires live intent provider; no silent stub fallback");
+ let localSearch=options.localRagSearch;
+ let encoder:Awaited<ReturnType<typeof createLocalQueryEncoder>>|undefined;
+ if(options.rag?.mode==="local"){
+   if(options.catalogSource!=="test_items")throw new Error("local RAG requires the read-only test_items catalog");
+   if(options.rag.contract!=="v4"||!options.rag.dataDir||!isAbsolute(options.rag.dataDir))
+     throw new Error("local RAG requires v4 data directory");
+   if(!localSearch){
+     let embedQuery=options.embedQuery;
+     if(!embedQuery){
+       const {pythonPath,modelRevision,modelCache}=options.rag;
+       if(!pythonPath||!modelRevision||!modelCache)throw new Error("local RAG query encoder must be provided; no remote fallback");
+       encoder=await createLocalQueryEncoder({pythonPath,revision:modelRevision,modelCache});
+       embedQuery=encoder.embedQuery;
+     }
+     try{
+     const local=await createLocalRagSearch({dataDir:options.rag.dataDir,embedQuery});
+     if(local.stats.datasetVersion!==options.rag.datasetVersion)throw new Error("local RAG dataset version mismatch");
+     localSearch=local.search;
+     }catch(error){encoder?.close();throw error;}
+   }
+   if(typeof localSearch!=="function")throw new Error("local RAG search initialization failed");
+ }
  const db=postgres(url,{max:5,connect_timeout:5});
  // Reserved lock sessions must never exhaust the observer/store pool.
  const lockDb=postgres(url,{max:5,connect_timeout:5});
  let saver:PostgresSaver|undefined;
  try{
+   await assertServiceRole(db,false);
    await requireBrainV9Schema(db,dbName);
+   // W01 provisions/migrates checkpoint tables separately; ordinary service startup never runs DDL.
+   await verifyPreparedBrainStorage(db);
    saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
-   // Creates/checks LangGraph tables in AI-only database, never Commerce.
-   await saver.setup();
    const store=brainDatabaseFromPostgres(db);
    const conversations=new PersistentConversations(store),preferences=new PersistentPreferences(store);
+   const groundedResponder=options.rag?.contract==="v4"
+     ?createLlmGroundedResponder(options.provider):undefined;
+   const catalog=createCatalog(options.catalogSource??"public");
    const graph=createPersistentResearchGraph({
      conversations,memory:preferences,
-     retriever:options.rag?verifiedRagRetriever(options.rag,getProduct):commerceRetriever(searchProducts),
+     retriever:options.rag?verifiedRagRetriever(options.rag,catalog.getProduct,
+       options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
      intent:createIntentPort(providerIntentModel(options.provider,45000))
-   },saver,postgresTurnLock(lockDb,db),new FencedTurns(store));
+   },saver,postgresTurnLock(lockDb,db),new FencedTurns(store),groundedResponder);
    return {
      takeRate:createDistributedBrainRateLimit(store).take,
-     handle:createBrainApi({conversations,preferences,graph}),
-     close:async()=>{await Promise.allSettled([db.end(),lockDb.end(),saver!.end()]);}
+     handle:createBrainApi({conversations,preferences,graph,recentHistory:actor=>readBrainHistory(db,actor)}),
+     close:async()=>{encoder?.close();await Promise.allSettled([db.end(),lockDb.end(),saver!.end()]);}
    };
  }catch(e){
+   encoder?.close();
    await Promise.allSettled([db.end(),lockDb.end(),...(saver?[saver.end()]:[])]);
    throw e;
  }

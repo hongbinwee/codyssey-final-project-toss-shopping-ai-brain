@@ -4,12 +4,40 @@ import {
   ok, fail, err,
   type Availability, type MatchedVariant, type ProductDetail,
   type ProductSummary, type ReviewsResult, type SearchResult,
-  type ReviewSort,
+  type ReviewItem, type ReviewSort,
   type ToolResult,
 } from "./contracts.ts";
 import type { RequestContext } from "./session.ts";
 
 export const FLAT_SHIPPING_FEE_WON = 3000;
+
+export type CatalogSource = "public" | "test_items";
+export function catalogSource(value: unknown): CatalogSource {
+  if (value === undefined || value === "" || value === "public") return "public";
+  if (value === "test_items") return value;
+  throw new Error("unsupported catalog source");
+}
+const catalogContext = (source: CatalogSource) => source === "test_items"
+  ? { catalog_context: { source: "test_items" as const, read_only: true as const, is_simulated: true as const } }
+  : {};
+
+// Fixed identifiers, not request input or a global search_path change.
+export function createCatalog(source: CatalogSource, db: Pick<typeof sql, "unsafe"> = sql) {
+  source = catalogSource(source);
+  return {
+    searchProducts: (input: SearchProductsInput) => searchProducts(input, db, source),
+    getProduct: (input: {product_id: string}) => getProduct(input, db, source),
+    getReviews: (input: Parameters<typeof getReviews>[0]) => getReviews(input, db, source),
+    getReviewsByIds: (input: {product_id: string; review_ids: string[]}) => getReviewsByIds(input, db, source),
+  };
+}
+
+export function catalogRequestAllowed(source: CatalogSource, method: string, path: string): boolean {
+  if (source === "public") return true;
+  if (path.startsWith("/api/brain/")) return true; // separately authenticated AI-only storage
+  return method === "GET" && (path === "/api/catalog/context" ||
+    /^\/api\/products(?:\/[^/]+(?:\/reviews)?)?$/.test(path));
+}
 
 export function variantAvailability(
   productActive: boolean,
@@ -96,7 +124,10 @@ export type SearchProductsInput = {
 
 export async function searchProducts(
   input: SearchProductsInput,
+  db: Pick<typeof sql, "unsafe"> = sql,
+  source: CatalogSource = "public",
 ): Promise<ToolResult<SearchResult>> {
+  source = catalogSource(source);
   const trace_id = crypto.randomUUID();
   const { limit, offset } = page(input);
   if (offset < 0) return fail(err("VALIDATION", "invalid cursor"), trace_id);
@@ -116,15 +147,15 @@ export async function searchProducts(
     return fail(err("VALIDATION", "invalid max_unit_price_won"), trace_id);
 
   const q = (input.query ?? "").trim();
-  const products = await sql.unsafe<ProductRow[]>(
-    `SELECT * FROM products WHERE active = true
+  const products = await db.unsafe<ProductRow[]>(
+    `SELECT * FROM ${source}.products WHERE active = true
       AND ($1 = '' OR name ILIKE '%' || $1 || '%' OR brand ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
       AND ($2::text IS NULL OR category = $2)
       ORDER BY id`,
     [q, input.category ?? null],
   );
-  const variants = await sql.unsafe<VariantRow[]>("SELECT * FROM product_variants WHERE active = true ORDER BY id");
-  const ratings = await sql.unsafe<{ product_id: string; avg: number; count: number }[]>("SELECT product_id, avg(rating)::float AS avg, count(*)::int AS count FROM reviews GROUP BY product_id");
+  const variants = await db.unsafe<VariantRow[]>(`SELECT * FROM ${source}.product_variants WHERE active = true ORDER BY id`);
+  const ratings = await db.unsafe<{ product_id: string; avg: number; count: number }[]>(`SELECT product_id, avg(rating)::float AS avg, count(*)::int AS count FROM ${source}.reviews GROUP BY product_id`);
   const ratingByPid = new Map(ratings.map((r) => [r.product_id, r]));
 
   let items: ProductSummary[] = [];
@@ -179,6 +210,7 @@ export async function searchProducts(
   return ok(
     {
       items: sliced,
+      ...catalogContext(source),
       shipping_fee_won: FLAT_SHIPPING_FEE_WON,
       next_cursor: has_more ? encCursor(offset + limit) : null,
       has_more,
@@ -189,15 +221,17 @@ export async function searchProducts(
 
 export async function getProduct(input: {
   product_id: string;
-}): Promise<ToolResult<ProductDetail>> {
+}, db: Pick<typeof sql, "unsafe"> = sql, source: CatalogSource = "public"): Promise<ToolResult<ProductDetail>> {
+  source = catalogSource(source);
   const trace_id = crypto.randomUUID();
-  const [p] = await sql.unsafe<ProductRow[]>("SELECT * FROM products WHERE id = $1", [
+  const [p] = await db.unsafe<ProductRow[]>(`SELECT * FROM ${source}.products WHERE id = $1`, [
     input.product_id,
   ]);
   if (!p) return fail(err("NOT_FOUND", "상품을 찾을 수 없습니다"), trace_id);
-  const vs = (await sql.unsafe<VariantRow[]>("SELECT * FROM product_variants WHERE product_id = $1 AND active = true ORDER BY id", [p.id])).map((v) => toVariant(p, v));
+  const vs = (await db.unsafe<VariantRow[]>(`SELECT * FROM ${source}.product_variants WHERE product_id = $1 AND active = true ORDER BY id`, [p.id])).map((v) => toVariant(p, v));
   return ok(
     {
+      ...catalogContext(source),
       product: {
         id: p.id,
         name: p.name,
@@ -236,7 +270,9 @@ export async function getReviews(
     limit?: number;
   },
   db: Pick<typeof sql, "unsafe"> = sql,
+  source: CatalogSource = "public",
 ): Promise<ToolResult<ReviewsResult>> {
+  source = catalogSource(source);
   const trace_id = crypto.randomUUID();
   const { limit, offset } = page(input);
   if (offset < 0) return fail(err("VALIDATION", "invalid cursor"), trace_id);
@@ -249,13 +285,13 @@ export async function getReviews(
       trace_id,
     );
   const orderBy = REVIEW_ORDER[sortKey as ReviewSort];
-  const [p] = await db.unsafe("SELECT id FROM products WHERE id = $1", [
+  const [p] = await db.unsafe(`SELECT id FROM ${source}.products WHERE id = $1`, [
     input.product_id,
   ]);
   if (!p) return fail(err("NOT_FOUND", "상품을 찾을 수 없습니다"), trace_id);
   if (input.variant_id) {
     const [v] = await db.unsafe(
-      "SELECT id FROM product_variants WHERE id = $1 AND product_id = $2",
+      `SELECT id FROM ${source}.product_variants WHERE id = $1 AND product_id = $2`,
       [input.variant_id, input.product_id],
     );
     if (!v)
@@ -266,7 +302,7 @@ export async function getReviews(
   }
   const q = (input.query ?? "").trim();
   const rows = await db.unsafe<ReviewRow[]>(
-    `SELECT * FROM reviews WHERE product_id = $1
+    `SELECT * FROM ${source}.reviews WHERE product_id = $1
       AND ($2::text IS NULL OR variant_id = $2)
       AND ($3 = '' OR body ILIKE '%' || $3 || '%')
       ORDER BY ${orderBy}`,
@@ -276,6 +312,7 @@ export async function getReviews(
   const has_more = offset + limit < rows.length;
   return ok(
     {
+      ...catalogContext(source),
       reviews: sliced.map((r) => ({
         id: r.id,
         product_id: r.product_id,
@@ -294,4 +331,35 @@ export async function getReviews(
     },
     trace_id,
   );
+}
+
+const MAX_REVIEW_LOOKUP_IDS = 300;
+
+export async function getReviewsByIds(
+  input: { product_id: string; review_ids: string[] },
+  db: Pick<typeof sql, "unsafe"> = sql,
+  source: CatalogSource = "public",
+): Promise<ReviewItem[]> {
+  source = catalogSource(source);
+  if (!input.product_id || input.product_id.length > 128 ||
+      !Array.isArray(input.review_ids) || input.review_ids.length > MAX_REVIEW_LOOKUP_IDS ||
+      input.review_ids.some((id) => typeof id !== "string" || !id || id.length > 128) ||
+      new Set(input.review_ids).size !== input.review_ids.length)
+    throw new Error("invalid review lookup IDs or ID limit exceeded");
+  if (input.review_ids.length === 0) return [];
+  const rows = await db.unsafe<ReviewRow[]>(
+    "SELECT id, product_id, variant_id, rating, body, source_kind, source_ref, written_at " +
+      `FROM ${source}.reviews WHERE product_id = $1 AND id = ANY($2) ORDER BY id LIMIT 300`,
+    [input.product_id, input.review_ids],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    product_id: r.product_id,
+    variant_id: r.variant_id,
+    rating: r.rating,
+    body: r.body,
+    source_kind: r.source_kind,
+    source_ref: r.source_ref,
+    written_at: new Date(r.written_at).toISOString(),
+  }));
 }

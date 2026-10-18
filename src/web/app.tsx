@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { apiSafe } from "./api.ts";
 import type { CartView, CheckoutTarget } from "../contracts.ts";
 import { bindPendingUser } from "./pending.ts";
+import { takeDetailResume } from "./detail-resume.ts";
+import { CatalogNotice } from "./components/CommerceState.tsx";
 import { visibleCart, type OwnedCart } from "./cart-scope.ts";
 import { Shopping } from "./screens/Shopping.tsx";
 import { Search } from "./screens/Search.tsx";
@@ -24,7 +26,7 @@ import { CONTENT_TABS, groupLabel, groupOf } from "./display-meta.ts";
 type Route =
   | { name: "shop"; category: string; sub: string }
   | { name: "search"; query: string }
-  | { name: "product"; id: string }
+  | { name: "product"; id: string; variantId?: string }
   | { name: "reviews"; id: string }
   | { name: "cart" }
   // target 없음 = 전체 카트(legacy), INVALID = 파싱 실패(견적 미발급) [PMQA-067]
@@ -45,7 +47,11 @@ function parseHash(): Route {
   // '/p/:id/reviews'는 '/p/' 접두 매칭보다 먼저 파싱한다 [F07 전체 리뷰].
   if (path.startsWith("/p/") && path.endsWith("/reviews"))
     return { name: "reviews", id: decodeURIComponent(path.slice(3, -8)) };
-  if (path.startsWith("/p/")) return { name: "product", id: decodeURIComponent(path.slice(3)) };
+  if (path.startsWith("/p/")) {
+    const id = decodeURIComponent(path.slice(3));
+    const variantId = params.get("v");
+    return { name: "product", id, ...(variantId ? { variantId } : {}) };
+  }
   if (path === "/cart") return { name: "cart" };
   if (path === "/checkout") {
     // 구매 대상 파라미터 — src=sel(선택 주문)·src=direct(바로 구매) [PMQA-067].
@@ -113,7 +119,7 @@ const markCurrent = (internal: boolean) =>
 
 const toHash = (r: Route) =>
   r.name === "search" ? "#/search" + (r.query ? "?q=" + encodeURIComponent(r.query) : "")
-  : r.name === "product" ? "#/p/" + encodeURIComponent(r.id)
+  : r.name === "product" ? "#/p/" + encodeURIComponent(r.id) + (r.variantId ? "?v=" + encodeURIComponent(r.variantId) : "")
   : r.name === "reviews" ? "#/p/" + encodeURIComponent(r.id) + "/reviews"
   : r.name === "cart" ? "#/cart"
   : r.name === "checkout"
@@ -204,6 +210,9 @@ function App() {
   const [user, setUser] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
+  const [catalogReadOnly, setCatalogReadOnly] = useState(false);
+  const [loggingOut,setLoggingOut]=useState(false);
+  const [logoutError,setLogoutError]=useState("");
   const [route, setRoute] = useState<Route>(parseHash());
   const [agentOpen, setAgentOpen] = useState<AgentBrain | null>(null);
   // Brain별 대화를 따로 유지한다 (서버도 user:brain 단위로 히스토리를 나눈다).
@@ -222,6 +231,14 @@ function App() {
   const lastY = useRef(0);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const allBtnRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    let active = true;
+    setCatalogReadOnly(false);
+    if (userId) void apiSafe<{read_only:boolean;is_simulated:boolean}>("/api/catalog/context").then(r => {
+      if (active && r.ok) setCatalogReadOnly(r.data.read_only && r.data.is_simulated);
+    });
+    return () => { active = false; };
+  }, [userId]);
   // '전체' 메뉴 시트 — 열 때 첫 항목 포커스, ESC로 닫기, 닫을 때 전체 버튼으로 포커스 복귀 [Project]
   useEffect(() => {
     if (!menuOpen) return;
@@ -458,6 +475,22 @@ function App() {
         </header>
       )}
       <main>
+        {catalogReadOnly && <>
+          <div className="state-box">
+            <span>현재 테스트 계정: {userId}</span>{" "}
+            <button className="link" disabled={loggingOut} onClick={async()=>{
+              setLoggingOut(true);setLogoutError("");
+              try{
+                const response=await fetch("/api/session",{method:"DELETE"});
+                const result=await response.json();
+                if(!response.ok||!result.ok)throw new Error();
+                location.reload();
+              }catch{setLogoutError("로그아웃하지 못했어요. 다시 시도해 주세요.");setLoggingOut(false);}
+            }}>{loggingOut?"로그아웃 중…":"로그아웃"}</button>
+            {logoutError&&<p role="alert">{logoutError}</p>}
+          </div>
+          <CatalogNotice />
+        </>}
         {route.name === "shop" && (
           <Shopping
             category={route.category}
@@ -487,8 +520,9 @@ function App() {
           <Product
             // 계정 전환 시 재마운트 — 진행 중 detail 응답·최근본 기록이
             // 이전 actor 세대로 남지 않게 cleanup이 세대를 무효화한다 [C/069]
-            key={userId + ":" + route.id}
+            key={userId + ":" + route.id + ":" + (route.variantId ?? "")}
             productId={route.id}
+            initialVariantId={route.variantId}
             userId={userId}
             onBack={goBack}
             onOpenSearch={() => goto({ name: "search", query: "" })}
@@ -686,11 +720,16 @@ function App() {
       )}
       {agentOpen && (
         <AgentPanel
+          key={userId+":"+agentOpen}
           brain={agentOpen}
           messages={agentMsgs[agentOpen]}
           setMessages={(m) => setAgentMsgs((prev) => ({ ...prev, [agentOpen]: m }))}
           pageContext={pageContext}
-          onOpenProduct={(id) => goto({ name: "product", id })}
+          onOpenProduct={(id, variantId) => {
+            if (variantId !== undefined) takeDetailResume(id);
+            setAgentOpen(null);
+            goto({ name: "product", id, variantId });
+          }}
           onCartChanged={refreshCart}
           onClose={() => setAgentOpen(null)}
         />

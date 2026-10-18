@@ -82,7 +82,7 @@ export function AgentPanel({
   messages: AgentReply[];
   setMessages: (m: AgentReply[]) => void;
   pageContext: { screen?: string; product_id?: string; order_id?: string };
-  onOpenProduct: (id: string) => void;
+  onOpenProduct: (id: string, variantId?: string) => void;
   onCartChanged: () => void;
   onClose: () => void;
 }) {

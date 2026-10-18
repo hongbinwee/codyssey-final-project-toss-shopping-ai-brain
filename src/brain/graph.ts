@@ -5,7 +5,7 @@ import type {BrainTrace,EvidenceRecord} from "./contracts.ts";
 import type {PreparedTurn,ResearchDeps,ResearchResult} from "./read-flow.ts";
 import {prepareTurn,resolveTurnPlan,retrieveTurn} from "./read-flow.ts";
 import type {ShoppingPlan} from "./shopping-plan.ts";
-import {buildGroundedExplanation} from "./grounded-response.ts";
+import {buildGroundedExplanation,type GroundedResponder} from "./grounded-response.ts";
 import type {BrainGraphPort} from "./api.ts";
 import type {TurnLock,TurnLease} from "./turn-lock.ts";
 import type {FencedTurns} from "./fenced-turns.ts";
@@ -25,7 +25,8 @@ const State=Annotation.Root({
  * in a previous checkpoint.
  */
 export function createPersistentResearchGraph(
- deps:ResearchDeps,checkpointer:PostgresSaver,turnLock?:TurnLock,fencing?:FencedTurns
+ deps:ResearchDeps,checkpointer:PostgresSaver,turnLock?:TurnLock,fencing?:FencedTurns,
+ groundedResponder?:GroundedResponder
 ):BrainGraphPort {
  // Context is per invocation, not per compiled graph: different conversations
  // may run concurrently without sharing lock ownership.
@@ -53,8 +54,10 @@ export function createPersistentResearchGraph(
    .addNode("respond",async state=>{
      const researchResult={
        ...state.researchResult,
-       explanation:buildGroundedExplanation(state.researchResult.ranking,
-         state.evidence,state.shoppingPlan)
+       explanation:groundedResponder
+         ?await groundedResponder({originalQuestion:state.request.userMessage,
+           ranking:state.researchResult.ranking,evidence:state.evidence,plan:state.shoppingPlan})
+         :buildGroundedExplanation(state.researchResult.ranking,state.evidence,state.shoppingPlan)
      };
      await verify();
      return {researchResult};

@@ -499,6 +499,7 @@ export async function runAgentTurn(
           content: resp.content ?? null,
           tool_calls: resp.tool_calls,
           responses_output: resp.responses_output,
+          anthropic_content: resp.anthropic_content,
         });
         for (const tc of resp.tool_calls) {
           if (demo && (Date.now() >= deadline || calls.length >= MAX_CALLS)) break;
