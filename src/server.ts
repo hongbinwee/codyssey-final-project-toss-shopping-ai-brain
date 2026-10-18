@@ -356,19 +356,6 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
         const mutating = req.method === "POST" || req.method === "DELETE";
         if(mutating&&!brainMutationAllowed(req.headers,env.BRAIN_PUBLIC_ORIGIN))
           return json(res,403,{ok:false,error:{code:"CSRF_REJECTED",message:"허용되지 않은 요청 출처"}});
-        if(mutating){
-          const isTurn=req.method==="POST" && p.startsWith("/api/brain/conversations/") && p.endsWith("/turn");
-          // Shared across all replicas. Fails closed if AI PostgreSQL is down.
-          let quota;
-          try{quota=await brainRuntime.takeRate(ctx.actorUserId,isTurn?"turn":"mutation");}
-          catch{
-            return json(res,503,{ok:false,error:{code:"BRAIN_RATE_UNAVAILABLE",
-              message:"Brain 요청 제한 상태를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요"}});
-          }
-          if(!quota.ok)return json(res,429,{
-            ok:false,error:{code:"BRAIN_RATE_LIMIT",message:"Brain 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요"}
-          },{"retry-after":String(quota.retryAfterSeconds)});
-        }
         const submitted = req.method === "POST" ? await body(req) : {};
         const reply = await brainRuntime.handle(req.method ?? "", p, ctx.actorUserId, submitted);
         return json(res, reply.status, reply.body);

@@ -88,6 +88,7 @@ test("runtime verifies pre-provisioned storage using SELECT only and fails close
  }});
  await verifyPreparedBrainStorage(probe() as never);
  assert.equal(calls.length,2);
+ assert.equal(Object.keys(BRAIN_SERVICE_RIGHTS).includes("rate_limit_windows"),false);
  await assert.rejects(()=>verifyPreparedBrainStorage(probe(rights.slice(1)) as never),/bootstrap/);
  await assert.rejects(()=>verifyPreparedBrainStorage(probe(rights.map((r,i)=>i===0?{...r,ready:false}:r)) as never),/permissions/);
  await assert.rejects(()=>verifyPreparedBrainStorage(probe(rights,4) as never),/migration/);

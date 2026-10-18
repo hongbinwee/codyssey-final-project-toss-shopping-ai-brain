@@ -21,7 +21,6 @@ import {commerceRetriever} from "./commerce-retriever.ts";
 import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
 import {requireBrainV9Schema,type SchemaProbe} from "./schema-guard.ts";
-import {createDistributedBrainRateLimit} from "./rate-limit.ts";
 
 /** One offline CPU encoder per runtime. Only query vectors, never corpus re-embedding. */
 export async function createLocalQueryEncoder(
@@ -76,7 +75,7 @@ export const BRAIN_SERVICE_RIGHTS={
  conversations:["SELECT","INSERT","UPDATE"],messages:["SELECT","INSERT"],
  preference_proposals:["SELECT","INSERT","UPDATE"],user_preferences:["SELECT","INSERT","UPDATE","DELETE"],
  turn_fence:["SELECT","INSERT","UPDATE"],turn_receipts:["SELECT","INSERT","UPDATE"],
- turn_attempts:["SELECT","INSERT","UPDATE"],rate_limit_windows:["SELECT","INSERT","UPDATE"],
+ turn_attempts:["SELECT","INSERT","UPDATE"],
  checkpoints:["SELECT","INSERT","UPDATE"],checkpoint_blobs:["SELECT","INSERT","UPDATE"],
  checkpoint_writes:["SELECT","INSERT","UPDATE"],checkpoint_migrations:["SELECT"],
 } as const;
@@ -184,7 +183,6 @@ export async function createBrainRuntime(options:{
      intent:createIntentPort(providerIntentModel(options.provider,45000))
    },saver,postgresTurnLock(lockDb,db),new FencedTurns(store),groundedResponder);
    return {
-     takeRate:createDistributedBrainRateLimit(store).take,
      handle:createBrainApi({conversations,preferences,graph,recentHistory:actor=>readBrainHistory(db,actor)}),
      close:async()=>{encoder?.close();await Promise.allSettled([db.end(),lockDb.end(),saver!.end()]);}
    };
