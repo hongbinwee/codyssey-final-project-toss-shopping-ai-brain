@@ -5,6 +5,7 @@ import {once} from "node:events";
 import {randomBytes} from "node:crypto";
 import {readFileSync} from "node:fs";
 import postgres from "postgres";
+import {provisionBrainCiService} from "./fixtures/service-role.mjs";
 
 const waitListen=async server=>{server.listen(0,"127.0.0.1");await once(server,"listening");return server.address().port;};
 const close=async server=>{if(!server)return;server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));};
@@ -68,7 +69,7 @@ test("signed-session HTTP -> mock audited RAG -> Commerce verification -> persis
    });
    const ragPort=await waitListen(ragServer);
    Object.assign(process.env,{
-     DATABASE_URL:commerceUrl.toString(),BRAIN_DATABASE_URL:brainUrl,BRAIN_ENABLED:"1",
+     DATABASE_URL:commerceUrl.toString(),BRAIN_DATABASE_URL:await provisionBrainCiService(admin,brainUrl),BRAIN_ENABLED:"1",
      BRAIN_RAG_URL:"http://127.0.0.1:"+ragPort+"/search",
      BRAIN_RAG_AUDIT_ID:"qa-audit-v1",BRAIN_RAG_TOKEN:"ci-rag-token",
      AI_LIVE_DEMO:"0",LLM_PROVIDER:"live",LLM_API_KEY:"ci_mock_responses_only",

@@ -5,10 +5,34 @@ import {once} from "node:events";
 import {randomBytes} from "node:crypto";
 import {readFileSync} from "node:fs";
 import postgres from "postgres";
+import {BRAIN_SERVICE_RIGHTS} from "../../src/brain/runtime.ts";
+import {provisionBrainCiService} from "./fixtures/service-role.mjs";
+
+test("CI Brain service role receives only runtime-declared table privileges",async()=>{
+ const grants=[];
+ const admin={unsafe:async query=>{
+  if(query==="SELECT current_database() AS name")return [{name:"brain_ci"}];
+  if(String(query).startsWith("GRANT "))grants.push(String(query));
+  return [];
+ }};
+ const serviceUrl=await provisionBrainCiService(admin,"postgres://127.0.0.1:5432/brain_ci");
+ const service=new URL(serviceUrl);
+ assert.equal(service.pathname,"/brain_ci");
+ assert.match(service.username,/^brain_ci_service_[a-f0-9]{16}$/);
+ const expected=[
+  `GRANT CONNECT ON DATABASE brain_ci TO ${service.username}`,
+  `GRANT USAGE ON SCHEMA shopping_brain TO ${service.username}`,
+  ...Object.entries(BRAIN_SERVICE_RIGHTS).map(([table,rights])=>
+   `GRANT ${rights.join(",")} ON TABLE shopping_brain.${table} TO ${service.username}`),
+ ];
+ assert.equal(grants.length,expected.length);
+ assert.deepEqual(grants,expected);
+ assert.ok(grants.every(statement=>!/(ON ALL TABLES|SEQUENCES)/i.test(statement)));
+});
 
 test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only reference",async()=>{
  const brainUrl=process.env.BRAIN_DATABASE_URL;
- if(!brainUrl||!new URL(brainUrl).pathname.startsWith("/brain_"))throw Error("brain_ci-only service required");
+ if(!brainUrl||new URL(brainUrl).pathname!=="/brain_ci")throw Error("brain_ci-only service required");
  const admin=postgres(brainUrl,{max:1});
  console.log("BRAIN_HTTP_STEP 01 connected");
  const physical="commerce_brain_ci"; // newly created disposable database, never a protected Commerce DB
@@ -36,9 +60,10 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
   });
   mock.listen(0,"127.0.0.1");await once(mock,"listening");
   const mockPort=mock.address().port;
+  const serviceUrl=await provisionBrainCiService(admin,brainUrl);
   console.log("BRAIN_HTTP_STEP 03 local-model-mock-ready");
   Object.assign(process.env,{
-    DATABASE_URL:commerceUrl.toString(),BRAIN_DATABASE_URL:brainUrl,BRAIN_ENABLED:"1",
+    DATABASE_URL:commerceUrl.toString(),BRAIN_DATABASE_URL:serviceUrl,BRAIN_ENABLED:"1",
     AI_LIVE_DEMO:"0",LLM_PROVIDER:"live",LLM_API_KEY:"ci_local_mock_only",
     LLM_MODEL:"ci-mock",LLM_BASE_URL:"http://127.0.0.1:"+mockPort+"/v1",
     SESSION_SECRET:randomBytes(32).toString("hex"),TEST_USER_CODES:"qa-code-a=http-a,qa-code-b=http-b"
@@ -117,15 +142,14 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     const [carts]=await shop.unsafe("SELECT count(*)::int AS n FROM carts");
     const [writes]=await shop.unsafe("SELECT count(*)::int AS n FROM action_requests");
     assert.equal(carts.n,0);assert.equal(writes.n,0);
-    // The shared DB budget is charged before validation/model execution.
-    // Use invalid client turns so quota QA spends no model tokens.
-    for(let i=0;i<11;i++){
+    // Authenticated requests have no fixed application per-minute quota.
+    // Invalid payloads exercise HTTP validation without spending model tokens.
+    for(let i=0;i<35;i++){
       const rejected=await request("/api/brain/conversations/"+id+"/turn","POST",{},userA);
-      assert.equal(rejected.status,400,"valid-origin budget probes must reach validation");
+      assert.equal(rejected.status,400,"requests beyond former turn/mutation limits must reach validation");
     }
-    const limited=await request("/api/brain/conversations/"+id+"/turn","POST",{},userA);
-    assert.equal(limited.status,429,"12 per-user turns/minute across replicas");
-    assert.match(limited.headers.get("retry-after")??"",/^[0-9]+$/);
+    const unauthenticated=await request("/api/brain/conversations","POST",{});
+    assert.equal(unauthenticated.status,401,"removing quotas must not remove authentication");
     const unaffected=await request("/api/brain/status","GET",undefined,userA);
     assert.equal(unaffected.status,200,"read-only status is not part of mutation budget");
     console.log("BRAIN_HTTP_STEP 08 no-commerce-writes");

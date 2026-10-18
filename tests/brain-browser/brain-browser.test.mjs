@@ -5,6 +5,7 @@ import {once} from "node:events";
 import {randomBytes} from "node:crypto";
 import {readFileSync} from "node:fs";
 import postgres from "postgres";
+import {provisionBrainCiService} from "../brain-db/fixtures/service-role.mjs";
 import {chromium} from "@playwright/test";
 import {summarizeLatency} from "../../src/brain/latency.ts";
 
@@ -76,7 +77,7 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    });
    const ragPort=await listen(ragServer);
    Object.assign(process.env,{
-     DATABASE_URL:commerceUrl.toString(),BRAIN_DATABASE_URL:brainUrl,BRAIN_ENABLED:"1",
+     DATABASE_URL:commerceUrl.toString(),BRAIN_DATABASE_URL:await provisionBrainCiService(admin,brainUrl),BRAIN_ENABLED:"1",
      BRAIN_RAG_URL:"http://127.0.0.1:"+ragPort+"/search",
      BRAIN_RAG_AUDIT_ID:"ci-browser-only",AI_LIVE_DEMO:"0",
      LLM_PROVIDER:"live",LLM_API_KEY:"ci-mock-only",
