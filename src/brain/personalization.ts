@@ -63,6 +63,7 @@ function validRetrievedRatingFacet(f:NonNullable<ProductCandidate["facets"][stri
 /** Fixed global denominator; missing evidence cannot improve a candidate's score. */
 export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceRecord[],ctx:ShoppingContext,memories:Preference[]):RankingResult{
  if(ctx.maxTotalWon!==null&&(!Number.isSafeInteger(ctx.maxTotalWon)||ctx.maxTotalWon<0))throw new Error("invalid budget");
+ if(ctx.minTotalWon!==undefined&&(!Number.isSafeInteger(ctx.minTotalWon)||ctx.minTotalWon<0||ctx.maxTotalWon!==null&&ctx.minTotalWon>ctx.maxTotalWon))throw new Error("invalid budget range");
  const scoped=ctx.category?memories.filter(p=>p.key==="price_priority"):memories;
  const current=ctx.category?{price_priority:ctx.currentPreferences.price_priority}:ctx.currentPreferences;
  const pref=effectivePreferences(scoped,current),dimensions=dimensionsFor(ctx,pref,[...new Set(candidates.flatMap(p=>Object.keys(p.facets)))].sort()),w=dimensions.weights,
@@ -81,6 +82,7 @@ export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceReco
   if(!money(p.unitPriceWon)||!money(p.shippingFeeWon))reasons.push("price_or_shipping_unverified");
   const total=money(p.unitPriceWon)&&money(p.shippingFeeWon)?p.unitPriceWon!+p.shippingFeeWon!:null;
   if(ctx.maxTotalWon!==null&&total!==null&&total>ctx.maxTotalWon)reasons.push("over_total_budget");
+  if(ctx.minTotalWon!==undefined&&total!==null&&total<ctx.minTotalWon)reasons.push("below_total_budget");
   for(const condition of ctx.requiredConditions)if(!evidenceValid(p.conditions[condition]??[],p,idx,duplicates,{condition:true}))reasons.push("unverified_required_condition:"+condition);
   if(reasons.length){rejected.push({candidate:p,reasons});continue;}
   if(p.sourceKind==="SYNTHETIC"||p.isSimulated){
