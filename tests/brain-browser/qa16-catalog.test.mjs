@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {build} from 'esbuild';
 import {chromium} from '@playwright/test';
 
-test('mobile catalog follows four pages, classifies data and hides readonly Commerce actions', {timeout:30000},async()=>{
+test('mobile catalog follows four pages and keeps readonly controls visible without writes', {timeout:30000},async()=>{
  const bundle=await build({stdin:{contents:`import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Shopping}from'./src/web/screens/Shopping.tsx';function App(){const[c,setC]=useState('beauty'),[s,setS]=useState('');return <main><Shopping category={c} sub={s} userName="QA" userId="fixture-only" onNav={(c,s='')=>{setC(c);setS(s)}} onOpenProduct={()=>{}} onOpenOrders={()=>{}} onOpenCart={()=>{}} onOpenWish={()=>{}} commerceEnabled={false}/></main>};createRoot(document.getElementById('root')).render(<App/>);`,resolveDir:process.cwd(),loader:'tsx'},write:false,bundle:true,jsx:'automatic',format:'iife'});
  const css=await readFile('src/web/styles.css','utf8');
  // Literal independent taxonomy fixture; actual 180-row export is separately unit-tested.
@@ -27,7 +27,8 @@ test('mobile catalog follows four pages, classifies data and hides readonly Comm
   });
   await page.goto('http://127.0.0.1:39192/');
   await page.getByText('상품 179',{exact:true}).waitFor();assert.deepEqual(seen,[0,50,100,150]);
-  assert.equal(await page.getByRole('button',{name:/찜|장바구니/}).count(),0);
+  assert.ok(await page.getByRole('button',{name:/찜하기/}).count()>0);
+  assert.equal(await page.getByRole('button',{name:/찜하기/}).first().isDisabled(),true);
   await page.locator('.icon-rail').getByRole('button',{name:/메이크업/}).click();
   await page.getByText('상품 179',{exact:true}).waitFor();
   assert.equal(await page.locator('.product-grid .product-card').count(),80);

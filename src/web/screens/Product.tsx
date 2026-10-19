@@ -23,7 +23,7 @@
 // - 리뷰 행은 카드 대신 flat row + divider — variant id가 아니라 옵션 라벨로 표시.
 // - 하단 바는 Ref04 구조 [카트 아이콘][N원 담기(보조)][구매하기(주 CTA)] —
 //   옵션 진입은 본문 .optline 행이 담당하고 하단 바에 별도 옵션 버튼을 두지
-//   않는다. 찜·뽑기 등 미지원 기능은 없다 [PMQA-067, 이전 3버튼 구조는 Superseded].
+//   않는다. 찜은 공용 WishButton의 서버 저장 계약을 재사용하고 뽑기는 제공하지 않는다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiSafe, fmtWon, newActionKey, shipFeeLabel, AMBIGUOUS_CODES, type ApiResult } from "../api.ts";
 import type {
@@ -33,7 +33,7 @@ import { CatalogNotice, Empty, ErrorState, Loading } from "../components/Commerc
 import { BottomSheet } from "../components/BottomSheet.tsx";
 import { ReviewRow, Stars } from "../components/ReviewBits.tsx";
 import { PRODUCT_META, SPEC_LABEL, productImg } from "../display-meta.ts";
-import { variantStockLabel } from "../commerce-ui.ts";
+import { stockSafeErrorMessage, variantStockLabel } from "../commerce-ui.ts";
 import {
   listCartPending, putPending, removePending, lookupAction,
   type PendingWrite,
@@ -70,6 +70,7 @@ export function Product({
   onBuyNow,
   onOpenWish,
   commerceEnabled,
+  checkoutEnabled = commerceEnabled,
 }: {
   productId: string;
   initialVariantId?: string;
@@ -86,6 +87,7 @@ export function Product({
   // 찜 진입 — Ref08 하단 하트 CTA와 저장 시트의 '바로가기' 목적지 [PMQA-070].
   onOpenWish: () => void;
   commerceEnabled: boolean;
+  checkoutEnabled?: boolean;
 }) {
   const [detail, setDetail] = useState<ApiResult<ProductDetail> | null>(null);
   const [reviews, setReviews] = useState<ApiResult<ReviewsResult> | null>(null);
@@ -322,7 +324,7 @@ export function Product({
   }
 
   async function add() {
-    if (!commerceEnabled || !selected || adding || busyRef.current || anyPending || !detail?.ok || detail.data.catalog_context?.read_only)
+    if (!commerceEnabled || !selected || adding || busyRef.current || anyPending || !detail?.ok)
       return;
     busyRef.current = true;
     setAdding(true);
@@ -375,7 +377,7 @@ export function Product({
     // 확정 거절(VERSION_CONFLICT/OUT_OF_STOCK 등) — 자동 재실행 없이
     // 최신 상태를 다시 읽고 사용자 재확인을 요구한다.
     removePending(key);
-    setFeedback("담기 실패: " + r.error.message);
+    setFeedback("담기 실패: " + stockSafeErrorMessage(r.error.code, r.error.message));
     await refreshDetail(productId);
     await syncCart();
   }
@@ -451,7 +453,7 @@ export function Product({
       return;
     }
     removePending(p.uiKey);
-    setFeedback("담기 실패: " + r.error.message);
+    setFeedback("담기 실패: " + stockSafeErrorMessage(r.error.code, r.error.message));
     await refreshDetail(productId);
     await syncCart();
   }
@@ -506,7 +508,7 @@ export function Product({
         <button className="dn-btn" aria-label="검색" onClick={onOpenSearch}>
           <IcSearch size={20} />
         </button>
-        {commerceEnabled && (
+        {(
           <button className="dn-btn" aria-label="장바구니" onClick={onOpenCart}>
             <IcCart size={21} />
             {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
@@ -723,7 +725,7 @@ export function Product({
           옵션 선택 <IcChevronRight size={14} />
         </span>
       </button>
-      {selected && commerceEnabled && !detail.data.catalog_context?.read_only && (
+      {selected && (
         <div className="qty-row">
           <span>수량</span>
           <div className="qty-ctrl">
@@ -743,7 +745,7 @@ export function Product({
             </button>
           </div>
           <span className="muted">
-            {variantStockLabel(selected.availability, selected.stock_qty, false)}
+            {variantStockLabel(selected.availability, selected.stock_qty, !!detail.data.catalog_context?.read_only)}
           </span>
         </div>
       )}
@@ -840,11 +842,10 @@ export function Product({
         </section>
       )}
 
-      {!commerceEnabled || detail.data.catalog_context?.read_only ? <div className="bottom-bar">
-        <span>{detail.data.catalog_context?.read_only
-          ? "v4 테스트 상품 · 조회 전용 · 주문·결제 불가"
-          : "쇼핑 기능을 확인하고 있어요"}</span>
-      </div> : <div className={"bottom-bar" + (anyPending ? " has-note" : "")}>
+      {<div className={"bottom-bar" + (anyPending || !commerceEnabled || detail.data.catalog_context?.read_only ? " has-note" : "")}>
+        {(!commerceEnabled || detail.data.catalog_context?.read_only) && <p className="muted sm" role="note">{detail.data.catalog_context?.read_only
+          ? commerceEnabled ? "v4 시연 상품 · 찜·장바구니 저장 가능 · 주문·결제 불가" : "v4 테스트 상품 · 조회 전용 · 주문·결제 불가"
+          : "쇼핑 기능을 확인하고 있어요"}</p>}
         {anyPending && (
           // 미확정 write가 있으면 고정 바 최상단에서 바로 복구로 진입 — 상세
           // state-box는 문서 하단이라 첫 화면에서 발견되지 않는다.
@@ -881,7 +882,8 @@ export function Product({
           <button
             className="btn ghost"
             aria-label={soldOutAll ? "품절" : adding ? "담는 중" : fmtWon(totalWon) + " 담기"}
-            disabled={!selected || adding || anyPending || soldOutAll}
+            disabled={!commerceEnabled || !selected || adding || anyPending || soldOutAll}
+            title={!commerceEnabled ? "현재 조회 전용 QA 환경에서는 장바구니에 저장할 수 없어요" : undefined}
             onClick={add}
           >
             {soldOutAll ? "품절" : adding ? "담는 중…" : fmtWon(totalWon) + " 담기"}
@@ -891,7 +893,7 @@ export function Product({
           <button
             className="btn primary"
             aria-label="구매하기"
-            disabled={!selected || adding || anyPending || soldOutAll}
+            disabled={!checkoutEnabled || !!detail.data.catalog_context?.read_only || !selected || adding || anyPending || soldOutAll}
             onClick={() =>
               selected &&
               onBuyNow({ variant_id: selected.variant_id, quantity: qty })
@@ -931,7 +933,7 @@ export function Product({
                       ? v.availability === "SOLD_OUT"
                         ? "품절"
                         : "판매 중단"
-                      : variantStockLabel(v.availability, v.stock_qty, !commerceEnabled)}
+                      : variantStockLabel(v.availability, v.stock_qty, !!detail.data.catalog_context?.read_only)}
                   </span>
                 </button>
               );

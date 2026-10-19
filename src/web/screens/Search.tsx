@@ -243,7 +243,7 @@ export function Search({
             </button>
           )}
         </div>
-        {commerceEnabled && (
+        {(
           <button type="button" className="icon-btn" aria-label="장바구니" onClick={onOpenCart}>
             <IcCart size={23} />
             {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}

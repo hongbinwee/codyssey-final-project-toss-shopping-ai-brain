@@ -8,6 +8,7 @@ import { assertServiceRole, connectDb, sql, type Q } from "./db.ts";
 import { ensureDevDb } from "./devdb.ts";
 import { contextFromRequest, signSession } from "./session.ts";
 import {createQaAuth,readQaAuthFile} from "./qa-auth.ts";
+import {qaCommerceEnabled, qaCommerceRequestAllowed, QA_COMMERCE_DATABASE, QA_COMMERCE_ROLE} from "./qa-commerce.ts";
 import { catalogRequestAllowed, catalogSource, createCatalog } from "./catalog.ts";
 import { addToCart, getCart, removeCartItem, updateCartQuantity } from "./cart.ts";
 import { getWishlist, parseWishlistPut, setWishlist } from "./wishlist.ts";
@@ -117,6 +118,7 @@ const reqCtx = (req: IncomingMessage) =>
   );
 
 export type ServerStartDeps = {
+  webBundlePath?: string;
   localRagSearch?:import("./brain/rag-adapter.ts").LocalRagSearch;
   embedQuery?:(query:string)=>Promise<number[]>;
   env?: Record<string, string | undefined>;
@@ -183,11 +185,12 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
   const env = deps.env ?? process.env;
   if(env.QA_AUTH_ENABLED&&!["0","1"].includes(env.QA_AUTH_ENABLED))throw new Error("invalid QA_AUTH_ENABLED");
   const qa=env.QA_AUTH_ENABLED==="1";
+  const qaCommerce = qaCommerceEnabled(env);
   let qaAuth:ReturnType<typeof createQaAuth>|undefined;
   if(qa){
     const url=new URL(env.DATABASE_URL??"");
     if(env.COMMERCE_CATALOG_SOURCE!=="test_items"||url.hostname!=="127.0.0.1"||url.port!=="15440"||
-      url.pathname!=="/toss_v4_test_items_20261018_w01"||decodeURIComponent(url.username)!=="commerce_v4_reader"||url.search||
+      url.pathname!=="/"+(qaCommerce?QA_COMMERCE_DATABASE:"toss_v4_test_items_20261018_w01")||decodeURIComponent(url.username)!==(qaCommerce?QA_COMMERCE_ROLE:"commerce_v4_reader")||url.search||
       !env.SESSION_SECRET?.trim()||!env.QA_AUTH_FILE)throw new Error("QA auth requires the approved local read-only catalog");
     if(env.BRAIN_ENABLED==="1"){
       const brainUrl=new URL(env.BRAIN_DATABASE_URL??"");
@@ -217,7 +220,7 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
     throw new Error("local RAG requires the read-only test_items catalog");
   let businessDb: ReturnType<typeof connectDb>;
   if (isolated) {
-    const pool = connect(isolated.dbUrl, {readOnly: catalogReadOnly});
+    const pool = connect(isolated.dbUrl, {readOnly: catalogReadOnly && !qaCommerce});
     businessDb = pool;
     const owned = await verifyOwnedTransaction(
       pool as unknown as Parameters<typeof verifyOwnedTransaction>[0],
@@ -229,15 +232,15 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
     }
   } else {
     await ensure();
-    businessDb = connect(env.DATABASE_URL!, {readOnly: catalogReadOnly});
+    businessDb = connect(env.DATABASE_URL!, {readOnly: catalogReadOnly && !qaCommerce});
   }
   if (catalogReadOnly) {
-    try { await assertServiceRole(businessDb, true); }
+    try { await assertServiceRole(businessDb, !qaCommerce); }
     catch (error) { await businessDb.end(); throw error; }
   }
   if(qa){
     const [identity]=await businessDb.unsafe("SELECT current_database() AS db,current_user AS role,inet_server_port() AS port,current_setting('transaction_read_only') AS read_only");
-    if(identity?.db!=="toss_v4_test_items_20261018_w01"||identity.role!=="commerce_v4_reader"||Number(identity.port)!==15440||identity.read_only!=="on"){
+    if(identity?.db!==(qaCommerce?QA_COMMERCE_DATABASE:"toss_v4_test_items_20261018_w01")||identity.role!==(qaCommerce?QA_COMMERCE_ROLE:"commerce_v4_reader")||Number(identity.port)!==15440||identity.read_only!==(qaCommerce?"off":"on")){
       await businessDb.end();throw new Error("QA database identity mismatch");
     }
   }
@@ -245,7 +248,7 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
   await buildBundle({
     entryPoints: ["src/web/app.tsx"],
     bundle: true,
-    outfile: "web/app.js",
+    outfile: deps.webBundlePath ?? "web/app.js",
     jsx: "automatic",
     format: "esm",
     logLevel: "silent",
@@ -317,7 +320,8 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       }
 
       // 정적 자산은 인증 없이 서빙한다.
-      const file = req.method === "GET" && !p.startsWith("/api/") ? STATIC[p] : undefined;
+      const file = req.method === "GET" && !p.startsWith("/api/") ?
+        (p === "/web/app.js" && deps.webBundlePath ? deps.webBundlePath : STATIC[p]) : undefined;
       if (file) {
         res.writeHead(200, { "content-type": MIME[extname(file)] ?? "text/plain" });
         return res.end(await readFile(file));
@@ -345,11 +349,15 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       // 아래부터는 인증 필요
       const ctx = await requestContext(req);
       if (!ctx) return json(res, 401, { ok: false, error: { code: "UNAUTHENTICATED", message: "로그인이 필요합니다" } });
-      if (!catalogRequestAllowed(source, req.method ?? "", p))
+      if (!catalogRequestAllowed(source, req.method ?? "", p) && !(qaCommerce && qaCommerceRequestAllowed(req.method ?? "", p)))
         return json(res, 403, {ok:false,error:{code:"READ_ONLY_CATALOG",
-          message:"v4 테스트 상품은 시연용 가격·재고이며 장바구니·찜·주문·결제를 제공하지 않습니다."}});
+          message:qaCommerce?"v4 QA에서는 찜·장바구니 저장만 지원하며 주문·결제는 제공하지 않습니다.":"v4 테스트 상품은 시연용 가격·재고이며 장바구니·찜·주문·결제를 제공하지 않습니다."}});
+      if (qaCommerce && qaCommerceRequestAllowed(req.method ?? "", p) && req.method !== "GET" &&
+          !brainMutationAllowed(req.headers, env.BRAIN_PUBLIC_ORIGIN))
+        return json(res,403,{ok:false,error:{code:"CSRF_REJECTED",message:"허용되지 않은 요청 출처"}});
       if (p === "/api/catalog/context" && req.method === "GET")
-        return json(res,200,{ok:true,data:{source,read_only:catalogReadOnly,is_simulated:catalogReadOnly}});
+        return json(res,200,{ok:true,data:{source,read_only:catalogReadOnly,is_simulated:catalogReadOnly,
+          ...(qaCommerce?{cart_enabled:true,wishlist_enabled:true,checkout_enabled:false}:{})}});
       if (aiDemo && p.startsWith("/api/") && p !== "/api/agent/turn" &&
           !(req.method === "GET" && /^\/api\/products(?:\/[^/]+(?:\/reviews)?)?$/.test(p)))
         return json(res, 403, { ok: false, error: { code: "READ_ONLY_DEMO", message: "이 AI 시연에서는 상품·리뷰 조회만 제공해요. 일반 쇼핑은 기존 3105 앱을 이용해 주세요." } });

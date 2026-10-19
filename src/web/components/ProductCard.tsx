@@ -19,12 +19,10 @@ export function ProductCard({
   p,
   onOpen,
   variant,
-  hideCommerce = false,
 }: {
   p: ProductSummary;
   onOpen: () => void;
   variant?: "search";
-  hideCommerce?: boolean;
 }) {
   const [imgErr, setImgErr] = useState(false);
   const isSearch = variant === "search";
@@ -118,7 +116,7 @@ export function ProductCard({
           </div>
         )}
       </div>
-      {!isSearch && !hideCommerce && <span className="card-cart" aria-hidden><IcCart size={21} /></span>}
+      {!isSearch && <span className="card-cart" aria-hidden><IcCart size={21} /></span>}
     </button>
   );
 }

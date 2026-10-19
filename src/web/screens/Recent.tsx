@@ -161,7 +161,7 @@ export function Recent({
       {/* Ref45 상단 3탭 — '최근 본' 라벨 [Observed]. 장바구니는 별도 화면 진입,
           최근 본/찜 전환은 route 소유 상태로 URL과 일치시킨다 */}
       <div className="cart-tabs" role="tablist">
-        {commerceEnabled && (
+        {(
           <button role="tab" aria-selected="false" onClick={onOpenCart}>
             장바구니 {cartCount}
           </button>
@@ -174,7 +174,7 @@ export function Recent({
         >
           최근 본
         </button>
-        {commerceEnabled && (
+        {(
           <button
             role="tab"
             className={tab === "wish" ? "on" : ""}
@@ -338,7 +338,6 @@ export function Recent({
                 <ProductCard
                   p={p}
                   onOpen={() => onOpenProduct(p.product_id)}
-                  hideCommerce={!commerceEnabled}
                 />
                 <button
                   className="recent-x"

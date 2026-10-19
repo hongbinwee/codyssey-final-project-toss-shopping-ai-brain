@@ -236,7 +236,7 @@ function HomeView({
     { icon: IcBulb, label: "리빙", run: () => onNav("living") },
     { icon: IcReceipt, label: "내 주문", run: onOpenOrders },
     { icon: IcCart, label: "장바구니", run: onOpenCart },
-  ].filter((shortcut) => commerceEnabled || shortcut.label !== "장바구니");
+  ];
   return (
     <>
       <Hero products={hero} onOpen={onOpen} />

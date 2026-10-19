@@ -5,7 +5,7 @@ import type { CartView, CheckoutTarget } from "../contracts.ts";
 import { bindPendingUser } from "./pending.ts";
 import { takeDetailResume } from "./detail-resume.ts";
 import { CatalogNotice } from "./components/CommerceState.tsx";
-import { isCommerceEnabled, type CatalogUiContext } from "./commerce-ui.ts";
+import { isCommerceEnabled, isCheckoutEnabled, type CatalogUiContext } from "./commerce-ui.ts";
 import { activeBottomNavSlot } from "./bottom-nav-state.ts";
 import { visibleCart, type OwnedCart } from "./cart-scope.ts";
 import { Shopping } from "./screens/Shopping.tsx";
@@ -236,6 +236,7 @@ function App() {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const allBtnRef = useRef<HTMLButtonElement | null>(null);
   const commerceEnabled = isCommerceEnabled(catalogContext);
+  const checkoutEnabled = isCheckoutEnabled(catalogContext);
   const catalogReadOnly =
     catalogContext?.read_only === true && catalogContext.is_simulated;
   const commerceEnabledRef = useRef(commerceEnabled);
@@ -423,7 +424,7 @@ function App() {
           >
             <IcUser size={23} />
           </button>
-          {commerceEnabled && (
+          {(
             <button
               className="icon-btn"
               aria-label="장바구니"
@@ -457,7 +458,7 @@ function App() {
           >
             <IcSearch size={23} />
           </button>
-          {commerceEnabled && (
+          {(
             <button
               className="icon-btn"
               aria-label="장바구니"
@@ -555,6 +556,7 @@ function App() {
             key={userId + ":" + route.id + ":" + (route.variantId ?? "")}
             productId={route.id}
             initialVariantId={route.variantId}
+            checkoutEnabled={checkoutEnabled}
             userId={userId}
             onBack={goBack}
             onOpenSearch={() => goto({ name: "search", query: "" })}
@@ -599,6 +601,7 @@ function App() {
             onOpenWish={() => goto({ name: "recent", tab: "wish" })}
             commerceEnabled={commerceEnabled}
             catalogReadOnly={catalogReadOnly}
+            checkoutEnabled={checkoutEnabled}
             onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
           />
         )}
@@ -739,7 +742,7 @@ function App() {
                 { icon: IcSearch, label: "검색", run: () => goto({ name: "search", query: "" }) },
                 { icon: IcSparkle, label: "AI 쇼핑 도우미", run: () => setAgentOpen("shopping"), soon: !AGENT_TURN_ENABLED },
               ] as const
-            ).filter((m) => commerceEnabled || m.label !== "장바구니").map((m) => (
+            ).map((m) => (
               <button
                 key={m.label}
                 className="menu-item"

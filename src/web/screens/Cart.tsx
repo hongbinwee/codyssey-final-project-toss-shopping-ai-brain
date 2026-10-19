@@ -4,6 +4,7 @@
 // 확정 거절(VERSION_CONFLICT 등)이면 자동 재실행 없이 최신 상태 재확인을 요구한다.
 // 미확정 intent가 하나라도 있으면 수량·삭제·주문 버튼을 잠근다.
 import { useEffect, useRef, useState } from "react";
+import { stockSafeErrorMessage } from "../commerce-ui.ts";
 import {
   apiSafe, fmtWon, newActionKey, AMBIGUOUS_CODES, type ApiResult,
 } from "../api.ts";
@@ -26,6 +27,7 @@ export function Cart({
   onOpenWish,
   commerceEnabled,
   catalogReadOnly,
+  checkoutEnabled = commerceEnabled,
   onOpenShop,
 }: {
   cart: CartView | null;
@@ -38,6 +40,7 @@ export function Cart({
   onOpenWish: () => void;
   commerceEnabled: boolean;
   catalogReadOnly: boolean;
+  checkoutEnabled?: boolean;
   onOpenShop: () => void;
 }) {
   const [res, setRes] = useState<ApiResult<CartView> | null>(
@@ -182,7 +185,7 @@ export function Cart({
     // VERSION_CONFLICT 외 확정 거절(OUT_OF_STOCK·UNAVAILABLE·NOT_FOUND)도
     // 최신 CartView를 회수한다 — 재고/판매 상태가 바뀐 거절에서 stale
     // can_checkout·수량 버튼이 남지 않도록(retryPending과 동일 기준).
-    setNotice("변경 실패: " + r.error.message);
+    setNotice("변경 실패: " + stockSafeErrorMessage(r.error.code, r.error.message));
     await reload();
     return { status: "rejected" };
   }
@@ -344,7 +347,7 @@ export function Cart({
       await reload();
       return;
     }
-    setNotice("변경 실패: " + r.error.message);
+    setNotice("변경 실패: " + stockSafeErrorMessage(r.error.code, r.error.message));
     await reload();
   }
 
@@ -604,6 +607,7 @@ export function Cart({
               </div>
             </div>
             <div className="cart-checkout-action">
+              {!checkoutEnabled && <div className="muted sm" role="note">시연 상품 · 장바구니 저장만 가능하며 주문·결제는 지원하지 않아요</div>}
               {selectedCount === 0 && pendings.length === 0 && (
                 <div className="muted sm">주문할 상품을 선택해 주세요</div>
               )}
@@ -616,7 +620,7 @@ export function Cart({
               <button
                 className="btn primary"
                 aria-label={selectedCount + "건 · " + fmtWon(selectedTotal) + " 주문하기"}
-                disabled={!canSubmit}
+                disabled={!checkoutEnabled || !canSubmit}
                 onClick={() =>
                   onCheckout(
                     allSelected

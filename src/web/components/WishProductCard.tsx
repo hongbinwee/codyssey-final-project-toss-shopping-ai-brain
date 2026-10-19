@@ -26,7 +26,7 @@ export function WishProductCard({
 }) {
   return (
     <div className="wish-cell">
-      <ProductCard p={p} onOpen={onOpen} variant={variant} hideCommerce={!commerceEnabled} />
+      <ProductCard p={p} onOpen={onOpen} variant={variant} />
       <WishButton
         className="wish-heart"
         userId={userId}

@@ -149,7 +149,9 @@ test("read-only variant labels never expose the stock count", () => {
   assert.equal(commerceUi.variantStockLabel("AVAILABLE", 17, true), "시연 옵션 · 주문 불가");
   assert.equal(commerceUi.variantStockLabel("SOLD_OUT", 0, true), "품절");
   assert.equal(commerceUi.variantStockLabel("UNAVAILABLE", 17, true), "판매 중단");
-  assert.equal(commerceUi.variantStockLabel("AVAILABLE", 17, false), "재고 17개");
+  assert.equal(commerceUi.variantStockLabel("AVAILABLE", 17, false), "구매 가능");
+  assert.doesNotMatch(commerceUi.stockSafeErrorMessage("OUT_OF_STOCK", "재고가 부족합니다 (남은 수량 17)"), /17/);
+  assert.equal(commerceUi.stockSafeErrorMessage("VERSION_CONFLICT", "다시 확인"), "다시 확인");
 });
 
 test("bottom navigation active slot follows category, AI panel, and menu state", () => {
@@ -163,7 +165,7 @@ test("bottom navigation active slot follows category, AI panel, and menu state",
   assert.equal(navState.activeBottomNavSlot("cart", "", null, false), null);
 });
 
-test("read-only product cards omit both wishlist and cart affordances", () => {
+test("read-only product cards keep visible controls without allowing a wishlist write", () => {
   const html = renderToStaticMarkup(
     createElement(WishProductCard, {
       p: product("beauty", { spf: "SPF50+" }),
@@ -173,5 +175,8 @@ test("read-only product cards omit both wishlist and cart affordances", () => {
       onGoWish: () => {},
     }),
   );
-  assert.doesNotMatch(html, /wish-heart|card-cart/);
+  assert.match(html, /wish-heart/);
+  assert.match(html, /card-cart/);
+  assert.match(html, /disabled=""/);
+  assert.match(html, /조회 전용 QA/);
 });
