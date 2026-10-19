@@ -4,13 +4,14 @@ import type {ChatMsg,Provider} from "../llm.ts";
 import {SHOPPING_POLICY} from "./policy.ts";
 
 export interface GroundedExplanation {
+ clarification?:{questions:import("./interview.ts").InterviewQuestion[]};
  text:string;
  items:{productId:string;variantId:string;name:string;totalPriceWon:number;
-   evidenceIds:string[];indicators:{aspect:Aspect;score:number}[]}[];
+   evidenceIds:string[];indicators:{aspect:Aspect;score:number}[];reason?:string}[];
  citations?:{productId:string;variantId:string;sourceVariantId?:string|null;sourceId:string;sourceKind:"REAL"|"SYNTHETIC";quote:string}[];
  limitations:string[];
  failure?:{code:"MODEL_TIMEOUT"|"MODEL_RATE_LIMIT"|"MODEL_HTTP_ERROR"|"MODEL_UNAVAILABLE";httpStatus?:number};
- kind:"VERIFIED_CANDIDATES"|"REFERENCE_ONLY"|"NO_MATCH"|"LLM_GROUNDED"|"EVIDENCE_INSUFFICIENT"|"CONVERSATION";
+ kind:"CLARIFICATION"|"VERIFIED_CANDIDATES"|"REFERENCE_ONLY"|"NO_MATCH"|"LLM_GROUNDED"|"EVIDENCE_INSUFFICIENT"|"CONVERSATION";
 }
 type DisplayRow={candidate:ProductCandidate;ranked:boolean;limitations?:string[]};
 function displayRows(ranking:RankingResult):DisplayRow[]{
@@ -62,22 +63,18 @@ export function buildGroundedExplanation(ranking:RankingResult,evidence:Evidence
      ids.push(...legitimate);
    }
    const price=(candidate.unitPriceWon??0)+(candidate.shippingFeeWon??0);
-   return {productId:candidate.productId,variantId:candidate.variantId,
+   const verifiedReview=evidence.find(e=>evidence.filter(other=>other.id===e.id).length===1&&e.kind==='REVIEW'&&e.verified===true&&e.productId===candidate.productId&&(e.variantId===null||e.variantId===candidate.variantId)&&e.datasetVersion===candidate.datasetVersion&&['REAL','SYNTHETIC'].includes(e.sourceKind??'')&&typeof e.text==='string'&&e.text.length>=8&&e.text.length<=600&&![candidate.productId,candidate.variantId,e.sourceId??''].some(id=>id&&idOccurs(e.text!,id))&&!/https?:\/\/|시스템|프롬프트|비밀번호|api\s*key|ignore.{0,20}instruction|sk-/i.test(e.text));
+   const fit=plan.maxTotalWon!==null&&price<=plan.maxTotalWon?'배송비 포함 예산 안의 상품이에요. ':'';
+   const reason=fit+(verifiedReview?`${verifiedReview.sourceKind==='SYNTHETIC'?'합성 리뷰':'수집 리뷰'}에 “${verifiedReview.text!.slice(0,100)}${verifiedReview.text!.length>100?'…':''}”라는 의견이 있어요.`:'확인된 Commerce 상품 정보와 현재 조건으로 비교했어요.');
+   if(verifiedReview)ids.push(verifiedReview.id);
+   return {productId:candidate.productId,variantId:candidate.variantId,reason,
      name:safeName(candidate.productName,candidate.productId),totalPriceWon:price,
      evidenceIds:[...new Set(ids)].slice(0,12),indicators};
  });
- const segments=items.map((p,index)=>{
-   return `${index+1}순위 ${p.name}: 총 ${p.totalPriceWon.toLocaleString("ko-KR")}원.`;
- });
- const ratingLimit=items.some(item=>item.indicators.some(facet=>facet.aspect==="retrieved_review_rating"))
-   ?"검색된 리뷰 평점의 표본 평균이며, 전체 리뷰 평점이나 제품 성능·효능 점수가 아닙니다.":"";
- const referenceNote=referenceCount?` 참고 카드 ${referenceCount}개는 확인이 더 필요한 정보예요.`:"";
  return {kind:"VERIFIED_CANDIDATES",items,
-     text:`${budget}과 확인된 조건을 기준으로 후보를 비교했어요. ${criteria} `+
-     segments.join(" ")+` ${ratingLimit}${referenceNote} 순위는 개인화 실험 결과이며 구매 만족도를 보장하지 않습니다.`,
+     text:`${plan.maxTotalWon===null?'':budget+' 안에서 '}근거를 확인한 ${items.length}개 상품을 골랐어요.${criteria?' '+criteria:''}`,
    limitations:[...new Set([
      ...(referenceCount?["추가로 근거가 부족한 참고용 후보가 있습니다."]:[]),
-     ...(ratingLimit?["retrieved_synthetic_review_rating_sample_only"]:[]),
      "평점·전체 리뷰 수·속성의 미확인 값은 추정하지 않았습니다.",
      ...rankedRows.flatMap(x=>x.limitations??[])
    ])]};
@@ -207,7 +204,7 @@ function finish(selection:Selection,selected:PreparedCandidate,summary?:string,
     items:selected.ranked?[{productId:c.productId,variantId:c.variantId,name,totalPriceWon:c.totalPriceWon,
       evidenceIds:[selection.sourceId],indicators:[]}]:[],citations:[citation],
     text:`${includeNotice?(selected.ranked?"시연 후보 순위에 포함됐어요. ":"시연 데이터 참고 내용이에요. "):""}${simulated}${name}: 상품 가격 ${price}원, 배송비 ${shipping}원, 합계 ${total}원. ${quoted} `+
-      (includeNotice?(selected.ranked?"순위에 사용된 합성 리뷰 평점은 검색된 표본 평균으로 전체 평점이나 제품 성능·효능 점수가 아닙니다.":"요청 조건 충족은 확인되지 않았어요."):""),
+      (includeNotice&&!selected.ranked?"요청 조건 충족은 확인되지 않았어요.":""),
    limitations:["합성 리뷰는 시연 데이터이며 실제 사용자 경험·판매·성능을 입증하지 않습니다.",
      ...(selected.ranked?["합성 리뷰 평점은 검색된 표본 평균이며 전체 리뷰 평점이나 성능·효능 점수가 아닙니다."]:[])]};
   const item={productId:c.productId,variantId:c.variantId,name,totalPriceWon:c.totalPriceWon,
@@ -273,15 +270,14 @@ export function createLlmGroundedResponder(provider:Pick<Provider,"chat">):Groun
          `${claim.polarity==="PRO"?"좋은 점":"주의할 점"}: “${claim.quote}”라는 의견이 있고, ${claim.claim}`).join(" ");
        const base=finish(rows[0].claim,selected,summary,prepared,false);
        segments.push(base.text);
-        if(selected.ranked)items.push({...base.items[0],evidenceIds:[...new Set(rows.map(r=>r.claim.sourceId))]});
+        if(selected.ranked)items.push({...base.items[0],reason:rows.map(r=>r.claim.claim).join(' ').slice(0,300),evidenceIds:[...new Set(rows.map(r=>r.claim.sourceId))]});
        citations.push(...rows.map(({claim})=>({productId:claim.productId,variantId:claim.variantId,sourceVariantId:selected.sourceVariants.get(claim.sourceId),
          sourceKind:claim.sourceKind,sourceId:claim.sourceId,quote:claim.quote})));
      }
      const synthetic=chosen.some(row=>row.claim.sourceKind==="SYNTHETIC");
      const notice=(synthetic?(items.length?"출처를 구분한 합성 리뷰 근거가 포함되어 있어요. ":"합성 리뷰 기반 시연 데이터 참고 정보예요. "):"")+
        (prepared.some(c=>c.prompt.isSimulated)?"CANDIDATE 데이터의 시연용 가격·재고입니다. 실제 판매 정보가 아니며 주문·결제할 수 없어요.":"");
-     const sampleNotice=synthetic&&items.length?"합성 리뷰 평점은 검색된 표본 평균으로 전체 평점이나 제품 성능·효능 점수가 아닙니다.":"";
-     return {kind:items.length?"LLM_GROUNDED":"REFERENCE_ONLY",items,citations,text:[notice,...segments,sampleNotice].filter(Boolean).join("\n\n"),
+     return {kind:items.length?"LLM_GROUNDED":"REFERENCE_ONLY",items,citations,text:[notice,...segments].filter(Boolean).join("\n\n"),
        limitations:["상품·옵션·출처를 내부 대조했습니다. 요약의 의미·해석 정확성은 별도 평가가 필요합니다.",
          ...(rankedCandidates.some(candidate=>candidate.prompt.sourceKind==="SYNTHETIC")?
            ["시연 순위는 Commerce 조건과 검색된 합성 리뷰 표본을 이용하며 실제 판매·성능·효능을 증명하지 않습니다."]:[])]};

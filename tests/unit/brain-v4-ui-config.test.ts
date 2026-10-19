@@ -264,3 +264,14 @@ test("requested product variant selects only an available exact match; ordinary 
   assert.deepEqual(resolveRequestedVariant(variants, "v-option-c"), { variantId: null, unavailable: true });
   assert.deepEqual(resolveRequestedVariant(variants), { variantId: "v-option-a", unavailable: false });
 });
+
+test('ranked cards use matching product and variant reasons; references never acquire a rank',()=>{
+ const candidate={productId:'safe-product',variantId:'safe-variant',productName:'검증 상품',unitPriceWon:12000,commerceVerified:true,keywords:['type: mask','sub_category: raw','향 없음']};
+ const ranking={ranked:[{candidate,score:1,evidenceCoverage:1}],referenceOnly:[],rejected:[],evaluatedCount:1};
+ const html=renderToStaticMarkup(createElement(BrainRanking,{ranking,explanation:{kind:'VERIFIED_CANDIDATES',text:'',items:[{productId:'safe-product',variantId:'safe-variant',evidenceIds:['r'],reason:'확인된 예산 안의 상품이에요.'}],limitations:[]},onOpenProduct:()=>{}}));
+ assert.match(html,/1순위|검증 상품/);assert.match(html,/확인된 예산/);assert.doesNotMatch(html,/type:|sub_category:/);
+ const reference=renderRanking({...ranking,ranked:[],referenceOnly:[{candidate,reasons:['unverified']}]});assert.match(reference,/참고 상품/);assert.doesNotMatch(reference,/1순위/);
+ const wrong=renderToStaticMarkup(createElement(BrainRanking,{ranking,explanation:{kind:'LLM_GROUNDED',text:'',items:[{productId:'safe-product',variantId:'other-variant',evidenceIds:['r']}],limitations:[]},onOpenProduct:()=>{}}));assert.doesNotMatch(wrong,/1순위/);
+});
+
+test('model timeout retains verified retrieval cards without invented model reasons',()=>{const ranking={ranked:[{candidate:{productId:'safe',variantId:'v-safe',productName:'검증 후보',unitPriceWon:10000,commerceVerified:true},score:1,evidenceCoverage:1}],referenceOnly:[],rejected:[],evaluatedCount:1};const html=renderToStaticMarkup(createElement(BrainRanking,{ranking,explanation:{kind:'EVIDENCE_INSUFFICIENT',text:'',items:[],limitations:[],failure:{code:'MODEL_TIMEOUT'}},onOpenProduct:()=>{}}));assert.match(html,/검증 후보/);assert.match(html,/상품 보기/);});

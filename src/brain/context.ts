@@ -28,6 +28,7 @@ export function assembleIntentContext(userMessage:string,memories:Preference[],p
  const context=previous?{
    query:previous.query,maxTotalWon:previous.maxTotalWon,
    requiredConditions:previous.requiredConditions,currentPreferences:previous.currentPreferences,
+   ...(previous.interview?.purpose?{userStatedPurpose:previous.interview.purpose}:{}),
    ...(previous.category?{category:previous.category,attributePreferences:previous.attributePreferences??[]}:{})
  }:null;
  return {

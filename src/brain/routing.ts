@@ -2,9 +2,8 @@ import type {ShoppingPlan} from "./shopping-plan.ts";
 
 export type BrainIntentKind="GREETING"|"SOCIAL"|"CAPABILITY"|"SHOPPING_SEARCH"|"SHOPPING_FOLLOWUP"|"REVIEW_COMPARE"|"CS_REQUEST"|"UNCERTAIN";
 export interface BrainRoute {kind:BrainIntentKind;search:boolean;text?:string}
-/** Pure, conservative routing: only complete social/help phrases bypass research. */
-export function routeBrainMessage(message:string,previous?:ShoppingPlan):BrainRoute{
- const text=message.trim().replace(/[!?？!。.,~]+$/g,"").trim();
+/** Shared safety gate also applies to contextual interview answers. */
+export function guardBrainMessage(text:string):BrainRoute|undefined {
  const shoppingQuestion=(value:string)=>/(?:.{2,}\s*(?:추천|찾아|검색|구매|살까|사고\s*싶|고르|비교))|(?:상품|제품|가격|예산|리뷰|후기|장단점)|(?:.{2,}(?:은|는)\s*(?:어때|괜찮))/.test(value);
  const shopping=shoppingQuestion(text);
  const role=()=>({kind:"UNCERTAIN" as const,search:false,text:"저는 상품 찾기와 비교를 도와드려요. 찾으시는 상품이나 궁금한 점을 알려주세요."});
@@ -16,6 +15,14 @@ export function routeBrainMessage(message:string,previous?:ShoppingPlan):BrainRo
    /^(?:asdf|qwer|zxcv){2,}$/i.test(text)))return {kind:"UNCERTAIN",search:false,text:"입력을 잘 이해하지 못했어요. 찾으시는 상품을 짧게 알려주시겠어요?"};
  if(!/(?:추천|찾아|상품|제품|가격|예산|리뷰|후기|장단점|비교)/.test(text)&&
     /날씨|주식\s*(?:전망|예측)|코드\s*(?:짜|작성)|정치|대통령|욕해|멍청|병신|씨발|바보/.test(text))return role();
+}
+/** Pure, conservative routing: only complete social/help phrases bypass research. */
+export function routeBrainMessage(message:string,previous?:ShoppingPlan):BrainRoute{
+ const text=message.trim().replace(/[!?？!。.,~]+$/g,"").trim();
+ const shoppingQuestion=(value:string)=>/(?:.{2,}\s*(?:추천|찾아|검색|구매|살까|사고\s*싶|고르|비교))|(?:상품|제품|가격|예산|리뷰|후기|장단점)|(?:.{2,}(?:은|는)\s*(?:어때|괜찮))/.test(value);
+ const shopping=shoppingQuestion(text);
+ const role=()=>({kind:"UNCERTAIN" as const,search:false,text:"저는 상품 찾기와 비교를 도와드려요. 찾으시는 상품이나 궁금한 점을 알려주세요."});
+ const guarded=guardBrainMessage(text);if(guarded)return guarded;
  if(/^(안녕(?:하세요|하십니까)?|하이|반가워(?:요)?|hello|hi)$/i.test(text))
   return {kind:"GREETING",search:false,text:"안녕하세요! 어떤 상품을 찾고 계세요? 예산이나 원하는 점을 알려주시면 함께 살펴볼게요."};
  if(/^(고마워(?:요)?|감사(?:합니다|해요)?|고맙습니다|thanks?|잘 알겠어(?:요)?)$/i.test(text))

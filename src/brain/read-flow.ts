@@ -1,3 +1,4 @@
+import {interviewAnswer} from './interview.ts';
 import type {ConversationResponder} from "./conversation-response.ts";
 import type {BrainTrace,EvidenceRecord,MemoryRepository,Preference,RankingResult,RetrieverPort} from "./contracts.ts";
 import type {PersistentConversations} from "./persistent-store.ts";
@@ -22,6 +23,7 @@ export interface ResearchResult {
  trace:{memoryMs:number;intentMs:number;retrievalMs:number;rankMs:number;totalMs:number;[key:string]:number}
 }
 export interface ResearchDeps {
+ clarifyBeforeSearch?:boolean;
  datasetVersion?:string;
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
  memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
@@ -77,9 +79,10 @@ export async function prepareTurn(req:Request,deps:ResearchDeps):Promise<Prepare
 }
 export async function resolveTurnPlan(req:Request,prepared:PreparedTurn,previous:ShoppingPlan|null|undefined,deps:ResearchDeps):Promise<ShoppingPlan>{
  const trimmed=req.userMessage.trim();
+ if(deps.clarifyBeforeSearch){const answered=interviewAnswer(trimmed,previous??undefined);if(answered)return answered;}
  const last=previous?.lastDisplayedProductIds??[];
  const excludeOne=last.find(id=>trimmed===`이 상품 제외: ${id}`);
- const excludeAll=trimmed==="다른 제품 보기"||trimmed==="추천 상품 전부 제외";
+ const excludeAll=trimmed==="다른 상품 보기"||trimmed==="다른 제품 보기"||trimmed==="추천 상품 전부 제외";
  if(previous&&(excludeOne||excludeAll)){
    const extra=excludeAll?last:[excludeOne!];
    return {...previous,excludedProductIds:[...new Set([...(previous.excludedProductIds??[]),...extra])].slice(0,100),revision:previous.revision+1};
@@ -94,7 +97,7 @@ export async function resolveTurnPlan(req:Request,prepared:PreparedTurn,previous
 }
 export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:ShoppingPlan,deps:ResearchDeps):Promise<RetrievedTurn>{
  const retrievalStart=performance.now();
- const fetched=await deps.retriever.search({query:plan.query,maxTotalWon:plan.maxTotalWon,
+ const fetched=await deps.retriever.search({query:[plan.query,plan.interview?.purpose].filter(Boolean).join(" ").slice(0,250),maxTotalWon:plan.maxTotalWon,
    requiredConditions:plan.requiredConditions,requestId:req.requestId,originalQuestion:req.userMessage,
    ...(plan.category?{category:plan.category}:{})});
  if(!fetched||!Array.isArray(fetched.candidates)||!Array.isArray(fetched.evidence)||

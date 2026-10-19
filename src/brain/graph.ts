@@ -1,3 +1,5 @@
+import {guardBrainMessage} from './routing.ts';
+import {interviewAnswer,needsInterview,rememberInterview} from './interview.ts';
 import {Annotation,StateGraph,START,END} from "@langchain/langgraph";
 import {AsyncLocalStorage} from "node:async_hooks";
 import type {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
@@ -44,7 +46,10 @@ export function createPersistentResearchGraph(
    })
    .addNode("route",async state=>{
      const started=performance.now();
-     const route=await (deps.route?.(state.request.userMessage,state.researchResult?.shoppingPlan)??{kind:"SHOPPING_SEARCH" as const,search:true});
+     const previous=state.researchResult?.shoppingPlan;
+     const answer=deps.clarifyBeforeSearch&&interviewAnswer(state.request.userMessage,previous);
+     const follow=previous&&['다른 상품 보기','다른 제품 보기','조건 바꾸기'].includes(state.request.userMessage.trim());
+     const route=guardBrainMessage(state.request.userMessage)??(answer||follow?{kind:"SHOPPING_FOLLOWUP" as const,search:true}:await (deps.route?.(state.request.userMessage,state.researchResult?.shoppingPlan)??{kind:"SHOPPING_SEARCH" as const,search:true}));
      await verify();return {intentRoute:route,routeMs:performance.now()-started};
    })
    .addNode("converse",async state=>{
@@ -66,7 +71,13 @@ export function createPersistentResearchGraph(
      const shoppingPlan=await resolveTurnPlan(state.request,state.prepared,
        state.researchResult?.explanation ? state.researchResult.shoppingPlan : null,deps);
      await verify();
-     return {shoppingPlan};
+     return {shoppingPlan:deps.clarifyBeforeSearch?rememberInterview(shoppingPlan,state.request.userMessage,state.prepared.memories):shoppingPlan};
+   })
+   .addNode("clarify",async state=>{
+     const questions=needsInterview(state.shoppingPlan,state.request.userMessage,state.prepared.memories);
+     const plan={...state.shoppingPlan,interview:{...state.shoppingPlan.interview,answered:state.shoppingPlan.interview?.answered??[],pending:questions.map(q=>q.key)}};
+     const researchResult:ResearchResult={conversationId:state.request.conversationId,messageId:state.prepared.messageId,clientActionId:state.request.clientActionId,intentKind:state.intentRoute.kind,shoppingPlan:plan,datasetVersion:deps.datasetVersion,ranking:{ranked:[],referenceOnly:[],rejected:[],evaluatedCount:0},explanation:{kind:"CLARIFICATION",text:"더 잘 맞는 상품을 찾도록 필요한 조건만 알려주세요. 직접 입력하거나 상관없어요를 선택해도 좋아요.",items:[],limitations:[],clarification:{questions}},trace:{memoryMs:state.prepared.memoryMs,intentMs:performance.now()-state.prepared.startedAt-state.prepared.memoryMs,retrievalMs:0,rankMs:0,responseMs:0,totalMs:performance.now()-state.prepared.startedAt}};
+     await verify();return {shoppingPlan:plan,researchResult,evidence:[]};
    })
    .addNode("retrieve",async state=>{
      const fetched=await retrieveTurn(state.request,state.prepared,state.shoppingPlan,deps);
@@ -83,6 +94,10 @@ export function createPersistentResearchGraph(
            ranking:state.researchResult.ranking,evidence:state.evidence,plan:state.shoppingPlan})
          :buildGroundedExplanation(state.researchResult.ranking,state.evidence,state.shoppingPlan)
      };
+     if(researchResult.shoppingPlan){
+       const selected=researchResult.ranking.ranked.filter(row=>row.candidate.commerceVerified===true&&(researchResult.explanation.failure||researchResult.explanation.items.some(item=>item.productId===row.candidate.productId&&item.variantId===row.candidate.variantId)));
+       researchResult.shoppingPlan={...researchResult.shoppingPlan,lastDisplayedProductIds:[...new Set([...selected,...researchResult.ranking.referenceOnly].map(row=>row.candidate.productId))].slice(0,3)};
+     }
      researchResult.trace={...researchResult.trace,routeMs:state.routeMs,candidatesReadyMs:started-state.prepared.startedAt,responseMs:performance.now()-started,
        totalMs:performance.now()-state.prepared.startedAt};
      await verify();
@@ -92,7 +107,8 @@ export function createPersistentResearchGraph(
    .addEdge("prepare","route")
    .addConditionalEdges("route",state=>state.intentRoute.search?"plan":"converse",["plan","converse"])
    .addEdge("converse",END)
-   .addEdge("plan","retrieve")
+   .addConditionalEdges("plan",state=>deps.clarifyBeforeSearch&&needsInterview(state.shoppingPlan,state.request.userMessage,state.prepared.memories).length?"clarify":"retrieve",["clarify","retrieve"])
+   .addEdge("clarify",END)
    .addEdge("retrieve","respond")
    .addEdge("respond",END)
    .compile({checkpointer});

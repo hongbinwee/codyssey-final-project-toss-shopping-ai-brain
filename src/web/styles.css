@@ -1799,3 +1799,5 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
   border: none; background: none; color: var(--accent);
   font: inherit; font-weight: 600; cursor: pointer; padding: 0 4px;
 }
+
+.brain-interview fieldset{border:0;padding:0;margin:0 0 16px;min-width:0}.brain-interview legend{font-weight:600;margin-bottom:10px}.brain-explore{display:flex;gap:8px;flex-wrap:wrap}.brain-explore .btn{flex:1}.brain-product-reason{font-size:13px;line-height:1.55;color:var(--text-2)}.brain-rank{display:inline-block;margin-bottom:6px}

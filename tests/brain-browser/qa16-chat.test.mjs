@@ -12,7 +12,7 @@ test('chat sends immediately, retries the same action, separates conversations a
   const page=await browser.newPage({viewport:{width:390,height:844}});
   const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
   const requests=[];let release, fail=true, saved=false;const creations=[];let loseCreation=true;
-  const response=(conversation,text)=>({conversation_id:conversation,message_id:'33333333-3333-4333-8333-333333333333',read_only:true,shopping_plan:{query:text,maxTotalWon:20000,requiredConditions:[],revision:1},ranking:{ranked:[],referenceOnly:[],rejected:[],evaluatedCount:0},explanation:{text:'조건을 확인했어요.',kind:'NO_MATCH',items:[],limitations:[]},trace:{totalMs:7}});
+  const response=(conversation,text)=>({conversation_id:conversation,message_id:'33333333-3333-4333-8333-333333333333',read_only:true,shopping_plan:{query:text,maxTotalWon:20000,requiredConditions:[],revision:1},ranking:{ranked:[{candidate:{productId:'fixture',variantId:'variant',productName:'상품',commerceVerified:true,unitPriceWon:10000},score:1,evidenceCoverage:1}],referenceOnly:[],rejected:[],evaluatedCount:1},explanation:{text:'조건을 확인했어요.',kind:'VERIFIED_CANDIDATES',items:[{productId:'fixture',variantId:'variant',evidenceIds:['spec']}],limitations:[]},trace:{totalMs:7}});
   await page.route('http://127.0.0.1:39191/**',async route=>{
    const p=new URL(route.request().url()).pathname;
    const ok=data=>route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data})});

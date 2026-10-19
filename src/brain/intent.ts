@@ -32,6 +32,8 @@ discarded or starting a new unrelated shopping task.
 For a new unrelated product/category, use queryMode SET and budgetMode CLEAR
 unless the CURRENT user specifies a new budget.
 Do not infer a new numeric budget or manufacture a hard specification.
+The application asks missing recommendation conditions before retrieval. Preserve supplied
+plan constraints for short answers; do not invent a purpose or budget to avoid a question.
 Hard requirements may be added/replaced/cleared only when the current user says so.
 Do not copy long-term remembered preferences into currentPreferences: only
 preferences EXPLICIT in this user message belong there.

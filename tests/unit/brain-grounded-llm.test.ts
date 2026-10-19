@@ -61,7 +61,7 @@ test("multi-product synthetic answers announce the simulation caveat once",async
  const result=await mock.respond({originalQuestion:"두 상품의 리뷰를 비교해줘",plan:{...plan,requiredConditions:[]},ranking:rank(...candidates),evidence});
  assert.equal(result.kind,"LLM_GROUNDED");assert.equal(result.items.length,2);
  assert.equal((result.text.match(/시연용 가격·재고/g)??[]).length,1);
- assert.equal((result.text.match(/전체 평점이나 제품 성능·효능 점수/g)??[]).length,1);
+ assert.equal((result.text.match(/전체 평점이나 제품 성능·효능 점수/g)??[]).length,0);
 });
 
 test("model failures are classified without leaking errors or inventing evidence",async()=>{

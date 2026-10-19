@@ -124,7 +124,7 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
      await panel.getByRole("button",{name:"보내기"}).click();
      return panel.locator(".brain-turn").nth(count);
    };
-   const first=await send("모니터를 50만원 이하로 추천해줘");
+   const first=await send("업무용 모니터를 50만원 이하로 추천해줘");
    await first.locator(".brain-product-card").first().waitFor({timeout:25000});
    const currentPlan=async()=>{
      const r=await page.request.get('/api/brain/history');
