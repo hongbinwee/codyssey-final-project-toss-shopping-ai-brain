@@ -46,11 +46,11 @@ export function BrainRanking({ranking,explanation,onOpenProduct,onExcludeProduct
    <p className="muted sm">{ranked.length+references.length>rows.length?`${ranked.length+references.length}개 중 ${rows.length}개 표시`:`${rows.length}개 상품 표시`}</p>
    {simulated&&<p className="muted sm" role="note">검증 중인 데이터셋의 시연 비교예요. 리뷰 출처는 구분하며 가격·재고는 시연용입니다. 실제 주문·결제는 할 수 없어요.</p>}
    {rows.map(({candidate:p,reference,recommendationRole,personalizationSignals},index)=><article key={p.productId} className="brain-product-card">
-     <div className="brain-product-image"><span aria-hidden="true">상품 이미지</span>
+     <div className="brain-product-image">{!reference&&<span className="brain-rank">{index+1}순위</span>}<span aria-hidden="true">상품 이미지</span>
        {safeImage(p.productImage)&&<img src={safeImage(p.productImage)} alt={p.productName??"상품"} loading="lazy" referrerPolicy="no-referrer" onError={e=>{e.currentTarget.hidden=true;}}/>}</div>
-     <div className="brain-product-info">{!reference&&<span className="chip brain-rank">{index+1}순위</span>}{!reference&&recommendationLabel(recommendationRole)&&<p className="muted sm">{recommendationLabel(recommendationRole)}</p>}<b>{p.productName??"상품명 확인 중"}</b>
+     <div className="brain-product-info">{!reference&&recommendationLabel(recommendationRole)&&<p className="muted sm">{recommendationLabel(recommendationRole)}</p>}<b className="brain-product-name">{p.productName??"상품명 확인 중"}</b>
        {!!personalizationSignals?.length&&<p className="muted sm">맞춤 근거: {personalizationSignals.map(signal=>signal==="CART"?"장바구니":signal==="WISHLIST"?"찜":"구매 기록").join(" · ")}</p>}
-       <p>{money(p.unitPriceWon)?fmtWon(p.unitPriceWon):"가격 정보 확인 전"}</p>
+       <p className="brain-product-price">{money(p.unitPriceWon)?fmtWon(p.unitPriceWon):"가격 정보 확인 전"}</p>
        {recommendationRole==="REVIEW_VERIFIED"&&p.ratingScale===5&&typeof p.rating==="number"&&p.wholeReviewCountVerified===true&&typeof p.wholeReviewCount==="number"&&<p className="muted sm">평점 {p.rating.toFixed(1)}/5 · 상품 전체 리뷰 {p.wholeReviewCount}개 (3.5점 초과 · 10개 이상 기준)</p>}
        {recommendationRole==="PERSONALIZED"&&!personalizationSignals?.length&&<p className="muted sm">현재 조건과 검증된 상품 근거로 비교한 후보예요.</p>}
        {!explanation?.failure&&explanation?.items.find(i=>i.productId===p.productId&&(!i.variantId||i.variantId===p.variantId))?.reason&&<p className="brain-product-reason">{explanation.items.find(i=>i.productId===p.productId&&(!i.variantId||i.variantId===p.variantId))?.reason}</p>}
@@ -188,7 +188,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
    }finally{lock.current=false;setBusy(false);}
  };
  return <aside className="agent-panel brain-panel" aria-label="Shopping Brain Preview">
-   <div className="agent-head"><div><b>AI 쇼핑 도우미</b><div className="muted sm">조건과 리뷰 근거를 함께 살펴봐요</div></div><button className="link" onClick={onClose}>닫기</button></div>
+   <div className="agent-head"><div className="brain-brand"><span className="brain-avatar" aria-hidden="true">✦</span><div><b>AI 쇼핑 도우미</b><div className="muted sm">내 조건에 맞게, 근거는 분명하게</div></div></div><button className="link" onClick={onClose}>닫기</button></div>
    <div className="brain-conversations">
      <button className="btn" onClick={()=>void changeConversation()} disabled={busy||restoring}>새 대화 시작</button>
      <select aria-label="이전 대화" value="" disabled={busy||restoring} onChange={e=>{if(e.target.value)void changeConversation(e.target.value);}}>
@@ -204,9 +204,9 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
          <button className="link" disabled={busy} onClick={()=>retry(e)}>다시 시도</button>
          <button className="link" disabled={busy} onClick={()=>{setInput(e.text);setNotice("질문을 수정한 뒤 보내면 새로운 요청으로 처리해요.");}}>질문 수정</button>
        </div>}
-       {e.reply&&<><div className="msg ai"><p>{e.reply.explanation?.failure
+       {e.reply&&<><div className="brain-assistant-message"><span className="brain-avatar" aria-hidden="true">✦</span><div className="msg ai"><p>{e.reply.explanation?.failure
          ?friendlyFailure(e.reply.explanation.failure.code)+((e.reply.ranking.ranked.length+e.reply.ranking.referenceOnly.length)>0?" 아래 검색 결과는 확인할 수 있어요.":"")
-         :e.reply.explanation?.text??"상품 정보를 확인했어요."}</p></div>
+         :e.reply.explanation?.text??"상품 정보를 확인했어요."}</p></div></div>
          {e.reply.explanation?.kind!=="CONVERSATION"&&e.reply.explanation?.kind!=="CLARIFICATION"&&<BrainRanking explanation={e.reply.explanation} ranking={e.reply.ranking} onOpenProduct={onOpenProduct} onExcludeProduct={i===entries.length-1&&!busy?(id)=>sendChoice(`이 상품 제외: ${id}`):undefined}/>}
        </>}
      </div>)}
@@ -219,17 +219,17 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
          :<button className="btn primary" onClick={()=>void confirm()} disabled={busy}>이 선호를 기억하도록 확인</button>}
        <p className="muted sm">최종 확인 후에만 장기 기억에 저장돼요.</p>
      </div>}
-     {memories.length>0&&<div className="state-box"><b>저장된 장기 선호</b>
+     {memories.length>0&&<div className="state-box brain-memory"><b>저장된 장기 선호</b>
        {memories.map(m=><div key={m.key} className="muted sm">{preferenceLabels[m.key]??"저장된 선호"}: {priceLabels[m.value]??"설정됨"}</div>)}
        <button className="link" onClick={()=>void clear()} disabled={busy}>가격 선호 기억 삭제</button>
      </div>}
-     {interview.questions.length>0&&<section className="state-box brain-interview" aria-label="추천 조건 확인">{interview.questions.map(q=><fieldset key={q.key}><legend>{q.text}</legend><div className="brain-quick-choices">{q.choices.map(choice=><button key={choice} className="btn" disabled={busy||restoring} onClick={()=>sendChoice(choice)}>{choice}</button>)}</div></fieldset>)}<p className="muted sm">아래 입력창에 원하는 조건을 직접 적어도 좋아요.</p></section>}
+     {interview.questions.length>0&&<section className="state-box brain-interview" aria-label="추천 조건 확인"><div className="brain-interview-heading"><span className="brain-section-icon" aria-hidden="true">☷</span><div><span className="brain-eyebrow">맞춤 추천 준비</span><h3>원하는 조건을 알려주세요</h3></div></div>{interview.questions.map((q,index)=><fieldset key={q.key}><legend><span className="brain-question-number">{index+1}</span>{q.text}</legend><div className="brain-quick-choices">{q.choices.map(choice=><button key={choice} className="btn brain-choice" aria-label={choice} disabled={busy||restoring} onClick={()=>sendChoice(choice)}>{choice.replace(/^예산은 /,"")}</button>)}</div></fieldset>)}<p className="muted sm">아래 입력창에 원하는 조건을 직접 적어도 좋아요.</p></section>}
      {(entries.at(-1)?.reply?.ranking.ranked.length??0)>0&&!busy&&<div className="brain-explore"><button className="btn" disabled={restoring} onClick={()=>sendChoice("조건 바꾸기")}>조건 바꾸기</button><button className="btn" disabled={restoring} onClick={()=>sendChoice("다른 상품 보기")}>다른 상품 보기</button></div>}
      {notice&&<p role="status" className="muted sm">{notice}</p>}
      {error&&<p role="alert">{error}</p>}
      <div ref={bottom}/>
    </div>
-   <div className="agent-input"><input value={input} disabled={busy||restoring} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.nativeEvent.isComposing)send();}} placeholder="쇼핑 조건을 입력하세요"/>
-     <button className="btn primary" disabled={busy||restoring||!input.trim()} onClick={send}>보내기</button></div>
+   <div className="agent-input"><input value={input} disabled={busy||restoring} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.nativeEvent.isComposing)send();}} aria-label="메시지 또는 원하는 조건" placeholder="쇼핑 조건을 입력하세요"/>
+     <button className="btn primary brain-send" aria-label="보내기" disabled={busy||restoring||!input.trim()} onClick={send}><svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button></div>
  </aside>;
 }
