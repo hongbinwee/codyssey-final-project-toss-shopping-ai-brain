@@ -130,7 +130,16 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
    setEntries(previous=>[...previous,entry]);setInput("");void runEntry(entry);
  };
  const lastPrompt=entries.at(-1)?.text??"";
- const showEssenceBudget=/에센스|세럼/.test(lastPrompt)&&!/\d+\s*(?:만\s*)?원/.test(lastPrompt)&&!busy;
+ const lastReply=entries.at(-1)?.reply;
+  const visibleCandidates=[...(lastReply?.ranking.ranked??[]),...(lastReply?.ranking.referenceOnly??[])];
+  const candidateBands=[...new Set(visibleCandidates.flatMap(row=>{
+    const p=row.candidate;
+    if(!money(p.unitPriceWon)||!money(p.shippingFeeWon))return [];
+    const band=Math.floor((p.unitPriceWon+p.shippingFeeWon)/10000);
+    return band>=1&&band<=999?[band]:[];
+  }))].sort((a,b)=>a-b).slice(0,4);
+  const budgetChoices=(candidateBands.length?candidateBands:[1,2,3]).map(v=>`${v}만원대`);
+  const showEssenceBudget=lastReply?.intent_kind==="SHOPPING_SEARCH"&&!/\d+\s*(?:만\s*)?원/.test(lastPrompt)&&!busy;
  const showEssencePreference=/에센스|세럼/.test(lastPrompt)&&/\d+\s*만\s*원대/.test(lastPrompt)&&!busy;
  const send=()=>{
    const text=input.trim();if(!text||lock.current||restoring)return;
@@ -219,7 +228,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
        {memories.map(m=><div key={m.key} className="muted sm">{preferenceLabels[m.key]??"저장된 선호"}: {priceLabels[m.value]??"설정됨"}</div>)}
        <button className="link" onClick={()=>void clear()} disabled={busy}>가격 선호 기억 삭제</button>
      </div>}
-     {showEssenceBudget&&<div className="state-box" aria-label="에센스 가격대 선택"><b>가격대는 얼마를 생각하세요?</b><div className="brain-quick-choices">{["1만원대","2만원대","3만원대","상관없어요"].map(v=><button key={v} className="btn" disabled={busy||restoring} onClick={()=>sendChoice(v==="상관없어요"?"에센스를 찾고 있어요. 예산은 상관없어요.":`에센스를 ${v}에서 찾고 있어요. 이 가격대만 확인해 주세요.`)}>{v}</button>)}</div></div>}
+     {showEssenceBudget&&<div className="state-box" aria-label="상품 가격대 선택"><b>가격대는 얼마를 생각하세요?</b><div className="brain-quick-choices">{[...budgetChoices,"상관없어요"].map(v=><button key={v} className="btn" disabled={busy||restoring} onClick={()=>sendChoice(v==="상관없어요"?`${lastPrompt} 예산은 상관없어요.`:`${lastPrompt} ${v}에서 찾아줘. 이 가격대를 유지해줘.`)}>{v}</button>)}</div></div>}
      {showEssencePreference&&<div className="state-box" aria-label="에센스 사용 목적 선택"><b>에센스에서 가장 중요하게 생각하는 점은 무엇인가요?</b><div className="brain-quick-choices">{["보습","진정","산뜻한 사용감","상관없어요"].map(v=><button key={v} className="btn" disabled={busy||restoring} onClick={()=>sendChoice(v==="상관없어요"?"에센스의 기능 선호는 상관없어요. 이전 예산 범위는 유지해줘.":`에센스에서 ${v}을 중요하게 생각해요. 이전 예산 범위는 유지하고 추천해줘.`)}>{v}</button>)}</div></div>}
      {(entries.at(-1)?.reply?.ranking?.ranked?.length??0)>0&&!busy&&<button className="btn" disabled={restoring} onClick={()=>sendChoice("다른 제품 보기")}>다른 제품 보기 (방금 추천 제외)</button>}
      {notice&&<p role="status" className="muted sm">{notice}</p>}
