@@ -35,7 +35,21 @@ test("SQL activity lookup is actor-scoped and read-only",async()=>{
  const db={unsafe:async(q:string,args:unknown[])=>{calls.push({query:q,args});return [{product_id:"p-a"}];}};
  const result=await readCommerceActivity(db as never,"tester_05");
  assert.deepEqual(result,{wishlistProductIds:["p-a"],cartProductIds:["p-a"]});
- assert.equal(calls.length,2);
- assert.ok(calls.every(c=>c.args[0]==="tester_05"&&/^SELECT /i.test(c.query)));
+ assert.equal(calls.length,3);
+ assert.ok(calls.every(c=>/^SELECT /i.test(c.query)));
+ assert.ok(calls.filter(c=>c.args.length).every(c=>c.args[0]==="tester_05"));
  await assert.rejects(()=>readCommerceActivity(db as never,""),/invalid activity actor/);
+});
+
+test("purchase interest reads confirmed orders only when the signed-in DB role can read them",async()=>{
+ const queries:string[]=[];
+ const db={unsafe:async(q:string,args?:unknown[])=>{
+  queries.push(q);
+  if(q.includes("has_table_privilege"))return [{can_read:true}];
+  if(q.includes("FROM orders o")){assert.equal(args?.[0],"tester_05");assert.match(q,/o\.status='CONFIRMED'/);return [{product_id:"p-purchased"}];}
+  return [{product_id:"p-saved"}];
+ }};
+ const result=await readCommerceActivity(db as never,"tester_05");
+ assert.deepEqual(result.purchasedProductIds,["p-purchased"]);
+ assert.equal(queries.length,4);
 });
