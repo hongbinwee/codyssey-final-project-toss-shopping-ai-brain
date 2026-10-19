@@ -26,6 +26,8 @@ import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
 import {requireBrainV9Schema,type SchemaProbe} from "./schema-guard.ts";
 import {routeBrainMessage} from "./routing.ts";
+import {createDecisionsRouter} from "./decisions-route.ts";
+import {createConversationResponder} from "./conversation-response.ts";
 import {createFastIntentPort} from "./fast-intent.ts";
 import {currentDatasetResult} from "./dataset-state.ts";
 import type {ResearchResult} from "./read-flow.ts";
@@ -205,6 +207,15 @@ export async function createBrainRuntime(options:{
    saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
    const store=brainDatabaseFromPostgres(db);
    const conversations=new PersistentConversations(store),preferences=new PersistentPreferences(store);
+   const routeMode=process.env.BRAIN_ROUTE_MODE?.trim()||"rules";
+   if(routeMode!=="rules"&&routeMode!=="decisions")throw Error("BRAIN_ROUTE_MODE must be rules or decisions");
+   // The decisions mode uses ONLY Decisions: never run a rules pre-pass or fallback.
+   const route=routeMode==="decisions"?createDecisionsRouter({
+     apiKey:process.env.OPENAI_DECISIONS_API_KEY||process.env.OPENAI_API_KEY||"",
+     timeoutMs:Number(process.env.BRAIN_DECISIONS_TIMEOUT_MS??4000),
+     confidenceThreshold:Number(process.env.BRAIN_DECISIONS_CONFIDENCE??0.35),
+   }):routeBrainMessage;
+   const converse=createConversationResponder(options.provider);
    const groundedResponder=options.rag?.contract==="v4"
      ?createLlmGroundedResponder(options.provider):undefined;
    const catalog=createCatalog(options.catalogSource??"public");
@@ -215,7 +226,7 @@ export async function createBrainRuntime(options:{
      trustedCommerce.pathname==="/"+qaIdentity.database&&decodeURIComponent(trustedCommerce.username)===qaIdentity.role&&
      !trustedCommerce.search;
    const graph=createPersistentResearchGraph({
-     conversations,memory:preferences,route:routeBrainMessage,fastResponses:true,datasetVersion:options.rag?.datasetVersion,
+     conversations,memory:preferences,route,converse,fastResponses:true,datasetVersion:options.rag?.datasetVersion,
      ...(ownQaCommerce?{activity:(actorUserId:string)=>readCommerceActivity(sql,actorUserId)}:{}),
      retriever:options.rag?verifiedRagRetriever({...options.rag,catalogSource:options.catalogSource??"public"},catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
