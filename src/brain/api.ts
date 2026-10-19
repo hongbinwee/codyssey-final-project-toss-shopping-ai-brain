@@ -4,6 +4,7 @@ import type {ShoppingPlan} from "./shopping-plan.ts";
 import type {GroundedExplanation} from "./grounded-response.ts";
 import {BrainModelOutputError} from "./intent.ts";
 import type {BrainIntentKind} from "./routing.ts";
+import {executionMode} from "./execution-mode.ts";
 
 export interface BrainGraphPort {
   invoke(input:{actorUserId:string;conversationId:string;requestId:string;clientActionId:string;userMessage:string}):Promise<{
@@ -67,6 +68,7 @@ export function createBrainApi(deps:BrainApiDeps) {
       if(method==="POST"&&turn){
         if(!uuid(turn[1])||!required(body.user_message)||!required(body.client_action_id,128))
           return fail(400,"VALIDATION","대화·질문·작업 ID가 필요합니다");
+        if(executionMode(body.execution_mode)==="DEEP")return fail(501,"DEEP_NOT_AVAILABLE","꼼꼼한 비교 모드는 아직 준비 중입니다. 현재 상품 검색과 리뷰 비교를 이용해 주세요.");
         const started=performance.now();
         const result=await deps.graph.invoke({actorUserId,conversationId:turn[1],
           requestId:crypto.randomUUID(),clientActionId:body.client_action_id,userMessage:body.user_message});

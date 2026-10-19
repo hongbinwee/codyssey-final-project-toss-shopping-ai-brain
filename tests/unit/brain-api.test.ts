@@ -32,6 +32,13 @@ test("untrusted actor does not access any Brain method",async()=>{
  assert.equal(r.status,401);
  assert.deepEqual(logs,[]);
 });
+
+test("Deep remains unavailable and never invokes graph or memory",async()=>{
+ const {api,logs}=factory();
+ const response=await api("POST","/api/brain/conversations/"+id+"/turn","user-a",
+   {user_message:"꼼꼼하게 비교",client_action_id:"deep",execution_mode:"DEEP"});
+ assert.equal(response.status,501);assert.deepEqual(logs,[]);
+});
 test("conversation creation and read-only turn use server actor",async()=>{
  const {api,logs}=factory();
  const c=await api("POST","/api/brain/conversations","user-a",{});
