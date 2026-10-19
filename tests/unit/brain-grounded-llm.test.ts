@@ -42,6 +42,17 @@ const defaultQuote="착용감이 편하고 오래 사용해도 귀가 덜 아팠
 const cite=(productId="p-1",variantId="v-blue",sourceId="review-11",sourceKind="REAL",quote=defaultQuote)=>
  JSON.stringify({sourceKind,productId,variantId,sourceId,quote});
 
+test("multi-product synthetic answers announce the simulation caveat once",async()=>{
+ const candidates=[product("p-1","v-blue",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true}),product("p-2","v-blue",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true})];
+ const evidence=[proof("r-1","p-1","v-blue",{sourceKind:"SYNTHETIC",rating:5}),proof("r-2","p-2","v-blue",{sourceKind:"SYNTHETIC",rating:4})];
+ const claims=evidence.map(e=>({sourceKind:"SYNTHETIC",productId:e.productId,variantId:e.variantId,sourceId:e.sourceId,quote:defaultQuote,polarity:"PRO",claim:"착용감이 편했다는 의견이에요."}));
+ const mock=create(JSON.stringify({claims}));
+ const result=await mock.respond({originalQuestion:"두 상품의 리뷰를 비교해줘",plan:{...plan,requiredConditions:[]},ranking:rank(...candidates),evidence});
+ assert.equal(result.kind,"LLM_GROUNDED");assert.equal(result.items.length,2);
+ assert.equal((result.text.match(/시연용 가격·재고/g)??[]).length,1);
+ assert.equal((result.text.match(/전체 평점이나 제품 성능·효능 점수/g)??[]).length,1);
+});
+
 test("model failures are classified without leaking errors or inventing evidence",async()=>{
  for(const [error,code,status] of [[new Error("LLM timeout"),"MODEL_TIMEOUT",undefined],
    [new Error("LLM http 429"),"MODEL_RATE_LIMIT",429],[new Error("LLM http 403"),"MODEL_HTTP_ERROR",403],
@@ -60,8 +71,8 @@ test("empty grounded claims report that a suitable candidate was not verified",a
 });
 
 test("structured multi-product summaries cite exact synthetic sources and use Commerce prices",async()=>{
- const a=product("p-a","v-a",{sourceKind:"SYNTHETIC",isSimulated:true});
- const b=product("p-b","v-b",{sourceKind:"SYNTHETIC",isSimulated:true,unitPriceWon:80000});
+ const a=product("p-a","v-a",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true});
+ const b=product("p-b","v-b",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true,unitPriceWon:80000});
  const claims=[
    {productId:"p-a",variantId:"v-a",sourceKind:"SYNTHETIC",sourceId:"r-a",quote:"착용감이 편합니다.",polarity:"PRO",claim:"착용감이 편하다는 의견이 있어요."},
    {productId:"p-b",variantId:"v-b",sourceKind:"SYNTHETIC",sourceId:"r-b",quote:"연결이 가끔 끊깁니다.",polarity:"CON",claim:"연결이 끊긴다는 불편이 언급돼요."},
@@ -72,9 +83,10 @@ test("structured multi-product summaries cite exact synthetic sources and use Co
  const result=await create(JSON.stringify({claims})).respond(input);
  assert.equal(result.kind,"REFERENCE_ONLY");assert.equal(result.items.length,0);
  assert.deepEqual(result.citations?.map(c=>c.sourceId),["r-a","r-b"]);
- assert.match(result.text,/장점.*착용감/);assert.match(result.text,/주의.*연결/);
+ assert.match(result.text,/좋은 점.*착용감/);assert.match(result.text,/주의.*연결/);
  assert.match(result.text,/123,000원/);assert.match(result.text,/83,000원/);
- assert.match(result.text,/시연용 가격·재고/);assert.match(result.text,/추천 아님/);
+ assert.match(result.text,/시연용 가격·재고/);assert.match(result.text,/시연 데이터 참고/);
+ assert.doesNotMatch(result.text,/p-a|p-b|v-a|v-b|r-a|r-b/);
  assert.ok(result.limitations.some(x=>/의미|해석/.test(x)));
  for(const changed of [
    {...claims[0],sourceId:"r-b"}, {...claims[0],quote:"배터리가 완벽합니다."},
@@ -94,7 +106,8 @@ test("verified source selection contributes a citation while final price comes f
  assert.match(result.text,/120,000원/);
  assert.match(result.text,/3,000원/);
  assert.match(result.text,/123,000원/);
- assert.match(result.text,/review-11/);
+ assert.deepEqual(result.citations?.map(row=>row.sourceId),["review-11"]);
+ assert.doesNotMatch(result.text,/p-1|v-blue|review-11/);
  assert.match(result.text,/착용감이 편하고 오래 사용해도 귀가 덜 아팠습니다\./);
  assert.equal(result.text.includes("세상 최고"),false);
  assert.equal(mock.calls.length,1);
@@ -110,6 +123,62 @@ test("verified source selection contributes a citation while final price comes f
  assert.equal(request.originalQuestion,"무선 헤드폰을 찾고 있어요.");
  assert.deepEqual([request.candidates[0].unitPriceWon,request.candidates[0].shippingFeeWon],[120_000,3_000]);
  assert.equal(request.candidates[0].evidence[0].sourceId,"review-11");
+});
+
+test("approved QA synthetic ranked candidate reaches the model and its answer hides internal IDs",async()=>{
+ const quote="향이 순해서 좋아요";
+ const demo=product("p-demo","v-demo",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true});
+ const mock=create(cite("p-demo","v-demo","r-demo","SYNTHETIC",quote));
+ const result=await mock.respond({...ask(demo),evidence:[proof("r-demo","p-demo","v-demo",{
+   sourceKind:"SYNTHETIC",text:quote,
+ })]});
+ const request=JSON.parse(mock.calls[0].messages[1].content??"{}") as {
+   candidates:{productId:string;variantId:string;isSimulated:boolean}[];
+   referenceOnly:unknown[];
+ };
+ assert.deepEqual(request.candidates.map(row=>[row.productId,row.variantId,row.isSimulated]),
+  [["p-demo","v-demo",true]]);
+ assert.deepEqual(request.referenceOnly,[]);
+ assert.equal(result.kind,"LLM_GROUNDED");
+ assert.deepEqual(result.items.map(row=>[row.productId,row.variantId,row.totalPriceWon,row.evidenceIds]),
+  [["p-demo","v-demo",123_000,["r-demo"]]]);
+ assert.deepEqual(result.citations?.map(row=>row.sourceId),["r-demo"]);
+ assert.match(result.text,/시연 후보/);
+ assert.match(result.text,/실제 판매 정보가 아니며 주문·결제할 수 없습니다/);
+ assert.doesNotMatch(result.text,/p-demo|v-demo|r-demo|근거 ID|출처 ID/);
+ const instructions=mock.calls[0].messages.find(message=>message.role==="system")?.content??"";
+ assert.doesNotMatch(instructions,/Synthetic entries remain reference-only/);
+ assert.match(instructions,/A SYNTHETIC candidate may participate in ranking only when it appears in candidates/);
+});
+
+test("model candidates follow ranked-first product deduplication and the shared three-product cap",async()=>{
+ const makeDemo=(id:string,variant="v-"+id)=>product(id,variant,{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true});
+ const p1=makeDemo("p-one","v-one"),p1Other=makeDemo("p-one","v-one-other");
+ const p2=makeDemo("p-two"),p3=makeDemo("p-three"),p4=makeDemo("p-four"),p5=makeDemo("p-five");
+ const entries=(rows:ReturnType<typeof product>[])=>rows.map(candidate=>({candidate,score:.8,
+   evidenceCoverage:1,missingAspects:[],effectivePreferences:{}}));
+ const syntheticProof=(id:string,variant:string)=>proof("r-"+id,id,variant,{
+   sourceKind:"SYNTHETIC",text:"좋아요",
+ });
+ const respond=async(ranked:ReturnType<typeof product>[],references:ReturnType<typeof product>[])=>{
+   const mock=create(cite("p-one","v-one","r-p-one","SYNTHETIC","좋아요"));
+   const result=await mock.respond({...ask(),ranking:{ranked:entries(ranked),
+     referenceOnly:references.map(candidate=>({candidate,reasons:["reference"]})),
+     rejected:[],evaluatedCount:ranked.length+references.length} as unknown as RankingResult,
+     evidence:[...ranked,...references].map(candidate=>syntheticProof(candidate.productId,candidate.variantId))});
+   const request=JSON.parse(mock.calls[0].messages[1].content??"{}") as {
+     candidates:{productId:string;variantId:string}[];referenceOnly:{productId:string;variantId:string}[];
+   };
+   return {request,result};
+ };
+ const rankedFirst=await respond([p1,p1Other,p2,p3,p4],[p5]);
+ assert.deepEqual(rankedFirst.request.candidates.map(row=>row.productId),["p-one","p-two","p-three"]);
+ assert.deepEqual(rankedFirst.request.referenceOnly,[]);
+ assert.equal(rankedFirst.request.candidates.length+rankedFirst.request.referenceOnly.length,3);
+ const withReference=await respond([p1,p1Other,p2],[p2,p3,p4]);
+ assert.deepEqual(withReference.request.candidates.map(row=>row.productId),["p-one","p-two"]);
+ assert.deepEqual(withReference.request.referenceOnly.map(row=>row.productId),["p-three"]);
+ assert.equal(withReference.request.candidates.length+withReference.request.referenceOnly.length,3);
 });
 
 test("invented citations fail closed without exposing provider output",async()=>{
@@ -162,12 +231,13 @@ test("verified synthetic v4 evidence is quoted as reference-only with Commerce p
  assert.equal(result.kind,"REFERENCE_ONLY");
  assert.equal(result.items.length,0,"synthetic evidence must not be promoted to a recommendation");
  assert.match(result.text,/합성.*참고|참고.*합성/);
- assert.match(result.text,/추천 아님/);
+ assert.match(result.text,/시연 데이터 참고/);
  assert.match(result.text,/향이 순해서 좋아요/);
  assert.match(result.text,/120,000원/);
  assert.match(result.text,/3,000원/);
  assert.match(result.text,/123,000원/);
- assert.match(result.text,/사용자 필수 조건 충족은 확인되지 않았습니다/);
+ assert.match(result.text,/요청 조건 충족은 확인되지 않았어요/);
+ assert.doesNotMatch(result.text,/p-synthetic|v-blue|review-syn-1/);
  assert.deepEqual(result.citations?.map(x=>x.sourceKind),["SYNTHETIC"]);
  assert.equal(mock.calls.length,1);
  const request=JSON.parse(mock.calls[0].messages[1].content??"{}") as {candidates:unknown[];referenceOnly:{productId:string;variantId:string;datasetVersion:string;evidence:{sourceId:string;text:string}[]}[]};
@@ -177,8 +247,8 @@ test("verified synthetic v4 evidence is quoted as reference-only with Commerce p
  assert.equal(request.referenceOnly[0].datasetVersion,"qa-v4-2026-10");
  assert.equal(request.referenceOnly[0].evidence[0].sourceId,"review-syn-1");
  const instructions=mock.calls[0].messages.find(m=>m.role==="system")?.content??"";
- assert.match(instructions,/Synthetic evidence is allowed as a clearly labeled reference quotation/);
- assert.match(instructions,/do not return empty merely because the evidence is synthetic/);
+ assert.match(instructions,/Synthetic evidence may be summarized when its source label is retained/);
+ assert.match(instructions,/A SYNTHETIC candidate may participate in ranking only when it appears in candidates/);
 });
 
 test("three-character verified synthetic quote remains a Commerce-priced reference only",async()=>{
@@ -198,7 +268,7 @@ test("three-character verified synthetic quote remains a Commerce-priced referen
 });
 
 test("test catalog prices and stock remain explicitly simulated in the model input and answer",async()=>{
- const synthetic=product("p-demo","v-blue",{sourceKind:"SYNTHETIC",isSimulated:true});
+ const synthetic=product("p-demo","v-blue",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true});
  const mock=create(cite("p-demo","v-blue","r-demo","SYNTHETIC",defaultQuote));
  const result=await mock.respond({...ask(synthetic),ranking:{ranked:[],
    referenceOnly:[{candidate:synthetic,reasons:["synthetic"]}],rejected:[],evaluatedCount:1} as unknown as RankingResult,

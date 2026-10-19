@@ -99,6 +99,24 @@ test("ranking explanations never exceed the approved top three candidates",()=>{
   assert.ok(item.totalPriceWon>=0);
  }
 });
+test("grounded explanation deduplicates product cards and hides internal evidence IDs",()=>{
+ const first=mockCandidate("same"),sameProduct={...mockCandidate("same"),variantId:"v-same-other",facets:{}};
+ const others=[mockCandidate("b"),mockCandidate("c"),mockCandidate("d")];
+ const ev=[...evidence("same"),...evidence("b"),...evidence("c"),...evidence("d")];
+ const base=rankProducts([first,...others] as never,ev,ctx,[]);
+ const duplicate={...base.ranked[0],candidate:sameProduct};
+ const ranking={...base,ranked:[base.ranked[0],duplicate,...base.ranked.slice(1)]};
+ const result=buildGroundedExplanation(ranking,ev,ctx);
+ assert.deepEqual(result.items.map(item=>item.productId),["p-same","p-b","p-c"]);
+ assert.doesNotMatch(result.text,/p-same|v-same|p-b-performance/);
+});
+test("reference-only explanation counts the same three unique product slots as the UI",()=>{
+ const rows=["same","same","b","c","d"].map(id=>({candidate:mockCandidate(id),reasons:["unverified"]}));
+ const ranking={ranked:[],referenceOnly:rows,rejected:[],evaluatedCount:rows.length};
+ const result=buildGroundedExplanation(ranking as never,[],ctx);
+ assert.match(result.text,/3개 상품/);
+ assert.doesNotMatch(result.text,/5개 상품/);
+});
 test("invalid LLM output does not fallback to invented shopping intent",async()=>{
  for(const response of ["bad json","{}",JSON.stringify({
    query:"monitor",maxTotalWon:500000,requiredConditions:[],currentPreferences:{},

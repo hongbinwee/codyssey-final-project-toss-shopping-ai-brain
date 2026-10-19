@@ -77,3 +77,44 @@ test("missing soft attribute is disclosed without becoming a hard exclusion or s
  assert.ok(result.ranked[0].evidenceCoverage<1);
  assert.ok(result.ranked[0].score<result.ranked[0].evidenceCoverage);
 });
+
+test("approved QA synthetic candidates rank and respond to price priority only with exact verified evidence",()=>{
+ const version="qa-v4-demo";
+ const simulated=[
+  {...candidate("a",180000,.5,.5),conditions:{FHD:["spec-a"]},
+   facets:{retrieved_review_rating:{score:.6,evidenceIds:["rating-a"]}},sourceKind:"SYNTHETIC" as const,
+   datasetVersion:version,commerceVerified:true,isSimulated:true,qaRankingEligible:true},
+  {...candidate("b",440000,.9,.9),conditions:{FHD:["spec-b"]},
+   facets:{retrieved_review_rating:{score:1,evidenceIds:["rating-b"]}},sourceKind:"SYNTHETIC" as const,
+   datasetVersion:version,commerceVerified:true,isSimulated:true,qaRankingEligible:true},
+ ];
+ const demoEvidence=[
+  {id:"spec-a",productId:"p-a",variantId:"v-a",kind:"SPEC",sourceKind:"SYNTHETIC",verified:true,datasetVersion:version},
+  {id:"rating-a",sourceId:"review-a",productId:"p-a",variantId:"v-a",kind:"REVIEW",sourceKind:"SYNTHETIC",verified:true,datasetVersion:version,rating:3},
+  {id:"spec-b",productId:"p-b",variantId:"v-b",kind:"SPEC",sourceKind:"SYNTHETIC",verified:true,datasetVersion:version},
+  {id:"rating-b",sourceId:"review-b",productId:"p-b",variantId:"v-b",kind:"REVIEW",sourceKind:"SYNTHETIC",verified:true,datasetVersion:version,rating:5},
+ ] as Array<Record<string,unknown>>;
+ const context=(price_priority:"value"|"performance")=>({
+  maxTotalWon:500000,requiredConditions:["FHD"],currentPreferences:{price_priority},
+  category:"audio",attributePreferences:["battery_life"],
+ });
+ const value=rankProducts(simulated as never,demoEvidence as never,context("value"),[]);
+ const performance=rankProducts(simulated as never,demoEvidence as never,context("performance"),[]);
+ assert.deepEqual(value.ranked.map(row=>row.candidate.productId),["p-a","p-b"]);
+ assert.deepEqual(performance.ranked.map(row=>row.candidate.productId),["p-b","p-a"]);
+ assert.ok(performance.ranked[0].missingAspects.includes("battery_life"));
+
+ const publicScope=rankProducts(simulated.map(row=>({...row,isSimulated:false})) as never,
+  demoEvidence as never,context("value"),[]);
+ assert.equal(publicScope.ranked.length,0);
+ assert.equal(publicScope.referenceOnly.length,2);
+ const sourceOnly=rankProducts(simulated.map(row=>({...row,qaRankingEligible:false})) as never,
+  demoEvidence as never,context("value"),[]);
+ assert.equal(sourceOnly.ranked.length,0);
+ assert.equal(sourceOnly.referenceOnly.length,2,"simulated provenance alone never authorizes QA ranking");
+ const unverified=rankProducts([simulated[0]] as never,[
+  {...demoEvidence[0],verified:false},demoEvidence[1],
+ ] as never,context("value"),[]);
+ assert.equal(unverified.ranked.length,0);
+ assert.ok(unverified.rejected.some(row=>row.reasons.includes("unverified_required_condition:FHD")));
+});

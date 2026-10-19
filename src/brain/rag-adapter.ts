@@ -19,6 +19,8 @@ export interface RagConnection {
   token?:string;
   timeoutMs?:number;
   contract?:"brain-rag-v1"|"v4";
+  /** Server-only catalog scope. Omitted means public and cannot enable simulated ranking. */
+  catalogSource?:"public"|"test_items";
   datasetVersion?:string;
   category?:string;
 }
@@ -67,6 +69,7 @@ function text(v:unknown,max=160):v is string {
 function score(v:unknown):v is number{return typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=1;}
 function whole(v:unknown):v is number {return typeof v==="number"&&Number.isSafeInteger(v)&&v>=0;}
 const maxResponseBytes=400_000;
+const maxRagProducts=5;
 const pickRecord=(v:unknown):GroundedFacet|undefined=>{
   const x=obj(v);
   if(!x||!score(x.score)||!Array.isArray(x.evidenceIds)||x.evidenceIds.length===0||
@@ -78,7 +81,7 @@ const pickRecord=(v:unknown):GroundedFacet|undefined=>{
 export function parseV4Response(raw:unknown,expectedVersion:string):ParsedV4Response {
   const r=obj(raw);
   if(!text(expectedVersion,128)||!r||r.dataset_version!==expectedVersion||
-     !Array.isArray(r.items)||r.items.length>5)
+     !Array.isArray(r.items)||r.items.length>maxRagProducts)
     throw new Error("RAG v4 dataset version or response shape mismatch");
   const seenProducts=new Set<string>(),seenSources=new Set<string>();
   let evidenceCount=0;
@@ -132,7 +135,7 @@ function validV4ReviewRows(
        (row.variant_id!==null&&!text(row.variant_id,128))||
        typeof row.body!=="string"||
        (row.source_kind!=="REAL"&&row.source_kind!=="SYNTHETIC")||
-       typeof row.rating!=="number"||!Number.isFinite(row.rating)||
+       typeof row.rating!=="number"||!Number.isFinite(row.rating)||row.rating<1||row.rating>5||
        typeof row.source_ref!=="string"||typeof row.written_at!=="string")
       throw new Error("invalid Commerce review source");
     const expectedEvidence=expected.get(row.id);
@@ -144,6 +147,34 @@ function validV4ReviewRows(
     found.set(row.id,row as unknown as ReviewItem);
   }
   return found;
+}
+
+const notVerifiedMarker=/(?:미확인|미검증|미확정|unknown|unverified|unconfirmed|mock|historical)/i;
+const specMetadataKey=/(?:price|stock|variant|verified|evidence|source)/i;
+const negativeSpecValue=/(?:아니요|아니오|없음|불가|미지원|미포함|미적용|지원하지\s*않|불가능|not\s+(?:available|supported|included|verified)|false|no|off)/i;
+function usableCommerceSpec(key:string,value:string):boolean{
+  return text(key,160)&&text(value,500)&&!notVerifiedMarker.test(key+" "+value)&&
+    !specMetadataKey.test(key)&&!negativeSpecValue.test(value)&&!/^\s*0\s*$/.test(value)&&
+    !/^\s*[.…·_-]+\s*$/.test(value);
+}
+function normalizeFact(value:string):string{
+  return value.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/\s+/g,"");
+}
+function matchesCommerceCondition(key:string,value:string,condition:string):boolean{
+  const target=normalizeFact(condition);
+  if(!target)return false;
+  if(/(?:카테고리|category)/i.test(key)&&/(?:효능|효과|성능|개선|진정|치료)/.test(condition))return false;
+  return (normalizeFact(key)===target&&/^(?:true|yes|on|지원|가능|있음|해당)$/i.test(value.trim()))||normalizeFact(value)===target||
+    value.split(/[,/;|，、]+/).some(part=>normalizeFact(part)===target);
+}
+function verifiedCommerceImage(images:string[]):string|undefined{
+  for(const image of images){
+    if(!text(image,2048))continue;
+    try{
+      const url=new URL(image);
+      if(url.protocol==="https:"&&!url.username&&!url.password)return url.toString();
+    }catch{}
+  }
 }
 
 async function retrieveV4(
@@ -187,7 +218,7 @@ async function retrieveV4(
       const group=byVariant.get(entry.variantId)??[];
       group.push(entry);byVariant.set(entry.variantId,group);
       const source=reviews.get(entry.sourceId);
-      if(source)evidence.push({id:source.id,productId:source.product_id,variantId:source.variant_id,
+      if(source)evidence.push({id:source.id,productId:source.product_id,variantId:source.variant_id,rating:source.rating,
         kind:"REVIEW",sourceKind:source.source_kind,sourceRef:source.source_ref,
         text:entry.evidenceText,sourceId:entry.sourceId,verified:true,datasetVersion:parsed.datasetVersion});
     }
@@ -196,12 +227,40 @@ async function retrieveV4(
       if(!variant||variant.availability!=="AVAILABLE"||variant.stock_qty<=0)continue;
       const hasSynthetic=entries.some(e=>e.synthetic);
       const hasVerifiedSource=entries.some(e=>reviews.has(e.sourceId));
+      const catalogContext=got.data.catalog_context;
+      const isSimulated=catalogContext?.source==="test_items"&&catalogContext.read_only===true&&catalogContext.is_simulated===true;
+      const qaRankingEligible=connection.catalogSource==="test_items"&&isSimulated;
+      const specSourceKind=isSimulated?"SYNTHETIC":"REAL";
+      const specs={...got.data.product.specs,...variant.effective_specs};
+      const specFacts=Object.entries(specs).filter(([key,value])=>usableCommerceSpec(key,value)).slice(0,20)
+        .map(([key,value],index)=>{
+          const row:EvidenceRecord={id:`commerce-spec:${item.productId}:${variantId}:${index}`,
+            productId:item.productId,variantId,kind:"SPEC",sourceKind:specSourceKind,sourceRef:key,
+            text:value,verified:true,datasetVersion:parsed.datasetVersion};
+          evidence.push(row);return {key,value,id:row.id};
+        });
+      const conditions:Record<string,string[]>={};
+      for(const condition of input.requiredConditions){
+        const ids=specFacts.filter(row=>matchesCommerceCondition(row.key,row.value,condition)).map(row=>row.id);
+        if(ids.length)conditions[condition]=ids;
+      }
+      const ratingRows=entries.map(entry=>reviews.get(entry.sourceId)).filter((row):row is ReviewItem=>
+        !!row&&row.product_id===item.productId&&row.variant_id===variantId&&row.source_kind==="SYNTHETIC"&&
+        Number.isFinite(row.rating)&&row.rating>=1&&row.rating<=5);
+      const facets:ProductCandidate["facets"]={};
+      if(ratingRows.length)facets.retrieved_review_rating={
+        score:ratingRows.reduce((sum,row)=>sum+row.rating,0)/ratingRows.length/5,
+        evidenceIds:[...new Set(ratingRows.map(row=>row.id))],
+      };
+      const productImage=verifiedCommerceImage(got.data.product.images);
+      const keywords=specFacts.map(row=>`${row.key}: ${row.value}`).filter(value=>value.length<=128).slice(0,3);
       candidates.push({productName:got.data.product.name,productId:item.productId,variantId,
+        ...(productImage?{productImage}:{}),...(keywords.length?{keywords}:{}),
         unitPriceWon:variant.unit_price_won,shippingFeeWon:got.data.shipping_fee_won,
         rating:null,ratingScale:null,wholeReviewCount:null,wholeReviewCountVerified:false,
-        conditions:{},facets:{},sourceKind:hasSynthetic?"SYNTHETIC":hasVerifiedSource?"REAL":undefined,
+        conditions,facets,sourceKind:hasSynthetic?"SYNTHETIC":hasVerifiedSource?"REAL":undefined,
         datasetVersion:parsed.datasetVersion,commerceVerified:true,
-        ...(got.data.catalog_context?.is_simulated?{isSimulated:true}:{})});
+        ...(isSimulated?{isSimulated:true}:{}),...(qaRankingEligible?{qaRankingEligible:true}:{})});
     }
   }
   if(candidates.length>100)throw new Error("RAG v4 candidate limit");
@@ -213,7 +272,7 @@ async function retrieveV4(
       const value=measured?.[key];
       if(typeof value==="number"&&Number.isFinite(value)&&value>=0)trace[key]=value;
     }
-    trace.verifiedCandidateCount=candidates.length;trace.verifiedReviewCount=evidence.length;
+    trace.verifiedCandidateCount=candidates.length;trace.verifiedReviewCount=evidence.filter(row=>row.kind==="REVIEW").length;
   }
   return {candidates,evidence,...(Object.keys(trace).length?{trace}:{})};
 }
@@ -288,6 +347,8 @@ export function verifiedRagRetriever(
     throw new Error("RAG audited dataset ID required");
   if(contract==="v4"&&!text(connection.datasetVersion,128))
     throw new Error("RAG dataset version required");
+  if(connection.catalogSource!==undefined&&connection.catalogSource!=="public"&&connection.catalogSource!=="test_items")
+    throw new Error("invalid server catalog source");
   if(contract==="v4"&&!reviewLookup)throw new Error("RAG v4 ReviewLookup required");
   const timeout=connection.timeoutMs??8000;
   if(!Number.isSafeInteger(timeout)||timeout<100||timeout>20000)throw new Error("invalid RAG timeout");

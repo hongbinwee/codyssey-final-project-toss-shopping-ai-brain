@@ -28,22 +28,32 @@ function v4Response() {
   };
 }
 
-function productDetail(productId = "p-v4-1", variantId = "v-v4-1") {
+function productDetail(productId = "p-v4-1", variantId = "v-v4-1", options: {
+  simulatedCatalog?: boolean; images?: string[]; effectiveSpecs?: Record<string, string>;
+} = {}) {
   return ok({
+    ...(options.simulatedCatalog ? { catalog_context: {
+      source: "test_items" as const, read_only: true as const, is_simulated: true as const,
+    } } : {}),
     product: {
       id: productId, name: "Commerce product", brand: "Brand", category: "beauty",
-      description: "", images: [], specs: {}, active: true, version: 3,
+      description: "", images: options.images ?? [], specs: {}, active: true, version: 3,
       availability: "AVAILABLE" as const,
     },
     variants: [{
-      variant_id: variantId, option_values: {}, effective_specs: {},
+      variant_id: variantId, option_values: {}, effective_specs: options.effectiveSpecs ?? {},
       unit_price_won: 39_900, stock_qty: 4, availability: "AVAILABLE" as const, version: 2,
     }],
     shipping_fee_won: 3_000,
   }, "trace");
 }
 
-function review(overrides: Record<string, unknown> = {}) {
+type FixtureReview = {
+  id: string; product_id: string; variant_id: string; rating: number; body: string;
+  source_kind: "REAL" | "SYNTHETIC"; source_ref: string; written_at: string;
+};
+
+function review(overrides: Partial<FixtureReview> = {}): FixtureReview {
   return {
     id: "r-v4-1", product_id: "p-v4-1", variant_id: "v-v4-1",
     rating: 5, body: REVIEW_BODY, source_kind: "SYNTHETIC",
@@ -176,6 +186,16 @@ test("read-flow exposes only condition-unverified synthetic references and keeps
   assert.deepEqual(conditionOnly.result.ranking.referenceOnly[0].reasons, ["unverified_required_condition:민감성 피부"]);
   assert.deepEqual(conditionOnly.result.ranking.rejected, []);
 
+  const approvedQaButMissingCondition = await run(candidate({ isSimulated: true }), [{
+    id: "qa-review", sourceId: "qa-review", productId: "p-v4-1", variantId: "v-v4-1",
+    kind: "REVIEW", sourceKind: "SYNTHETIC", verified: true,
+    datasetVersion: DATASET_VERSION, rating: 5,
+  }]);
+  assert.equal(approvedQaButMissingCondition.result.ranking.ranked.length, 0);
+  assert.deepEqual(approvedQaButMissingCondition.result.ranking.referenceOnly, []);
+  assert.deepEqual(approvedQaButMissingCondition.result.ranking.rejected[0].reasons,
+    ["unverified_required_condition:민감성 피부"]);
+
   const overBudget = await run(candidate({ unitPriceWon: 120_000 }), [], 100_000);
   assert.equal(overBudget.result.ranking.ranked.length, 0);
   assert.deepEqual(overBudget.result.ranking.referenceOnly, []);
@@ -208,6 +228,7 @@ test("v4 request follows the fixed contract and only verified Commerce data beco
         contract: "v4",
         datasetVersion: DATASET_VERSION,
         category: "beauty",
+        catalogSource: "test_items",
         timeoutMs: 1_000,
       },
       async ({ product_id }: { product_id: string }) => {
@@ -249,6 +270,7 @@ test("v4 request follows the fixed contract and only verified Commerce data beco
     top_k: 5,
   });
   assert.equal(Object.hasOwn(requestBody!, "profile"), false);
+  assert.equal(Object.hasOwn(requestBody!, "catalogSource"), false);
   assert.equal(commerceCalls, 1);
   assert.equal(reviewCalls, 1);
   assert.equal(result.candidates.length, 1);
@@ -258,8 +280,11 @@ test("v4 request follows the fixed contract and only verified Commerce data beco
   assert.equal(result.candidates[0].wholeReviewCount, null);
   assert.equal(result.candidates[0].wholeReviewCountVerified, false);
   assert.equal(result.candidates[0].sourceKind, "SYNTHETIC");
+  assert.equal(result.candidates[0].isSimulated, undefined, "public/default scope cannot enable simulated ranking");
   assert.equal(result.candidates[0].datasetVersion, DATASET_VERSION);
-  assert.deepEqual(result.candidates[0].facets, {});
+  assert.deepEqual(result.candidates[0].facets, { retrieved_review_rating: {
+    score: 1, evidenceIds: ["r-v4-1"],
+  } });
   assert.equal(result.evidence.length, 1);
   assert.equal(result.evidence[0].id, "r-v4-1");
   assert.equal(result.evidence[0].sourceId, "r-v4-1");
@@ -267,6 +292,62 @@ test("v4 request follows the fixed contract and only verified Commerce data beco
   assert.equal(result.evidence[0].verified, true);
   assert.equal(result.evidence[0].sourceKind, "SYNTHETIC");
   assert.equal(result.evidence[0].datasetVersion, DATASET_VERSION);
+});
+
+test("QA v4 maps only verified Commerce conditions and uses exact retrieved ratings as a synthetic facet", async () => {
+  const payload = v4Response();
+  payload.items[0].evidence.push({
+    source_id: "r-v4-2", evidence_text: "피부가 편안하고",
+    source_metadata: { variant_id: "v-v4-1", source_kind: "SYNTHETIC", synthetic: true },
+  });
+  let requestBody: Record<string, unknown> | undefined;
+  const retriever = rag.verifiedRagRetriever({ endpoint: "http://127.0.0.1:7888/rag",
+    contract: "v4", datasetVersion: DATASET_VERSION, category: "beauty", catalogSource: "test_items" },
+    async ({ product_id }) => productDetail(product_id, "v-v4-1", {
+      simulatedCatalog: true, images: ["https://cdn.example.test/cream.png"],
+      effectiveSpecs: {
+        scent: "무향",
+        "원본 목록 세부 카테고리": "스킨케어/메이크업",
+        "상품명 표기 용량 (SKU 미확인)": "200ml",
+        "상품명 표기 제품 유형 (미확인)": "...",
+        real_stock_verified: "false",
+        real_variant_verified: "false",
+        price_evidence: "MOCK_HISTORICAL",
+        fragrance_free: "아니요",
+      },
+    }), async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify(payload), { status: 200,
+        headers: { "content-type": "application/json" } });
+    }, async ({ product_id, review_ids }) => [
+      review({ id: "r-v4-1", product_id, rating: 4, body: REVIEW_BODY }),
+      review({ id: "r-v4-2", product_id, rating: 2, body: "피부가 편안하고 자극이 적습니다." }),
+    ]);
+
+  const result = await retriever.search({ requestId: "request-1", originalQuestion: "무향 크림",
+    query: "크림", maxTotalWon: null,
+    requiredConditions: ["무향", "200ml", "false", "MOCK_HISTORICAL", "아니요", "피부 효능"] });
+  const candidate = result.candidates[0];
+  assert.equal(candidate.sourceKind, "SYNTHETIC");
+  assert.equal(candidate.isSimulated, true);
+  assert.equal(candidate.commerceVerified, true);
+  assert.equal(candidate.productImage, "https://cdn.example.test/cream.png");
+  assert.ok(candidate.keywords?.includes("scent: 무향"));
+  assert.ok(!candidate.keywords?.some(value => /200ml|false|MOCK_HISTORICAL|아니요/.test(value)));
+  assert.deepEqual(Object.keys(candidate.conditions), ["무향"]);
+  const condition = result.evidence.find(row => row.id === candidate.conditions["무향"]?.[0]);
+  assert.deepEqual([condition?.kind, condition?.productId, condition?.variantId,
+    condition?.sourceKind, condition?.verified, condition?.datasetVersion],
+  ["SPEC", "p-v4-1", "v-v4-1", "SYNTHETIC", true, DATASET_VERSION]);
+  assert.deepEqual(Object.keys(candidate.facets), ["retrieved_review_rating"]);
+  assert.equal(candidate.facets.retrieved_review_rating?.score, 0.6);
+  assert.deepEqual(candidate.facets.retrieved_review_rating?.evidenceIds, ["r-v4-1", "r-v4-2"]);
+  assert.deepEqual(result.evidence.filter(row => row.kind === "REVIEW").map(row => row.rating), [4, 2]);
+  assert.equal(candidate.rating, null);
+  assert.equal(candidate.wholeReviewCountVerified, false);
+  assert.deepEqual(requestBody?.preferences, []);
+  assert.equal(requestBody?.top_k, 5);
+  assert.equal(Object.hasOwn(requestBody ?? {}, "isSimulated"), false);
 });
 
 test("getReviewsByIds scopes parameterized lookup to the exact product and review IDs", async () => {
@@ -338,6 +419,33 @@ const searchInput = {
   requiredConditions: [],
 };
 
+test("a matching spec key alone cannot prove a mandatory condition with a different value", async()=>{
+  const retriever=makeV4Retriever({getProduct:async()=>productDetail("p-v4-1","v-v4-1",{
+    effectiveSpecs:{"무향":"유향",skin_type:"민감성 피부",waterproof:"true"},
+  })});
+  const result=await retriever.search({...searchInput,requiredConditions:["무향","민감성 피부","waterproof"]});
+  const conditions=result.candidates[0].conditions as Record<string,string[]>;
+  assert.equal(conditions["무향"],undefined);
+  assert.ok(conditions["민감성 피부"].length>0);
+  assert.ok(conditions.waterproof.length>0);
+});
+
+test("simulation provenance stays true even when the server has not authorized QA ranking",async()=>{
+  const retriever=makeV4Retriever({getProduct:async()=>productDetail("p-v4-1","v-v4-1",{simulatedCatalog:true})});
+  const result=await retriever.search(searchInput);
+  assert.equal(result.candidates[0].isSimulated,true);
+  assert.notEqual(result.candidates[0].qaRankingEligible,true);
+});
+
+test("local trace counts reviews separately from Commerce spec evidence",async()=>{
+  const retriever=rag.verifiedRagRetriever({mode:"local",endpoint:"http://127.0.0.1/local",contract:"v4",datasetVersion:DATASET_VERSION,catalogSource:"test_items"},
+    async()=>productDetail("p-v4-1","v-v4-1",{simulatedCatalog:true,effectiveSpecs:{scent:"무향",finish:"보송"}}),
+    rag.localRagFetcher(async()=>v4Response()),async()=>[review()]);
+  const result=await retriever.search(searchInput);
+  assert.equal(result.evidence.length,3);
+  assert.equal(result.trace?.verifiedReviewCount,1);
+});
+
 test("v4 parser rejects another version and duplicate product or source IDs but accepts zero items", () => {
   const parse = (rag as unknown as {
     parseV4Response?: (raw: unknown, expectedVersion: string) => { items: unknown[] };
@@ -356,6 +464,12 @@ test("v4 parser rejects another version and duplicate product or source IDs but 
   assert.throws(() => parse(duplicateSource, DATASET_VERSION), /duplicate/i);
 
   assert.deepEqual(parse({ dataset_version: DATASET_VERSION, items: [] }, DATASET_VERSION).items, []);
+  const fiveItems={dataset_version:DATASET_VERSION,items:Array.from({length:5},(_,index)=>({
+    product_id:`p-${index}`,rrf_score:.5,evidence:[],
+  }))};
+  assert.equal(parse(fiveItems,DATASET_VERSION).items.length,5);
+  const sixItems={...fiveItems,items:[...fiveItems.items,{product_id:"p-5",rrf_score:.5,evidence:[]}]};
+  assert.throws(()=>parse(sixItems,DATASET_VERSION),/shape|limit/i);
 });
 
 test("v4 requires an exact configured version and ReviewLookup", () => {

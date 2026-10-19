@@ -38,6 +38,7 @@ function isConditionOnlySyntheticReference(
 ):boolean {
  const candidate=blocked.candidate;
  if(candidate.commerceVerified!==true||candidate.sourceKind!=="SYNTHETIC"||
+    candidate.isSimulated===true||
     typeof candidate.datasetVersion!=="string"||!candidate.datasetVersion||
     requiredConditions.length===0||blocked.reasons.length===0||
     !blocked.reasons.every(reason=>reason.startsWith("unverified_required_condition:")))return false;

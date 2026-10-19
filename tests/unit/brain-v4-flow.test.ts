@@ -171,8 +171,8 @@ test("mocked v4 read-flow to grounded response stays reference-only without runn
   assert.equal(answer.kind, "REFERENCE_ONLY");
   assert.equal(answer.items.length, 0);
   assert.equal(answer.citations?.[0]?.quote, quote);
-  assert.match(answer.text, /추천 아님/);
-  assert.match(answer.text, /장점: 향이 순하다는 의견/);
+  assert.match(answer.text, /시연 데이터 참고/);
+  assert.match(answer.text, /향이 순하다는 의견/);
   assert.match(answer.text, /39,900원.*3,000원.*42,900원/);
   assert.deepEqual([providerCalls, ragCalls, commerceCalls, reviewCalls], [2, 1, 1, 1]);
 });
@@ -194,7 +194,7 @@ test("local opt-in preserves remote config and rejects incomplete or network-fal
  assert.equal(calls,1);
 });
 
-test("LangGraph runs two v4 turns with memory checkpointing and keeps synthetic evidence reference-only", async () => {
+test("LangGraph ranks server-approved QA v4 candidates and preserves plan while grounding synthetic sources", async () => {
   let providerCalls = 0, messageCount = 0, ragCalls = 0, commerceCalls = 0, reviewCalls = 0;
   const ragRequests: Record<string, unknown>[] = [];
   const quote = "향이 순해서 좋아요.";
@@ -217,11 +217,15 @@ test("LangGraph runs two v4 turns with memory checkpointing and keeps synthetic 
     rrf_score: 0.9, evidence: [{ source_id: "r-v4-1", evidence_text: quote,
       source_metadata: { variant_id: "v-v4-1", source_kind: "SYNTHETIC", synthetic: true } }] }] };
   const retriever = verifiedRagRetriever({ endpoint: "http://127.0.0.1:7888/rag", contract: "v4",
-    datasetVersion: "fixture-v4-version", category: "beauty" }, async ({ product_id }) => {
+    datasetVersion: "fixture-v4-version", category: "beauty", catalogSource: "test_items" }, async ({ product_id }) => {
     commerceCalls++;
-    return ok({ product: { id: product_id, name: "Demo 보습 크림", brand: "Demo", category: "beauty",
+    return ok({ catalog_context: { source: "test_items", read_only: true, is_simulated: true },
+      product: { id: product_id, name: "Demo 보습 크림", brand: "Demo", category: "beauty",
       description: "", images: [], specs: {}, active: true, version: 1, availability: "AVAILABLE" as const },
-      variants: [{ variant_id: "v-v4-1", option_values: {}, effective_specs: {}, unit_price_won: 39900,
+      variants: [{ variant_id: "v-v4-1", option_values: {}, effective_specs: {
+        skin_type: "민감성 피부", real_stock_verified: "false", real_variant_verified: "false",
+        "상품명 표기 용량 (SKU 미확인)": "200ml", price_evidence: "MOCK_HISTORICAL",
+      }, unit_price_won: 39900,
         stock_qty: 2, availability: "AVAILABLE" as const, version: 1 }], shipping_fee_won: 3000 }, "trace");
   }, async (url, init) => {
     ragCalls++;
@@ -252,19 +256,24 @@ test("LangGraph runs two v4 turns with memory checkpointing and keeps synthetic 
   const second = await graph.invoke({ actorUserId: "user-1", conversationId: "conversation-1",
     requestId: "request-2", clientActionId: "action-2", userMessage: "보습감도 알려줘" });
   for (const result of [first, second]) {
-    assert.equal(result.ranking.ranked.length, 0);
-    assert.equal(result.ranking.referenceOnly.length, 1);
-    assert.equal(result.explanation?.kind, "REFERENCE_ONLY");
-    assert.equal(result.explanation?.items.length, 0);
+    assert.equal(result.ranking.ranked.length, 1);
+    assert.equal(result.ranking.ranked[0].candidate.isSimulated, true);
+    assert.equal(result.ranking.referenceOnly.length, 0);
+    assert.equal(result.explanation?.kind, "LLM_GROUNDED");
+    assert.deepEqual(result.explanation?.items.map(item => [item.productId, item.variantId,
+      item.totalPriceWon, item.evidenceIds]), [["p-v4-1", "v-v4-1", 42_900, ["r-v4-1"]]]);
     assert.deepEqual(result.explanation?.citations?.map(c => [c.sourceId, c.sourceKind, c.quote]),
       [["r-v4-1", "SYNTHETIC", quote]]);
-    assert.match(result.explanation?.text ?? "", /추천 아님/);
+    assert.match(result.explanation?.text ?? "", /시연 후보 순위에 포함됐어요/);
     assert.match(result.explanation?.text ?? "", /39,900원.*3,000원.*42,900원/);
+    assert.doesNotMatch(result.explanation?.text ?? "", /p-v4-1|v-v4-1|r-v4-1/);
   }
   assert.equal(first.shoppingPlan?.maxTotalWon, 50000);
   assert.deepEqual(first.shoppingPlan?.requiredConditions, ["민감성 피부"]);
   assert.equal(second.shoppingPlan?.maxTotalWon, 50000);
   assert.deepEqual(second.shoppingPlan?.requiredConditions, ["민감성 피부"]);
   assert.deepEqual(ragRequests.map(r => r.required_conditions), [["민감성 피부"], ["민감성 피부"]]);
+  assert.deepEqual(ragRequests.map(r => [r.preferences, r.top_k]), [[[ ], 5], [[ ], 5]]);
+  assert.ok(ragRequests.every(r => !Object.hasOwn(r, "isSimulated")));
   assert.deepEqual([providerCalls, ragCalls, commerceCalls, reviewCalls, messageCount], [4, 2, 2, 2, 2]);
 });

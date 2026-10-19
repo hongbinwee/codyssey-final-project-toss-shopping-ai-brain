@@ -27,6 +27,12 @@ export function routeBrainMessage(message:string,previous?:ShoppingPlan):BrainRo
  if(!shopping&&/(?:내|제|주문번호|주문\s*(?:취소|변경|내역|조회)|환불|반품|교환\s*(?:신청|접수)|배송\s*(?:조회|추적|상태))/.test(text)&&
    /주문|취소|환불|반품|교환|배송/.test(text))
   return {kind:"CS_REQUEST",search:false,text:"주문·배송·취소는 해당 주문 화면에서 확인해 주세요. 이 쇼핑 대화에서는 주문 변경이나 환불을 실행하지 않아요. 현재 시연 상품은 주문·결제가 차단돼 있어요."};
+ const useCase=text.match(/(샤워(?:\s*할\s*때)?|운동(?:\s*할\s*때)?|잠(?:\s*잘\s*때)?|출근(?:\s*할\s*때)?|세안(?:\s*할\s*때)?|여행(?:\s*갈\s*때)?)/);
+ const genericUseTarget=/(?:쓸|쓰는|사용할|사용하는|쓰려는)\s*(?:제품|상품|거|것|걸)|(?:쓰고|사용하고)\s*싶.{0,8}(?:제품|상품|거|것|걸)/;
+ if(useCase&&(genericUseTarget.test(text)||
+    /(?:상품|제품).{0,12}(?:모르겠|정하지\s*못|정해지지)/.test(text)&&
+    /(?:쓰고\s*싶|사용하고\s*싶|쓸\s*제품|쓰려)/.test(text)))
+  return {kind:"UNCERTAIN",search:false,text:`어떤 상품을 ${useCase[1]} 쓰고 싶으세요?`};
  if(/^(도와줘|도와주세요|뭐|음|글쎄|추천해\s*줘|골라\s*줘|아무거나|그거)$/i.test(text)&&!previous)
   return {kind:"UNCERTAIN",search:false,text:"어떤 상품을 찾으세요? 상품 종류와 대략적인 예산부터 알려주시면 돼요."};
  if(/리뷰|후기|장단점|비교/.test(text))return {kind:"REVIEW_COMPARE",search:true};

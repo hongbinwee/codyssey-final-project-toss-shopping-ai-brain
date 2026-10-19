@@ -1,6 +1,7 @@
 import type {Aspect,BrainTrace,EvidenceRecord,MemoryRepository,Preference,PreferenceKey,PreferenceValue,ProductCandidate,RankedCandidate,RankingResult,ShoppingContext} from "./contracts.ts";
 import {assertPreference} from "./memory.ts";
 const defaults:Record<PreferenceKey,PreferenceValue>={price_priority:"balanced",eye_comfort:"normal",noise_sensitivity:"normal"};
+const retrievedRatingFacet="retrieved_review_rating";
 type Dimension="cost"|Aspect;
 const money=(n:number|null)=>n!==null&&Number.isSafeInteger(n)&&n>=0;
 export function effectivePreferences(memories:Preference[],current:ShoppingContext["currentPreferences"]):Record<PreferenceKey,PreferenceValue>{
@@ -11,6 +12,7 @@ export function effectivePreferences(memories:Preference[],current:ShoppingConte
 }
 function dimensionsFor(ctx:ShoppingContext,p:Record<PreferenceKey,PreferenceValue>,available:string[]):{facets:Aspect[];weights:Record<string,number>}{
  const requested=[...new Set(ctx.attributePreferences?.length?ctx.attributePreferences:available)];
+ if(available.includes(retrievedRatingFacet)&&!requested.includes(retrievedRatingFacet))requested.push(retrievedRatingFacet);
  if((ctx.category!==undefined&&!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(ctx.category))||requested.length>25||
    requested.some(key=>!/^(?!cost$)[a-z][a-z0-9_]{0,79}$/.test(key)))throw Error("invalid category attributes");
  const cost=requested.length?(p.price_priority==="value"?.75:p.price_priority==="performance"?.15:.4):1;
@@ -28,11 +30,35 @@ export function eligibility(p:ProductCandidate):string[]{
  if(!p.wholeReviewCountVerified||p.wholeReviewCount===null||!Number.isInteger(p.wholeReviewCount)||p.wholeReviewCount<0)r.push("whole_review_count_unverified");
  return r;
 }
-function evidenceValid(ids:string[],p:ProductCandidate,idx:Map<string,EvidenceRecord>,duplicates:Set<string>){
+function evidenceValid(ids:string[],p:ProductCandidate,idx:Map<string,EvidenceRecord>,duplicates:Set<string>,
+ options:{condition?:boolean;ratingFacet?:boolean}={}):boolean{
+ const simulated=p.sourceKind==="SYNTHETIC"||p.isSimulated===true;
  return ids.length>0&&ids.every(id=>{
   const e=idx.get(id);
-  return !!e&&!duplicates.has(id)&&e.productId===p.productId&&(e.variantId===null||e.variantId===p.variantId)&&(e.kind!=="REVIEW"||e.sourceKind==="REAL");
+  if(!e||duplicates.has(id)||e.productId!==p.productId||
+    (simulated?e.variantId!==p.variantId:e.variantId!==null&&e.variantId!==p.variantId)||
+    (options.condition&&e.kind!=="SPEC"))return false;
+  if(simulated){
+    if(e.verified!==true||e.datasetVersion!==p.datasetVersion||e.sourceKind!=="SYNTHETIC")return false;
+    if(e.kind==="REVIEW"&&(!options.ratingFacet||!Number.isFinite(e.rating)||e.rating!<1||e.rating!>5))return false;
+  }else if(e.kind==="REVIEW"&&e.sourceKind!=="REAL")return false;
+  return true;
  });
+}
+function approvedSimulatedCandidate(p:ProductCandidate,idx:Map<string,EvidenceRecord>,duplicates:Set<string>):boolean{
+ if(p.sourceKind!=="SYNTHETIC"||p.isSimulated!==true||p.qaRankingEligible!==true||p.commerceVerified!==true||
+   typeof p.datasetVersion!=="string"||!p.datasetVersion)return false;
+ return [...idx.values()].some(e=>!duplicates.has(e.id)&&e.productId===p.productId&&
+   e.variantId===p.variantId&&e.kind==="REVIEW"&&e.sourceKind==="SYNTHETIC"&&e.verified===true&&
+   e.datasetVersion===p.datasetVersion&&Number.isFinite(e.rating)&&e.rating!>=1&&e.rating!<=5);
+}
+function validRetrievedRatingFacet(f:NonNullable<ProductCandidate["facets"][string]>,p:ProductCandidate,
+ idx:Map<string,EvidenceRecord>,duplicates:Set<string>):boolean{
+ if(!approvedSimulatedCandidate(p,idx,duplicates)||
+   !evidenceValid(f.evidenceIds,p,idx,duplicates,{ratingFacet:true}))return false;
+ const rows=f.evidenceIds.map(id=>idx.get(id)!);
+ const mean=rows.reduce((sum,row)=>sum+row.rating!/5,0)/rows.length;
+ return Math.abs(mean-f.score)<1e-9;
 }
 /** Fixed global denominator; missing evidence cannot improve a candidate's score. */
 export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceRecord[],ctx:ShoppingContext,memories:Preference[]):RankingResult{
@@ -55,10 +81,19 @@ export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceReco
   if(!money(p.unitPriceWon)||!money(p.shippingFeeWon))reasons.push("price_or_shipping_unverified");
   const total=money(p.unitPriceWon)&&money(p.shippingFeeWon)?p.unitPriceWon!+p.shippingFeeWon!:null;
   if(ctx.maxTotalWon!==null&&total!==null&&total>ctx.maxTotalWon)reasons.push("over_total_budget");
-  for(const condition of ctx.requiredConditions)if(!evidenceValid(p.conditions[condition]??[],p,idx,duplicates))reasons.push("unverified_required_condition:"+condition);
-  for(const [facet,f] of Object.entries(p.facets)){if(f&&(!/^[a-z][a-z0-9_]{0,79}$/.test(facet)||!Number.isFinite(f.score)||f.score<0||f.score>1||!evidenceValid(f.evidenceIds,p,idx,duplicates)))reasons.push("invalid_or_cross_product_facet:"+facet);}
+  for(const condition of ctx.requiredConditions)if(!evidenceValid(p.conditions[condition]??[],p,idx,duplicates,{condition:true}))reasons.push("unverified_required_condition:"+condition);
   if(reasons.length){rejected.push({candidate:p,reasons});continue;}
-  if(p.sourceKind==="SYNTHETIC"||p.isSimulated){referenceOnly.push({candidate:p,reasons:["synthetic_or_simulated_reference"]});continue;}
+  if(p.sourceKind==="SYNTHETIC"||p.isSimulated){
+   if(!approvedSimulatedCandidate(p,idx,duplicates)){
+    referenceOnly.push({candidate:p,reasons:["synthetic_or_simulated_reference"]});continue;
+   }
+  }
+  for(const [facet,f] of Object.entries(p.facets)){
+   const invalid=!/^[a-z][a-z0-9_]{0,79}$/.test(facet)||!f||!Number.isFinite(f.score)||f.score<0||f.score>1||
+    (facet===retrievedRatingFacet?!validRetrievedRatingFacet(f,p,idx,duplicates):!evidenceValid(f.evidenceIds,p,idx,duplicates));
+   if(invalid)reasons.push("invalid_or_cross_product_facet:"+facet);
+  }
+  if(reasons.length){rejected.push({candidate:p,reasons});continue;}
   const signals:{name:Dimension;weight:number;score:number}[]=[];
   if(total!==null){
    const costScore=ctx.maxTotalWon!==null?(ctx.maxTotalWon>0?Math.max(0,1-total/ctx.maxTotalWon):0)
@@ -73,7 +108,8 @@ export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceReco
   const coverage=signals.reduce((a,b)=>a+b.weight,0)/denom;
   const score=.9*signals.reduce((a,b)=>a+b.weight*b.score,0)/denom+.07*rating+.03*count;
   ranked.push({candidate:p,score,evidenceCoverage:coverage,missingAspects:activeFacets.filter(f=>!p.facets[f]),effectivePreferences:{...pref},
-    limitations:[...eligibility(p),...activeFacets.filter(f=>!p.facets[f]).map(f=>"attribute_unverified:"+f)]});
+    limitations:[...eligibility(p),...activeFacets.filter(f=>!p.facets[f]).map(f=>"attribute_unverified:"+f),
+      ...(p.facets[retrievedRatingFacet]?["retrieved_synthetic_review_rating_sample_only"]:[])]});
  }
  ranked.sort((a,b)=>b.score-a.score);
  return {ranked,referenceOnly,rejected,evaluatedCount:candidates.length};

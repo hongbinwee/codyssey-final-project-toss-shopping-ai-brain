@@ -204,7 +204,7 @@ export async function createBrainRuntime(options:{
    const catalog=createCatalog(options.catalogSource??"public");
    const graph=createPersistentResearchGraph({
      conversations,memory:preferences,route:routeBrainMessage,fastResponses:true,
-     retriever:options.rag?verifiedRagRetriever(options.rag,catalog.getProduct,
+     retriever:options.rag?verifiedRagRetriever({...options.rag,catalogSource:options.catalogSource??"public"},catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
      intent:createFastIntentPort(createIntentPort(providerIntentModel(options.provider,45000),options.rag?.category))
    },saver,postgresTurnLock(lockDb,db),new FencedTurns(store),groundedResponder);
