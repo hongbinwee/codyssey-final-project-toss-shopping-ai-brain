@@ -225,7 +225,7 @@ export async function createBrainRuntime(options:{
    const ownQaCommerce=qaCommerceActivityAllowed({catalogSource:options.catalogSource,
      commerceDatabaseUrl:options.commerceDatabaseUrl,qaEnvironment:options.qaEnvironment});
    const graph=createPersistentResearchGraph({
-     conversations,memory:preferences,route,converse,clarifyBeforeSearch:true,fastResponses:true,datasetVersion:options.rag?.datasetVersion,
+     conversations,memory:preferences,route,converse,clarifyBeforeSearch:true,fastResponses:options.rag?.contract!=="v4",datasetVersion:options.rag?.datasetVersion,
      ...(ownQaCommerce?{activity:(actorUserId:string)=>readCommerceActivity(sql,actorUserId)}:{}),
      retriever:options.rag?verifiedRagRetriever({...options.rag,catalogSource:options.catalogSource??"public"},catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),

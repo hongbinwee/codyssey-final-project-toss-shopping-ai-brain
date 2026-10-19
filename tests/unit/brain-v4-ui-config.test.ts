@@ -54,6 +54,13 @@ function renderRanking(ranking: Parameters<typeof BrainRanking>[0]["ranking"]) {
   }));
 }
 
+test('model failure keeps verified fallback reasons on recommendation cards',()=>{
+ const candidate={productId:'p-fallback',variantId:'v-fallback',commerceVerified:true,productName:'확인한 상품',unitPriceWon:10000,shippingFeeWon:3000};
+ const html=renderToStaticMarkup(createElement(BrainRanking,{ranking:{ranked:[{candidate,score:.5,evidenceCoverage:1}],referenceOnly:[],rejected:[],evaluatedCount:1},
+   explanation:{kind:'VERIFIED_CANDIDATES',text:'확인한 상품을 추천해요.',items:[{productId:'p-fallback',variantId:'v-fallback',evidenceIds:[],reason:'배송비 포함 13,000원으로 예산 안이에요.'}],limitations:[],failure:{code:'MODEL_HTTP_ERROR',httpStatus:504}},onOpenProduct:()=>{}}));
+ assert.match(html,/배송비 포함 13,000원으로 예산 안이에요/);assert.doesNotMatch(html,/MODEL_HTTP_ERROR|504/);
+});
+
 test("test catalog notice identifies simulated prices and explicitly excludes purchase",()=>{
  const Notice=(commerceState as unknown as {CatalogNotice?:()=>ReactElement}).CatalogNotice;
  assert.equal(typeof Notice,"function");if(!Notice)return;

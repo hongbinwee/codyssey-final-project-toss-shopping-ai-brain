@@ -53,7 +53,7 @@ export function BrainRanking({ranking,explanation,onOpenProduct,onExcludeProduct
        <p className="brain-product-price">{money(p.unitPriceWon)?fmtWon(p.unitPriceWon):"가격 정보 확인 전"}</p>
        {recommendationRole==="REVIEW_VERIFIED"&&p.ratingScale===5&&typeof p.rating==="number"&&p.wholeReviewCountVerified===true&&typeof p.wholeReviewCount==="number"&&<p className="muted sm">평점 {p.rating.toFixed(1)}/5 · 상품 전체 리뷰 {p.wholeReviewCount}개 (3.5점 초과 · 10개 이상 기준)</p>}
        {recommendationRole==="PERSONALIZED"&&!personalizationSignals?.length&&<p className="muted sm">현재 조건과 검증된 상품 근거로 비교한 후보예요.</p>}
-       {!explanation?.failure&&explanation?.items.find(i=>i.productId===p.productId&&(!i.variantId||i.variantId===p.variantId))?.reason&&<p className="brain-product-reason">{explanation.items.find(i=>i.productId===p.productId&&(!i.variantId||i.variantId===p.variantId))?.reason}</p>}
+       {explanation?.items.find(i=>i.productId===p.productId&&(!i.variantId||i.variantId===p.variantId))?.reason&&<p className="brain-product-reason">{explanation.items.find(i=>i.productId===p.productId&&(!i.variantId||i.variantId===p.variantId))?.reason}</p>}
        {(p.keywords??[]).filter(k=>!/(?:type|sub_category|source_kind|[a-z]+_[a-z]+)/.test(k)).slice(0,3).map((keyword,i)=><span key={i} className="chip">{keyword}</span>)}
        {reference&&<p className="muted sm">참고 상품 · 필수 조건이나 근거를 더 확인해야 해요.</p>}
        {p.commerceVerified===true
@@ -205,7 +205,8 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
          <button className="link" disabled={busy} onClick={()=>{setInput(e.text);setNotice("질문을 수정한 뒤 보내면 새로운 요청으로 처리해요.");}}>질문 수정</button>
        </div>}
        {e.reply&&<><div className="brain-assistant-message"><span className="brain-avatar" aria-hidden="true">✦</span><div className="msg ai"><p>{e.reply.explanation?.failure
-         ?friendlyFailure(e.reply.explanation.failure.code)+((e.reply.ranking.ranked.length+e.reply.ranking.referenceOnly.length)>0?" 아래 검색 결과는 확인할 수 있어요.":"")
+         ?e.reply.explanation.items.length>0?"AI 설명이 지연되어 확인된 상품 정보로 먼저 추천드려요. "+e.reply.explanation.text
+           :friendlyFailure(e.reply.explanation.failure.code)+((e.reply.ranking.ranked.length+e.reply.ranking.referenceOnly.length)>0?" 아래 검색 결과는 확인할 수 있어요.":"")
          :e.reply.explanation?.text??"상품 정보를 확인했어요."}</p></div></div>
          {e.reply.explanation?.kind!=="CONVERSATION"&&e.reply.explanation?.kind!=="CLARIFICATION"&&<BrainRanking explanation={e.reply.explanation} ranking={e.reply.ranking} onOpenProduct={onOpenProduct} onExcludeProduct={i===entries.length-1&&!busy?(id)=>sendChoice(`이 상품 제외: ${id}`):undefined}/>}
        </>}
