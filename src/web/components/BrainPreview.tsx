@@ -221,7 +221,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
      </div>}
      {showEssenceBudget&&<div className="state-box" aria-label="에센스 가격대 선택"><b>가격대는 얼마를 생각하세요?</b><div className="brain-quick-choices">{["1만원대","2만원대","3만원대","상관없어요"].map(v=><button key={v} className="btn" disabled={busy||restoring} onClick={()=>sendChoice(v==="상관없어요"?"에센스를 찾고 있어요. 예산은 상관없어요.":`에센스를 ${v}에서 찾고 있어요. 이 가격대만 확인해 주세요.`)}>{v}</button>)}</div></div>}
      {showEssencePreference&&<div className="state-box" aria-label="에센스 사용 목적 선택"><b>에센스에서 가장 중요하게 생각하는 점은 무엇인가요?</b><div className="brain-quick-choices">{["보습","진정","산뜻한 사용감","상관없어요"].map(v=><button key={v} className="btn" disabled={busy||restoring} onClick={()=>sendChoice(v==="상관없어요"?"에센스의 기능 선호는 상관없어요. 이전 예산 범위는 유지해줘.":`에센스에서 ${v}을 중요하게 생각해요. 이전 예산 범위는 유지하고 추천해줘.`)}>{v}</button>)}</div></div>}
-     {entries.at(-1)?.reply?.ranking?.ranked?.length>0&&!busy&&<button className="btn" disabled={restoring} onClick={()=>sendChoice("다른 제품 보기")}>다른 제품 보기 (방금 추천 제외)</button>}
+     {(entries.at(-1)?.reply?.ranking?.ranked?.length??0)>0&&!busy&&<button className="btn" disabled={restoring} onClick={()=>sendChoice("다른 제품 보기")}>다른 제품 보기 (방금 추천 제외)</button>}
      {notice&&<p role="status" className="muted sm">{notice}</p>}
      {error&&<p role="alert">{error}</p>}
      <div ref={bottom}/>
