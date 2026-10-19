@@ -14,7 +14,8 @@ export function routeBrainMessage(message:string,previous?:ShoppingPlan):BrainRo
    !attack.test(clause)&&shoppingQuestion(clause)&&!/(?:API\s*키|비밀번호|개인키|시스템\s*프롬프트)/i.test(clause)))return role();
  if(!shopping&&(/^[ㅋㅎㅠㅜ!?\s]+$/i.test(text)||/^(.{1,8})\1{2,}$/.test(text)||
    /^(?:asdf|qwer|zxcv){2,}$/i.test(text)))return {kind:"UNCERTAIN",search:false,text:"입력을 잘 이해하지 못했어요. 찾으시는 상품을 짧게 알려주시겠어요?"};
- if(!shopping&&/날씨|주식\s*(?:전망|예측)|코드\s*(?:짜|작성)|정치|대통령|욕해|멍청|병신|씨발|바보/.test(text))return role();
+ if(!/(?:추천|찾아|상품|제품|가격|예산|리뷰|후기|장단점|비교)/.test(text)&&
+    /날씨|주식\s*(?:전망|예측)|코드\s*(?:짜|작성)|정치|대통령|욕해|멍청|병신|씨발|바보/.test(text))return role();
  if(/^(안녕(?:하세요|하십니까)?|하이|반가워(?:요)?|hello|hi)$/i.test(text))
   return {kind:"GREETING",search:false,text:"안녕하세요! 어떤 상품을 찾고 계세요? 예산이나 원하는 점을 알려주시면 함께 살펴볼게요."};
  if(/^(고마워(?:요)?|감사(?:합니다|해요)?|고맙습니다|thanks?|잘 알겠어(?:요)?)$/i.test(text))
