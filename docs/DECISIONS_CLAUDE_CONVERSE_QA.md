@@ -1,8 +1,8 @@
 # Decisions → LangGraph → Claude — isolated QA handoff
 
-Base: `feature/system-prompt-integration@a782b33`.
-Implementation branch: `feature/prompt-decisions-claude-converse`.
-Draft PR: #3. Never merge into `main` or `feature/brain-core` as part of QA.
+Current integration baseline: `feature/system-prompt-integration@b06699a` (2026-10-20).
+The implementation is already integrated. Historical proposal branch: `feature/prompt-decisions-claude-converse`.
+Historical proposal: PR #3. Current routing/configuration contract: [decisions-routing.md](decisions-routing.md). Never merge into `main` or `feature/brain-core` as part of QA.
 
 ## Contract
 
@@ -49,6 +49,6 @@ Trace and report: `intent_kind`, `trace.routeMs`, `trace.responseMs`, Claude cal
 
 - Never run `db:migrate`, seed, index creation or embeddings against shared QA.
 - No changes to `main`, `feature/brain-core`, currently running QA Cloudflare tunnel or shared sessions.
-- The host's `codex/qa-prompt@9879dae` changes are not on GitHub. Treat this new PR as a separately tested proposal, not a replacement for those local QA fixes.
-- Before applying the code to the QA Worktree, compare local `src/brain/runtime.ts`, `graph.ts`, any patched provider/intent code and test it in a new branch or separate worktree. Do not reset local work.
+- Validated QA improvements are already in integration baseline `b06699a`. The existing integration Worktree's 15 staged paths match that baseline byte-for-byte; preserve the staged state and do not replay the patch wholesale.
+- Before any separately approved QA deployment, compare local `src/brain/runtime.ts`, `graph.ts`, and provider/intent changes. Use the existing isolated test workspace; do not reset local work or alter the running QA server as part of this documentation integration.
 - Real HTTPS/browser/Claude integration remains NOT_RUN until executed in that local environment with credentials.
