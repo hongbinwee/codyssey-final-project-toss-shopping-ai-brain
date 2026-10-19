@@ -104,12 +104,12 @@ export function parseShoppingIntent(raw:string):ShoppingIntent {
  }
 }
 /** Tool-free intent planner: prior state is user/context data, not a system override. */
-export function createIntentPort(model:IntentModel,catalogCategory?:string):IntentPort {
+export function createIntentPort(model:IntentModel,catalogCategory?:string|string[]):IntentPort {
  return {async extract(userMessage:string,memory:Preference[],previous?:ShoppingPlan):Promise<ShoppingIntent>{
    const context=assembleIntentContext(userMessage,memory,previous);
    // A selected Skill is a fixed, trusted procedure; user data remains user-level.
    const system=SHOPPING_POLICY+"\n"+SYSTEM+"\nBuilt-in shopping procedure: "+context.trustedSkillInstruction+
-    (catalogCategory?"\nCurrent catalog category identifier: "+JSON.stringify(catalogCategory)+". Use this exact category only when the user's requested product belongs to it. Preserve unsupported product intent; never replace it with a catalog product.":"");
+    (catalogCategory?"\nCurrent catalog category identifiers: "+JSON.stringify(catalogCategory)+". Choose an exact identifier only when the user's requested product belongs to it. Preserve unsupported product intent; never replace it with a catalog product.":"");
    return parseShoppingIntent(await model.complete(system,context.untrustedUserContent));
  }};
 }

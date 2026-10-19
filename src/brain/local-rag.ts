@@ -1,11 +1,22 @@
 import {createHash} from "node:crypto";
 import {readFile} from "node:fs/promises";
+import {createReadStream} from "node:fs";
 import {join} from "node:path";
 import {parseDatasetManifest,type SearchDatasetManifest} from "./dataset-manifest.ts";
 
 const modelId="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2";
 const dimensions=384,rrfConstant=60,maxEvidencePerProduct=5;
 type JsonObject=Record<string,unknown>;
+/** JSONL delimiters are LF; preserve any CR inside JSON whitespace/string escapes. */
+export async function* streamDatasetJsonl(path:string,onBytes?:(part:string)=>void):AsyncGenerator<Record<string,unknown>>{
+ const stream=createReadStream(path,{encoding:"utf8"});let pending="",row=0;
+ const parse=(line:string)=>{try{const value:unknown=JSON.parse(line);if(!object(value))throw Error();return value;}catch{throw Error("invalid JSONL record "+row);}};
+ try{for await(const part of stream){onBytes?.(part);pending+=part;
+   const lines=pending.split("\n");pending=lines.pop()!;
+   for(const line of lines){if(line.trim()){row++;yield parse(line);}}
+   if(pending.length>1_000_000)throw Error("oversized JSONL record");
+ }if(pending.trim()){row++;yield parse(pending);}}finally{stream.destroy();}
+}
 type EmbedQuery=(query:string)=>Promise<readonly number[]>;
 interface Chunk {
  product_id:string;chunk_id:string;source_type:string;source_id:string;source_version:unknown;
@@ -82,7 +93,7 @@ function requestOf(value:unknown):SearchRequest{
  const allowed=new Set(["request_id","original_question","query","category","filters","required_conditions","preferences","top_k"]);
  if(Object.keys(value).some(key=>!allowed.has(key)))throw new Error("unsupported local RAG request field");
  if(!text(value.request_id,128)||!text(value.original_question,3000)||!text(value.query,250)||
-   !text(value.category,80)||!object(value.filters)||!Array.isArray(value.required_conditions)||
+   !(value.category===""||text(value.category,80))||!object(value.filters)||!Array.isArray(value.required_conditions)||
    value.required_conditions.length>25||!value.required_conditions.every(x=>text(x,128))||
    !Array.isArray(value.preferences)||!Number.isSafeInteger(value.top_k)||
    (value.top_k as number)<1||(value.top_k as number)>5)
@@ -119,7 +130,13 @@ function ranked(scores:Map<string,number>,docs:Chunk[]):Map<string,number>{
 }
 function syntheticReview(chunk:Chunk):boolean{
  return chunk.source_type==="review"&&chunk.source_metadata.source_kind==="SYNTHETIC"&&
-   chunk.source_metadata.synthetic===true&&text(chunk.source_metadata.variant_id,128);
+   chunk.source_metadata.synthetic===true&&(chunk.source_metadata.variant_id===null||text(chunk.source_metadata.variant_id,128));
+}
+function verifiedReviewSource(chunk:Chunk):boolean{
+ const meta=chunk.source_metadata;
+ return chunk.source_type==="review"&&
+   (meta.source_kind==="REAL"&&meta.synthetic===false||meta.source_kind==="SYNTHETIC"&&meta.synthetic===true)&&
+   (meta.variant_id===null||text(meta.variant_id,128));
 }
 
 export async function createLocalRagSearch(options:{dataDir:string;embedQuery:EmbedQuery;manifest?:SearchDatasetManifest}):Promise<{
@@ -128,18 +145,16 @@ export async function createLocalRagSearch(options:{dataDir:string;embedQuery:Em
 }>{
  if(!text(options.dataDir,2048)||typeof options.embedQuery!=="function")throw new Error("invalid local RAG options");
  const evidencePath=join(options.dataDir,"evidence_chunks.jsonl"),productsPath=join(options.dataDir,"indexed_products.jsonl");
- const [evidenceBuffer,productsBuffer]=await Promise.all([readFile(evidencePath),readFile(productsPath)]);
+ const productsBuffer=await readFile(productsPath);
  const manifest=options.manifest?parseDatasetManifest(options.manifest):undefined;
- const evidenceSha256=createHash("sha256").update(evidenceBuffer).digest("hex");
+ const evidenceHash=createHash("sha256");
  const indexedProductsSha256=createHash("sha256").update(productsBuffer).digest("hex");
- if(manifest&&(manifest.dataClass!=="SYNTHETIC_PRODUCT"||manifest.files.evidenceSha256!==evidenceSha256||
+ if(manifest&&(!["SYNTHETIC_PRODUCT","CANDIDATE"].includes(manifest.dataClass)||
    manifest.files.indexedProductsSha256!==indexedProductsSha256))throw Error("dataset manifest corpus or source-class mismatch");
  const activeModel=manifest?.embedding.model??modelId,activeDimensions=manifest?.embedding.dimensions??dimensions;
- const chunkRows=parseJsonl(evidenceBuffer,"evidence_chunks.jsonl"),productRows=parseJsonl(productsBuffer,"indexed_products.jsonl");
- const versions=new Set(chunkRows.map(row=>row.dataset_version));
- if(versions.size!==1||!text([...versions][0],128))throw new Error("evidence dataset version missing or inconsistent");
- const datasetVersion=[...versions][0] as string;
- if(manifest&&manifest.datasetVersion!==datasetVersion)throw Error("dataset manifest version mismatch");
+ const productRows=parseJsonl(productsBuffer,"indexed_products.jsonl");
+ const datasetVersion=productRows[0]?.dataset_version;
+ if(!text(datasetVersion,128)||manifest&&manifest.datasetVersion!==datasetVersion)throw Error("dataset manifest version mismatch");
  const products=new Map<string,IndexedProduct>();
  for(const [index,row] of productRows.entries()){
    if(!text(row.product_id,128)||!text(row.category,80)||row.dataset_version!==datasetVersion||!object(row.product_payload))
@@ -147,9 +162,14 @@ export async function createLocalRagSearch(options:{dataDir:string;embedQuery:Em
    if(products.has(row.product_id))throw new Error("duplicate indexed product ID");
    products.set(row.product_id,{category:row.category});
  }
- if(!products.size||chunkRows.some(row=>!products.has(row.product_id as string)))
-   throw new Error("evidence product mapping is incomplete");
- const seenChunks=new Set<string>(),chunks=chunkRows.map((row,index)=>recordToChunk(row,index,datasetVersion,seenChunks,activeModel,activeDimensions));
+ if(!products.size)throw new Error("evidence product mapping is incomplete");
+ const seenChunks=new Set<string>(),chunks:Chunk[]=[];
+ for await(const row of streamDatasetJsonl(evidencePath,part=>{evidenceHash.update(part);})){
+   if(!products.has(row.product_id as string))throw Error("evidence product mapping is incomplete");
+   chunks.push(recordToChunk(row,chunks.length,datasetVersion,seenChunks,activeModel,activeDimensions));
+ }
+ const evidenceSha256=evidenceHash.digest("hex");
+ if(!chunks.length||manifest&&manifest.files.evidenceSha256!==evidenceSha256)throw Error("dataset manifest corpus identity mismatch");
  if(manifest&&(chunks.some(c=>!manifest.categories.includes(c.category))||
    [...products.values()].some(p=>!manifest.categories.includes(p.category))))throw Error("dataset manifest category mismatch");
  const sourceTypeCounts:Record<string,number>={};
@@ -160,8 +180,10 @@ export async function createLocalRagSearch(options:{dataDir:string;embedQuery:Em
    evidenceSha256,indexedProductsSha256};
 
  return {stats,async search(input){
-   const body=requestOf(input),docs=chunks.filter(chunk=>chunk.category===body.category&&
-     products.get(chunk.product_id)?.category===body.category);
+   const body=requestOf(input);
+   if(!body.category&&(!manifest||manifest.categories.length<2))throw Error("global search requires a multi-category manifest");
+   const docs=chunks.filter(chunk=>(!body.category||chunk.category===body.category)&&
+     products.get(chunk.product_id)?.category===chunk.category);
    if(!docs.length)return {dataset_version:datasetVersion,items:[]};
    const embedText=[body.query,...body.required_conditions].join(" ");
    const embeddingStarted=performance.now();
@@ -194,7 +216,7 @@ export async function createLocalRagSearch(options:{dataDir:string;embedQuery:Em
    const usedSourceIds=new Set<string>(),items:{product_id:string;rrf_score:number;evidence:JsonObject[]}[]=[];
    for(const [productId,group] of ordered){
      const evidence:JsonObject[]=[];
-     const reviewHits=group.hits.filter(syntheticReview).sort((a,b)=>(scores.get(b.chunk_id)??0)-(scores.get(a.chunk_id)??0)||a.chunk_id.localeCompare(b.chunk_id));
+     const reviewHits=group.hits.filter(verifiedReviewSource).sort((a,b)=>(scores.get(b.chunk_id)??0)-(scores.get(a.chunk_id)??0)||a.chunk_id.localeCompare(b.chunk_id));
      for(const chunk of reviewHits){
        if(usedSourceIds.has(chunk.source_id))continue;
        usedSourceIds.add(chunk.source_id);

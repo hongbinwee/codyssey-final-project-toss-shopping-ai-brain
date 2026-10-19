@@ -670,7 +670,7 @@ export function Product({
               )}
             </span>
             <small className="review-provenance-note">
-              {detail.data.catalog_context?.source === "test_items" ? "합성 시연 리뷰 기준" : "실사용·시연 리뷰 기준"}
+              {detail.data.catalog_context?.source === "test_items" ? "합성 시연 리뷰 기준" : "수집·합성 리뷰 기준"}
             </small>
           </span>
           <IcChevronRight size={15} className="info-next" />
@@ -800,7 +800,7 @@ export function Product({
                   <span className="muted">({reviewTotal}개)</span>
                 </div>
               )}
-              <small className="review-provenance-note">{detail.data.catalog_context?.source === "test_items" ? "합성 시연 리뷰 기준" : "실사용·시연 리뷰 기준"}</small>
+              <small className="review-provenance-note">{detail.data.catalog_context?.source === "test_items" ? "합성 시연 리뷰 기준" : "수집·합성 리뷰 기준"}</small>
               <ul className="review-list">
                 {reviews.data.reviews.map((rv) => (
                   <ReviewRow
@@ -844,7 +844,7 @@ export function Product({
 
       {<div className={"bottom-bar" + (anyPending || !commerceEnabled || detail.data.catalog_context?.read_only ? " has-note" : "")}>
         {(!commerceEnabled || detail.data.catalog_context?.read_only) && <p className="muted sm" role="note">{detail.data.catalog_context?.read_only
-          ? commerceEnabled ? "v4 시연 상품 · 찜·장바구니 저장 가능 · 주문·결제 불가" : "v4 테스트 상품 · 조회 전용 · 주문·결제 불가"
+          ? commerceEnabled ? "시연 상품 · 찜·장바구니 저장 가능 · 주문·결제 불가" : "테스트 상품 · 조회 전용 · 주문·결제 불가"
           : "쇼핑 기능을 확인하고 있어요"}</p>}
         {anyPending && (
           // 미확정 write가 있으면 고정 바 최상단에서 바로 복구로 진입 — 상세

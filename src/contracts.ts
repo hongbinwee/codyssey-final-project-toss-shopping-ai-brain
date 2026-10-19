@@ -52,7 +52,7 @@ export const err = (
 export type Availability = "AVAILABLE" | "SOLD_OUT" | "UNAVAILABLE";
 
 export interface CatalogContext {
-  source: "test_items";
+  source: "test_items" | "test_items2";
   read_only: true;
   is_simulated: true;
 }

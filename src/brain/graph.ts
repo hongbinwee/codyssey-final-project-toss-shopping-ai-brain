@@ -10,6 +10,7 @@ import type {BrainGraphPort} from "./api.ts";
 import type {TurnLock,TurnLease} from "./turn-lock.ts";
 import type {FencedTurns} from "./fenced-turns.ts";
 import type {BrainRoute} from "./routing.ts";
+import {currentDatasetResult} from "./dataset-state.ts";
 
 export type GraphRequest=BrainTrace & {clientActionId:string;userMessage:string};
 const State=Annotation.Root({
@@ -52,7 +53,7 @@ export function createPersistentResearchGraph(
        ...(previous?{shoppingPlan:previous}:{}),
        ranking:{ranked:[],referenceOnly:[],rejected:[],evaluatedCount:0},
        explanation:{kind:"CONVERSATION",text:state.intentRoute.text??"어떤 상품을 찾으시는지 알려주세요.",items:[],limitations:[]},
-       trace:{memoryMs:state.prepared.memoryMs,intentMs:0,retrievalMs:0,rankMs:0,responseMs:0,
+       datasetVersion:deps.datasetVersion,trace:{memoryMs:state.prepared.memoryMs,intentMs:0,retrievalMs:0,rankMs:0,responseMs:0,
          totalMs:performance.now()-state.prepared.startedAt}};
      await verify();return {researchResult,evidence:[]};
    })
@@ -71,7 +72,7 @@ export function createPersistentResearchGraph(
    .addNode("respond",async state=>{
      const started=performance.now();
      const researchResult={
-       ...state.researchResult,
+       ...state.researchResult,datasetVersion:deps.datasetVersion,
        explanation:groundedResponder&&(!deps.fastResponses||state.intentRoute.kind==="REVIEW_COMPARE")
          ?await groundedResponder({originalQuestion:state.request.userMessage,
            ranking:state.researchResult.ranking,evidence:state.evidence,plan:state.shoppingPlan})
@@ -121,7 +122,7 @@ export function createPersistentResearchGraph(
            throw Error("legacy Brain checkpoint migration required");
        }
        const claim=fencing?await fencing.claim(input):null;
-       if(claim?.kind==="replay")return claim.result;
+       if(claim?.kind==="replay")return currentDatasetResult(claim.result,deps.datasetVersion);
        // Fenced executions use a new physical checkpoint thread for EACH
        // generation. A stale Worker can only write its private thread; the
        // canonical pointer is guarded by a PostgreSQL row-locked CAS.
@@ -139,13 +140,14 @@ export function createPersistentResearchGraph(
              completed.clientActionId===input.clientActionId&&completed.explanation)return completed;
          }
        }
-       const seed=claim?.kind==="run"&&claim.prior?{researchResult:claim.prior}:{};
+       const seed=claim?.kind==="run"&&claim.prior?{researchResult:currentDatasetResult(claim.prior,deps.datasetVersion)}:{};
        const run=await compiled.invoke({request:input,...seed},config);
        await verify();
        if(!run.researchResult||run.researchResult.conversationId!==input.conversationId||
            run.researchResult.clientActionId!==input.clientActionId||!run.researchResult.explanation)
          throw new Error("invalid graph result");
        if(fencing&&claim?.kind==="run"){
+         if(deps.datasetVersion)run.researchResult.datasetVersion=deps.datasetVersion;
          await fencing.publish(input,claim,run.researchResult);
          await verify();
        }
@@ -181,7 +183,8 @@ export function createPersistentResearchGraph(
           actual.clientActionId!==canonical.result.clientActionId)
          throw Error("published Brain checkpoint not valid");
      }
-     return {values:snapshot.values as unknown as Record<string,unknown>};
+     const values=snapshot.values as unknown as Record<string,unknown>;
+     return {values:values.researchResult?{...values,researchResult:currentDatasetResult(values.researchResult as ResearchResult,deps.datasetVersion)}:values};
    }
  };
 }

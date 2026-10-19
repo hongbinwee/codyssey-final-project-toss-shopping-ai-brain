@@ -11,6 +11,7 @@ export interface IntentPort {
  extract(userMessage:string,knownPreferences:Preference[],previous?:ShoppingPlan):Promise<ShoppingIntent>
 }
 export interface ResearchResult {
+ datasetVersion?:string;
  conversationId:string;messageId:string;clientActionId?:string;ranking:RankingResult;
  shoppingPlan?:ShoppingPlan;
  explanation?:GroundedExplanation;
@@ -18,6 +19,7 @@ export interface ResearchResult {
  trace:{memoryMs:number;intentMs:number;retrievalMs:number;rankMs:number;totalMs:number;[key:string]:number}
 }
 export interface ResearchDeps {
+ datasetVersion?:string;
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
  memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
  route?:(message:string,previous?:ShoppingPlan)=>BrainRoute;

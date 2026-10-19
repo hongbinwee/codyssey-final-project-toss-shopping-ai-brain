@@ -7,7 +7,7 @@ export interface GroundedExplanation {
  text:string;
  items:{productId:string;variantId:string;name:string;totalPriceWon:number;
    evidenceIds:string[];indicators:{aspect:Aspect;score:number}[]}[];
- citations?:{productId:string;variantId:string;sourceId:string;sourceKind:"REAL"|"SYNTHETIC";quote:string}[];
+ citations?:{productId:string;variantId:string;sourceVariantId?:string|null;sourceId:string;sourceKind:"REAL"|"SYNTHETIC";quote:string}[];
  limitations:string[];
  failure?:{code:"MODEL_TIMEOUT"|"MODEL_RATE_LIMIT"|"MODEL_HTTP_ERROR"|"MODEL_UNAVAILABLE";httpStatus?:number};
  kind:"VERIFIED_CANDIDATES"|"REFERENCE_ONLY"|"NO_MATCH"|"LLM_GROUNDED"|"EVIDENCE_INSUFFICIENT"|"CONVERSATION";
@@ -51,9 +51,9 @@ export function buildGroundedExplanation(ranking:RankingResult,evidence:Evidence
      if(!f)continue;
      const legitimate=f.evidenceIds.filter(id=>{
        const e=found.get(id);
-       if(!e||e.productId!==candidate.productId||e.variantId!==candidate.variantId)return false;
-       if(aspect==="retrieved_review_rating")return candidate.sourceKind==="SYNTHETIC"&&candidate.isSimulated===true&&
-         e.kind==="REVIEW"&&e.sourceKind==="SYNTHETIC"&&e.verified===true&&
+       if(!e||e.productId!==candidate.productId||e.variantId!==null&&e.variantId!==candidate.variantId)return false;
+       if(aspect==="retrieved_review_rating")return candidate.isSimulated===true&&candidate.qaRankingEligible===true&&
+         e.kind==="REVIEW"&&["REAL","SYNTHETIC"].includes(e.sourceKind??"")&&e.verified===true&&
          e.datasetVersion===candidate.datasetVersion&&Number.isFinite(e.rating)&&e.rating!>=1&&e.rating!<=5;
        return e.kind!=="REVIEW"||e.sourceKind==="REAL";
      });
@@ -70,7 +70,7 @@ export function buildGroundedExplanation(ranking:RankingResult,evidence:Evidence
    return `${index+1}순위 ${p.name}: 총 ${p.totalPriceWon.toLocaleString("ko-KR")}원.`;
  });
  const ratingLimit=items.some(item=>item.indicators.some(facet=>facet.aspect==="retrieved_review_rating"))
-   ?"합성 리뷰 평점은 이번 검색에서 확인된 표본 평균으로, 전체 리뷰 평점이나 제품 성능·효능 점수가 아닙니다.":"";
+   ?"검색된 리뷰 평점의 표본 평균이며, 전체 리뷰 평점이나 제품 성능·효능 점수가 아닙니다.":"";
  const referenceNote=referenceCount?` 참고 카드 ${referenceCount}개는 확인이 더 필요한 정보예요.`:"";
  return {kind:"VERIFIED_CANDIDATES",items,
      text:`${budget}과 확인된 조건을 기준으로 후보를 비교했어요. ${criteria} `+
@@ -92,8 +92,8 @@ type ExtendedCandidate=RankingResult["ranked"][number]["candidate"] & {
 type SourceKind="REAL"|"SYNTHETIC";
 type PromptCandidate={sourceKind:SourceKind;productId:string;variantId:string;productName:string;
  unitPriceWon:number;shippingFeeWon:number;totalPriceWon:number;datasetVersion:string;isSimulated:boolean;
- evidence:{sourceId:string;text:string}[]};
-type PreparedCandidate={prompt:PromptCandidate;sourceTexts:Map<string,string>;ranked:boolean};
+ evidence:{sourceId:string;text:string;sourceKind:SourceKind;sourceVariantId:string|null}[]};
+type PreparedCandidate={prompt:PromptCandidate;sourceTexts:Map<string,string>;sourceKinds:Map<string,SourceKind>;sourceVariants:Map<string,string|null>;ranked:boolean};
 type Selection={sourceKind:SourceKind;productId:string;variantId:string;sourceId:string;quote:string};
 export interface GroundedResponseInput {
  originalQuestion:string;ranking:RankingResult;evidence:EvidenceRecord[];plan:ShoppingPlan
@@ -157,14 +157,15 @@ function parseClaims(content:string|null,toolCalls:unknown):GroundedClaim[]|null
 function prepareCandidate(candidate:ExtendedCandidate,expectedKind:SourceKind,
  evidence:ExtendedEvidence[],ranked:boolean):PreparedCandidate|null{
  if(kindOf(candidate)!==expectedKind||candidate.commerceVerified!==true||candidate.synthetic===true&&expectedKind!=="SYNTHETIC"||
-   candidate.isSimulated===true&&expectedKind==="REAL"||
+   candidate.isSimulated===true&&expectedKind==="REAL"&&candidate.qaRankingEligible!==true||
    ranked&&expectedKind==="SYNTHETIC"&&(candidate.isSimulated!==true||candidate.qaRankingEligible!==true)||
    !invalidId(candidate.productId)||!invalidId(candidate.variantId)||!invalidId(candidate.datasetVersion)||
    !won(candidate.unitPriceWon)||!won(candidate.shippingFeeWon))return null;
  const totalPriceWon=candidate.unitPriceWon+candidate.shippingFeeWon;
  if(!Number.isSafeInteger(totalPriceWon))return null;
- const matching=evidence.filter(e=>e.verified===true&&kindOf(e)===expectedKind&&
-   e.productId===candidate.productId&&e.variantId===candidate.variantId&&
+ const matching=evidence.filter(e=>e.kind==="REVIEW"&&e.verified===true&&
+   (kindOf(e)===expectedKind||candidate.qaRankingEligible===true&&kindOf(e)!==null)&&
+   e.productId===candidate.productId&&(e.variantId===null||e.variantId===candidate.variantId)&&
    e.datasetVersion===candidate.datasetVersion&&invalidId(e.sourceId)&&
    typeof e.text==="string"&&e.text.trim().length>0);
  if(!matching.length)return null;
@@ -174,11 +175,13 @@ function prepareCandidate(candidate:ExtendedCandidate,expectedKind:SourceKind,
    unique.set(row.sourceId!,row.text!);
  }
  const sourceTexts=new Map([...unique].slice(0,5));
+ const sourceKinds=new Map(matching.filter(e=>sourceTexts.has(e.sourceId!)).map(e=>[e.sourceId!,kindOf(e)!]));
+ const sourceVariants=new Map(matching.filter(e=>sourceTexts.has(e.sourceId!)).map(e=>[e.sourceId!,e.variantId]));
  const productName=(candidate.productName??"상품").replace(/[\u0000-\u001f]/g," ").slice(0,160);
  return {prompt:{sourceKind:expectedKind,productId:candidate.productId,variantId:candidate.variantId,
    productName,unitPriceWon:candidate.unitPriceWon,shippingFeeWon:candidate.shippingFeeWon,totalPriceWon,
    datasetVersion:candidate.datasetVersion,isSimulated:candidate.isSimulated===true,
-   evidence:[...sourceTexts].map(([sourceId,text])=>({sourceId,text:text.slice(0,1200)}))},sourceTexts,ranked};
+   evidence:[...sourceTexts].map(([sourceId,text])=>({sourceId,text:text.slice(0,1200),sourceKind:sourceKinds.get(sourceId)!,sourceVariantId:sourceVariants.get(sourceId)!}))},sourceTexts,sourceKinds,sourceVariants,ranked};
 }
 function idOccurs(text:string,id:string):boolean{
  if(!id)return false;
@@ -196,9 +199,10 @@ function finish(selection:Selection,selected:PreparedCandidate,summary?:string,
    total=c.totalPriceWon.toLocaleString("ko-KR");
  const name=hasHiddenIdentifiers(c.productName,displayCandidates)?"상품":c.productName;
  const citation={productId:c.productId,variantId:c.variantId,sourceId:selection.sourceId,
+   sourceVariantId:selected.sourceVariants.get(selection.sourceId),
    sourceKind:selection.sourceKind,quote:selection.quote};
  const simulated=c.isSimulated&&includeNotice?"시연용 가격·재고입니다. 실제 판매 정보가 아니며 주문·결제할 수 없습니다. ":"";
- const quoted=summary??`${selection.sourceKind==="SYNTHETIC"?"합성 리뷰":"검증된 리뷰"}에서 “${selection.quote}”라는 내용이 있어요.`;
+ const quoted=summary??`${selection.sourceKind==="SYNTHETIC"?"합성 리뷰":"수집 리뷰"}에서 “${selection.quote}”라는 내용이 있어요.`;
   if(selection.sourceKind==="SYNTHETIC")return {kind:selected.ranked?"LLM_GROUNDED":"REFERENCE_ONLY",
     items:selected.ranked?[{productId:c.productId,variantId:c.variantId,name,totalPriceWon:c.totalPriceWon,
       evidenceIds:[selection.sourceId],indicators:[]}]:[],citations:[citation],
@@ -209,7 +213,7 @@ function finish(selection:Selection,selected:PreparedCandidate,summary?:string,
   const item={productId:c.productId,variantId:c.variantId,name,totalPriceWon:c.totalPriceWon,
     evidenceIds:[selection.sourceId],indicators:[]};
   return {kind:selected.ranked?"LLM_GROUNDED":"REFERENCE_ONLY",items:selected.ranked?[item]:[],citations:[citation],
-    text:`${selected.ranked?"상품 정보를 확인했어요.":"참고 정보예요."} ${name}: 상품 가격 ${price}원, 배송비 ${shipping}원, 합계 ${total}원. ${quoted}`+
+    text:`${simulated}${selected.ranked?"상품 정보를 확인했어요.":"참고 정보예요."} ${name}: 상품 가격 ${price}원, 배송비 ${shipping}원, 합계 ${total}원. ${quoted}`+
       (selected.ranked?"":" 요청 조건 충족은 확인되지 않았어요."),
     limitations:[selected.ranked?"LLM이 선택한 검증 인용을 표시했으며, 자유로운 사실 패러프레이즈는 생성하지 않았습니다.":
       "참고 정보이며 필수 조건을 충족한 추천 후보로 취급하지 않습니다."]};
@@ -238,7 +242,7 @@ export function createLlmGroundedResponder(provider:Pick<Provider,"chat">):Groun
    let responseContent:string|null=null,toolCalls:unknown;
    try{
      const messages:ChatMsg[]=[
-       {role:"system",content:SHOPPING_POLICY+"\n"+responseSystem},
+       {role:"system",content:SHOPPING_POLICY+"\n"+responseSystem+"\nUse each evidence record's sourceKind exactly, including mixed REAL and SYNTHETIC records. sourceVariantId=null means a product-level review: do not attribute it to a specific option. variantId in output is the candidate navigation ID, never a rewrite of the original review mapping. Source-collected REAL reviews do not establish verified purchase or objective efficacy."},
        {role:"user",content:JSON.stringify({originalQuestion:input.originalQuestion.slice(0,1000),
          shoppingPlan:input.plan,
          candidates:rankedCandidates.map(x=>x.prompt),referenceOnly:referenceCandidates.map(x=>x.prompt)})}
@@ -256,7 +260,7 @@ export function createLlmGroundedResponder(provider:Pick<Provider,"chat">):Groun
    if(claims){
      const chosen:{claim:GroundedClaim;selected:PreparedCandidate}[]=[];
      for(const claim of claims){
-       const selected=prepared.find(c=>c.prompt.sourceKind===claim.sourceKind&&
+     const selected=prepared.find(c=>c.sourceKinds.get(claim.sourceId)===claim.sourceKind&&
          c.prompt.productId===claim.productId&&c.prompt.variantId===claim.variantId&&
          c.sourceTexts.get(claim.sourceId)?.slice(0,1200).includes(claim.quote));
        if(!selected||hasHiddenIdentifiers(claim.claim,prepared)||hasHiddenIdentifiers(claim.quote,prepared))return insufficient();
@@ -270,12 +274,12 @@ export function createLlmGroundedResponder(provider:Pick<Provider,"chat">):Groun
        const base=finish(rows[0].claim,selected,summary,prepared,false);
        segments.push(base.text);
         if(selected.ranked)items.push({...base.items[0],evidenceIds:[...new Set(rows.map(r=>r.claim.sourceId))]});
-       citations.push(...rows.map(({claim})=>({productId:claim.productId,variantId:claim.variantId,
+       citations.push(...rows.map(({claim})=>({productId:claim.productId,variantId:claim.variantId,sourceVariantId:selected.sourceVariants.get(claim.sourceId),
          sourceKind:claim.sourceKind,sourceId:claim.sourceId,quote:claim.quote})));
      }
      const synthetic=chosen.some(row=>row.claim.sourceKind==="SYNTHETIC");
-     const notice=synthetic?(items.length?"합성 리뷰를 근거로 비교했어요. ":"합성 리뷰 기반 시연 데이터 참고 정보예요. ")+
-       "시연용 가격·재고입니다. 실제 판매 정보가 아니며 주문·결제할 수 없어요.":"";
+     const notice=(synthetic?(items.length?"출처를 구분한 합성 리뷰 근거가 포함되어 있어요. ":"합성 리뷰 기반 시연 데이터 참고 정보예요. "):"")+
+       (prepared.some(c=>c.prompt.isSimulated)?"CANDIDATE 데이터의 시연용 가격·재고입니다. 실제 판매 정보가 아니며 주문·결제할 수 없어요.":"");
      const sampleNotice=synthetic&&items.length?"합성 리뷰 평점은 검색된 표본 평균으로 전체 평점이나 제품 성능·효능 점수가 아닙니다.":"";
      return {kind:items.length?"LLM_GROUNDED":"REFERENCE_ONLY",items,citations,text:[notice,...segments,sampleNotice].filter(Boolean).join("\n\n"),
        limitations:["상품·옵션·출처를 내부 대조했습니다. 요약의 의미·해석 정확성은 별도 평가가 필요합니다.",
@@ -284,7 +288,7 @@ export function createLlmGroundedResponder(provider:Pick<Provider,"chat">):Groun
    }
    const selection=parseSelection(responseContent,toolCalls);
    if(!selection)return insufficient();
-   const selected=prepared.find(c=>c.prompt.sourceKind===selection!.sourceKind&&
+   const selected=prepared.find(c=>c.sourceKinds.get(selection!.sourceId)===selection!.sourceKind&&
      c.prompt.productId===selection!.productId&&
      c.prompt.variantId===selection!.variantId&&c.sourceTexts.has(selection!.sourceId));
    if(!selected||!selected.sourceTexts.get(selection.sourceId)?.includes(selection.quote)||

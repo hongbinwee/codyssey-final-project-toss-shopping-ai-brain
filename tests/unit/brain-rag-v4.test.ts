@@ -49,7 +49,7 @@ function productDetail(productId = "p-v4-1", variantId = "v-v4-1", options: {
 }
 
 type FixtureReview = {
-  id: string; product_id: string; variant_id: string; rating: number; body: string;
+  id: string; product_id: string; variant_id: string|null; rating: number; body: string;
   source_kind: "REAL" | "SYNTHETIC"; source_ref: string; written_at: string;
 };
 
@@ -88,7 +88,7 @@ test("source-only v4 parser preserves configured dataset and synthetic evidence 
   });
 });
 
-test("v4 dataset and source-class isolation rejects other versions and real review records", () => {
+test("versioned RAG preserves REAL evidence and rejects inconsistent provenance", () => {
   const parse = (rag as unknown as {
     parseV4Response?: (raw: unknown, expectedVersion: string) => unknown;
   }).parseV4Response;
@@ -99,7 +99,11 @@ test("v4 dataset and source-class isolation rejects other versions and real revi
   const realSource = v4Response();
   realSource.items[0].evidence[0].source_metadata.source_kind = "REAL";
   realSource.items[0].evidence[0].source_metadata.synthetic = false;
-  assert.throws(() => parse(realSource, DATASET_VERSION), /synthetic/i);
+  const parsed=rag.parseV4Response(realSource,DATASET_VERSION);
+  assert.equal(parsed.items[0].evidence[0].sourceKind,"REAL");
+  assert.equal(parsed.items[0].evidence[0].synthetic,false);
+  realSource.items[0].evidence[0].source_metadata.synthetic=true;
+  assert.throws(()=>parse(realSource,DATASET_VERSION),/inconsistent/i);
 });
 
 test("v4 live mixed chunks keep synthetic reviews and skip product-description chunks", () => {
