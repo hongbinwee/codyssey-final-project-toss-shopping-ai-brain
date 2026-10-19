@@ -22,7 +22,7 @@ export interface ResearchDeps {
  datasetVersion?:string;
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
  memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
- route?:(message:string,previous?:ShoppingPlan)=>BrainRoute;
+ route?:(message:string,previous?:ShoppingPlan)=>BrainRoute|Promise<BrainRoute>;
  fastResponses?:boolean;
 }
 export interface PreparedTurn {
