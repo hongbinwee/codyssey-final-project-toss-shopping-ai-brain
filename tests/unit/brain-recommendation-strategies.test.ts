@@ -32,7 +32,7 @@ test("dedupe product IDs even if multiple variants are retrieved and preserve ha
 });
 test("SQL activity lookup is actor-scoped and read-only",async()=>{
  const calls:{query:string;args:unknown[]}[]=[];
- const db={unsafe:async(q:string,args:unknown[])=>{calls.push({query:q,args});return [{product_id:"p-a"}];}};
+ const db={unsafe:async(q:string,args:unknown[] = [])=>{calls.push({query:q,args});return [{product_id:"p-a"}];}};
  const result=await readCommerceActivity(db as never,"tester_05");
  assert.deepEqual(result,{wishlistProductIds:["p-a"],cartProductIds:["p-a"]});
  assert.equal(calls.length,3);
