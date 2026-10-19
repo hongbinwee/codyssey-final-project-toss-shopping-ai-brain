@@ -119,7 +119,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     assert.equal(wrongTurn.status,404);
     console.log("BRAIN_HTTP_STEP 06 before-read-only-turn");
     const turn=await request("/api/brain/conversations/"+id+"/turn","POST",
-      {user_message:"모니터 추천",client_action_id:"qa-a-1",actorUserId:"user-http-b"},userA);
+      {user_message:"업무용 모니터를 50만원 이하로 추천",client_action_id:"qa-a-1",actorUserId:"user-http-b"},userA);
     assert.equal(turn.status,200);
     const result=(await turn.json()).data;
     assert.equal(result.read_only,true);
