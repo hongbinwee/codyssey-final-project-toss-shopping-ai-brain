@@ -13,7 +13,7 @@ export interface LabeledCandidate extends RankedCandidate {
  personalizationSignals?:Array<"CART"|"WISHLIST"|"PURCHASE">;
 }
 function signalsFor(id:string,activity:CommerceActivity):LabeledCandidate["personalizationSignals"]{
- const signals:LabeledCandidate["personalizationSignals"]=[];
+ const signals:NonNullable<LabeledCandidate["personalizationSignals"]>=[];
  if(activity.cartProductIds.includes(id))signals.push("CART");
  if(activity.wishlistProductIds.includes(id))signals.push("WISHLIST");
  if(activity.purchasedProductIds?.includes(id))signals.push("PURCHASE");
