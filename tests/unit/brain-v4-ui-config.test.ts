@@ -124,6 +124,27 @@ test("omitted RAG contract keeps the existing brain-rag-v1 config", () => {
   });
 });
 
+test('remote profile passes through while a stale local manifest is rejected',()=>{
+ const env={BRAIN_RAG_MODE:'remote',BRAIN_RAG_URL:'https://rag.example.invalid/v1/rag/search',BRAIN_RAG_CONTRACT:'v4',BRAIN_RAG_DATASET_VERSION:'fixture',BRAIN_RAG_PROFILE:'test_items2',BRAIN_RAG_CATEGORIES:'beauty,fashion,food,living',BRAIN_RAG_CATEGORY:''};
+ assert.equal(ragConfig(env)?.profile,'test_items2');assert.equal(ragConfig(env)?.category,'');
+ assert.throws(()=>ragConfig({...env,BRAIN_RAG_MANIFEST_PATH:'C:/local/manifest.json'}),/manifest/i);
+});
+test('external catalog product HTTP never falls back to business catalog and pauses only local storage mutations',async()=>{
+ let handler:Function|undefined,closed=false;const localQueries:string[]=[],externalQueries:string[]=[];
+ const db={unsafe:async(query:string)=>{localQueries.push(query);if(query.includes('pg_roles'))return [{rolsuper:false,rolcreatedb:false,rolcreaterole:false,rolbypassrls:false,read_only:'on'}];return [];},end:async()=>{}};
+ const source={...db,unsafe:async(query:string)=>{externalQueries.push(query);assert.match(query,/test_items2\./);return [];}};
+ const {createCatalog}=await import('../../src/catalog.ts');
+ await start(0,{env:{COMMERCE_CATALOG_SOURCE:'test_items2',DATABASE_URL:'postgres://local:fixture@127.0.0.1/business',CATALOG_DATABASE_URL:'postgres://remote:fixture@catalog.example/toss',HOST:'127.0.0.1'},
+  ensureDevDb:async()=>'',connectDb:(()=>db) as never,
+  openExternalCatalog:(async()=>({db:source,source:'test_items2',catalog:createCatalog('test_items2',source as never),close:async()=>{closed=true;}})) as never,
+  build:(async()=>({})) as never,createServer:((listener:Function)=>{handler=listener;return {listen:(...args:unknown[])=>{(args.at(-1) as Function)();},on:()=>{}};}) as never});
+ const invoke=async(method:string,url:string)=>{let status=0,body='';await handler!({method,url,headers:{cookie:'session='+encodeURIComponent(signSession('fixture-user','unit-test'))}},{writeHead:(s:number)=>{status=s;},end:(s:string)=>{body=s;},headersSent:false});return {status,body:JSON.parse(body)};};
+ const result=await invoke('GET','/api/products');assert.equal(result.status,200);assert.ok(externalQueries.length>0);assert.equal(localQueries.some(q=>q.includes('test_items2.')),false);
+ const context=await invoke('GET','/api/catalog/context');assert.equal(context.body.data.cart_enabled,undefined);
+ assert.equal((await invoke('POST','/api/cart/items')).status,403);
+ assert.equal(closed,false);
+});
+
 test("v4 config forwards the exact deployment version and requires one", () => {
   const version = "dataset-v4-exact-unit-fixture";
   assert.deepEqual(ragConfig({

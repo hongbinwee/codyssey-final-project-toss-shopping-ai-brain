@@ -153,6 +153,7 @@ export async function verifyPreparedBrainStorage(db:SchemaProbe):Promise<void>{
 export async function createBrainRuntime(options:{
  brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider;rag?:RagConnection;
  catalogSource?:CatalogSource;
+ catalog?:ReturnType<typeof createCatalog>;
  localRagSearch?:LocalRagSearch;
  embedQuery?:(query:string)=>Promise<number[]>
 }) {
@@ -204,7 +205,7 @@ export async function createBrainRuntime(options:{
    const conversations=new PersistentConversations(store),preferences=new PersistentPreferences(store);
    const groundedResponder=options.rag?.contract==="v4"
      ?createLlmGroundedResponder(options.provider):undefined;
-   const catalog=createCatalog(options.catalogSource??"public");
+   const catalog=options.catalog??createCatalog(options.catalogSource??"public");
    const graph=createPersistentResearchGraph({
      conversations,memory:preferences,route:routeBrainMessage,fastResponses:true,datasetVersion:options.rag?.datasetVersion,
      retriever:options.rag?verifiedRagRetriever({...options.rag,catalogSource:options.catalogSource??"public"},catalog.getProduct,

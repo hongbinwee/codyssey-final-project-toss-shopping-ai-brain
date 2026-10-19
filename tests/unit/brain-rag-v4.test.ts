@@ -62,6 +62,30 @@ function review(overrides: Partial<FixtureReview> = {}): FixtureReview {
   };
 }
 
+test('remote profile is explicit, response profile is checked and low relevance never becomes recommendations',async()=>{
+ let sent:any;const connection={endpoint:'https://rag.example.invalid/v1/rag/search',mode:'remote' as const,contract:'v4' as const,profile:'test_items2',datasetVersion:DATASET_VERSION,category:'beauty'};
+ const fetcher=(reply:unknown)=>(async(_u:unknown,init:RequestInit)=>{sent=JSON.parse(init.body as string);return new Response(JSON.stringify(reply));}) as typeof fetch;
+ const raw={...v4Response(),profile_name:'test_items2',status:'ok'};
+ const build=(reply:unknown)=>rag.verifiedRagRetriever(connection,async()=>productDetail(),fetcher(reply),async()=>[review()]);
+ const request={query:'수분크림',originalQuestion:'수분크림 추천해줘',requestId:'remote-test',maxTotalWon:null,requiredConditions:[]};
+ assert.equal((await build(raw).search(request)).candidates.length,1);
+ assert.equal(sent.profile,'test_items2');
+ const global=rag.verifiedRagRetriever({...connection,category:'',categories:['beauty','fashion','food','living']},async()=>productDetail(),fetcher(raw),async()=>[review()]);
+ await global.search(request);assert.equal(Object.hasOwn(sent,'category'),false,'unknown category must be omitted, never sent as empty string');
+ await assert.rejects(()=>build({...raw,profile_name:'all_products'}).search(request),/profile/);
+ assert.deepEqual(await build({...raw,status:'low_relevance'}).search(request),{candidates:[],evidence:[]});
+ await assert.rejects(()=>build({...raw,status:'error',error_code:'database_unavailable'}).search(request),/failed/);
+});
+test('product-only remote hits keep Commerce facts without inventing reviews or accepting an unknown selected variant',async()=>{
+ const raw={...v4Response(),items:[{product_id:'p-v4-1',rrf_score:0.1,commerce:{variant_id:'v-v4-1'},evidence:[{source_type:'product',source_id:'p-v4-1',evidence_text:'Untrusted marketing copy'}]}]};
+ let reviewCalls=0;
+ const build=()=>rag.verifiedRagRetriever({endpoint:'https://rag.example.invalid/search',contract:'v4',datasetVersion:DATASET_VERSION,category:'beauty',catalogSource:'test_items'},async()=>productDetail('p-v4-1','v-v4-1',{simulatedCatalog:true}),(async()=>new Response(JSON.stringify(raw))) as typeof fetch,async()=>{reviewCalls++;return [];});
+ const request={query:'세탁세제',originalQuestion:'세탁세제 추천해줘',requestId:'product-only',maxTotalWon:null,requiredConditions:[]};
+ const result=await build().search(request);assert.equal(result.candidates.length,1);assert.equal(result.evidence.filter(e=>e.kind==='REVIEW').length,0);assert.equal(reviewCalls,0);assert.equal(result.candidates[0].unitPriceWon,39900);
+ assert.doesNotMatch(JSON.stringify(result),/Untrusted marketing/);
+ raw.items[0].commerce.variant_id='wrong-variant';assert.deepEqual((await build().search(request)).candidates,[]);
+});
+
 test("source-only v4 parser preserves configured dataset and synthetic evidence metadata", () => {
   const parse = (rag as unknown as {
     parseV4Response?: (raw: unknown, expectedVersion: string) => {

@@ -8,6 +8,7 @@ import type {Aspect,EvidenceRecord,GroundedFacet,ProductCandidate,RetrieverPort}
  * trusted as a raw boolean returned by a model, client, or remote search service.
  */
 export interface RagConnection {
+  profile?:string;
   endpoint:string;
   mode?:"remote"|"local";
   dataDir?:string;
@@ -58,7 +59,7 @@ interface ParsedV4Evidence {
   sourceKind:"REAL"|"SYNTHETIC";
   synthetic:boolean;
 }
-interface ParsedV4Item {productId:string;rrfScore:number;evidence:ParsedV4Evidence[]}
+interface ParsedV4Item {productId:string;rrfScore:number;evidence:ParsedV4Evidence[];productEvidence?:true;commerceVariantId?:string}
 interface ParsedV4Response {datasetVersion:string;items:ParsedV4Item[]}
 
 function obj(v:unknown):Record<string,unknown>|null {
@@ -95,6 +96,9 @@ export function parseV4Response(raw:unknown,expectedVersion:string):ParsedV4Resp
     seenProducts.add(item.product_id);
     evidenceCount+=item.evidence.length;
     if(evidenceCount>300)throw new Error("RAG v4 evidence limit");
+    let productEvidence=false;
+    const commerce=obj(item.commerce);
+    if(commerce?.variant_id!==undefined&&!text(commerce.variant_id,128))throw Error('invalid RAG Commerce variant');
     const evidence:ParsedV4Evidence[]=item.evidence.flatMap(rawEvidence=>{
       const entry=obj(rawEvidence),metadata=obj(entry?.source_metadata);
       if(!entry||(entry.product_id!==undefined&&entry.product_id!==item.product_id)||
@@ -102,7 +106,7 @@ export function parseV4Response(raw:unknown,expectedVersion:string):ParsedV4Resp
         throw new Error("RAG v4 evidence scope or version mismatch");
       // The live index also returns product-description chunks. They are not
       // verified review evidence and must not be passed to the review lookup.
-      if(entry.source_type==="product")return [];
+      if(entry.source_type==="product"){productEvidence=true;return [];}
       if(entry.source_type!==undefined&&entry.source_type!=="review")
         throw new Error("invalid RAG v4 evidence source type");
       const sourceKind=metadata?.source_kind;
@@ -117,7 +121,7 @@ export function parseV4Response(raw:unknown,expectedVersion:string):ParsedV4Resp
       return [{sourceId:entry.source_id,evidenceText:excerpt,variantId:metadata.variant_id,
         sourceKind,synthetic}];
     });
-    return {productId:item.product_id,rrfScore:item.rrf_score,evidence};
+    return {productId:item.product_id,rrfScore:item.rrf_score,evidence,...(productEvidence?{productEvidence:true as const}:{}),...(commerce?.variant_id?{commerceVariantId:commerce.variant_id as string}:{})};
   });
   return {datasetVersion:expectedVersion,items};
 }
@@ -199,26 +203,33 @@ async function retrieveV4(
   const response=await fetcher(target.toString(),{
     method:"POST",redirect:"error",signal:AbortSignal.timeout(timeout),
     headers:{"content-type":"application/json",...(connection.token?{authorization:"Bearer "+connection.token}:{})},
-    body:JSON.stringify({request_id:input.requestId,original_question:input.originalQuestion,
-      query:input.query,category,filters:{},required_conditions:input.requiredConditions,
+    body:JSON.stringify({request_id:input.requestId,original_question:input.originalQuestion,...(connection.profile?{profile:connection.profile}:{}),
+      query:input.query,...(category||connection.mode==='local'?{category}:{}),filters:{},required_conditions:input.requiredConditions,
       preferences:[],top_k:5})
   });
   const rawResponse=await boundedJson(response);
+  const envelope=obj(rawResponse);
+  if(connection.profile&&envelope?.profile_name!==connection.profile)throw Error('RAG profile mismatch');
+  if(envelope?.status==='error'||envelope?.error_code)throw Error('RAG search failed');
   const parsed=parseV4Response(rawResponse,connection.datasetVersion!);
+  if(envelope?.status==='low_relevance'||envelope?.status==='no_results')return {candidates:[],evidence:[]};
   const candidates:ProductCandidate[]=[],evidence:EvidenceRecord[]=[];
   for(const item of parsed.items){
     const got=await getProduct({product_id:item.productId});
     if(!got.ok||got.data.product.id!==item.productId||!got.data.product.active)continue;
-    const eligible=item.evidence.filter(e=>got.data.variants.some(v=>
+    const available=got.data.variants.filter(v=>v.availability==='AVAILABLE'&&v.stock_qty>0&&(!item.commerceVariantId||v.variant_id===item.commerceVariantId));
+    if(!available.length)continue;
+    const eligible=item.evidence.filter(e=>available.some(v=>
       (e.variantId===null||v.variant_id===e.variantId)&&v.availability==="AVAILABLE"&&v.stock_qty>0));
-    if(eligible.length===0)continue;
+    if(eligible.length===0&&!item.productEvidence)continue;
     const reviews=validV4ReviewRows(
-      await reviewLookup({product_id:item.productId,review_ids:eligible.map(e=>e.sourceId)}),
+      eligible.length?await reviewLookup({product_id:item.productId,review_ids:eligible.map(e=>e.sourceId)}):[],
       item.productId,eligible,
     );
     const byVariant=new Map<string,ParsedV4Evidence[]>();
+    if(!eligible.length&&item.productEvidence)byVariant.set(available[0].variant_id,[]);
     for(const entry of eligible){
-      for(const variant of got.data.variants.filter(v=>v.availability==="AVAILABLE"&&v.stock_qty>0&&
+      for(const variant of available.filter(v=>
         (entry.variantId===null||v.variant_id===entry.variantId))){
         const group=byVariant.get(variant.variant_id)??[];
         group.push(entry);byVariant.set(variant.variant_id,group);
@@ -264,7 +275,7 @@ async function retrieveV4(
         ...(productImage?{productImage}:{}),...(keywords.length?{keywords}:{}),
         unitPriceWon:variant.unit_price_won,shippingFeeWon:got.data.shipping_fee_won,
         rating:null,ratingScale:null,wholeReviewCount:null,wholeReviewCountVerified:false,
-        conditions,facets,sourceKind:hasSynthetic?"SYNTHETIC":hasVerifiedSource?"REAL":undefined,
+        conditions,facets,sourceKind:hasSynthetic?"SYNTHETIC":hasVerifiedSource?"REAL":item.productEvidence?specSourceKind:undefined,
         datasetVersion:parsed.datasetVersion,commerceVerified:true,
         ...(isSimulated?{isSimulated:true}:{}),...(qaRankingEligible?{qaRankingEligible:true}:{})});
     }
@@ -345,6 +356,7 @@ export function verifiedRagRetriever(
   fetcher:typeof fetch=fetch,
   reviewLookup?:ReviewLookup,
 ):RetrieverPort {
+  if(connection.profile&&!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(connection.profile))throw Error('invalid RAG profile');
   if(connection.mode==="local"&&fetcher===fetch)
     throw new Error("local RAG requires an injected in-process transport");
   const target=validateRagEndpoint(connection.endpoint);

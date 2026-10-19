@@ -63,7 +63,7 @@ jobs:
       - name: Build unchanged frontend
         run: npm run build
       - name: Brain isolated regression and API tests
-        run: node --experimental-strip-types --test --test-concurrency=1 tests/brain-sandbox/*.test.mjs tests/unit/brain-*.test.ts
+        run: node --experimental-strip-types --test --test-concurrency=1 tests/brain-sandbox/*.test.mjs tests/unit/brain-*.test.ts tests/unit/external-catalog.test.ts
       - name: Catalog navigation and read-only UI regression
         run: node --test tests/unit/catalog-lookup.test.ts tests/unit/commerce-ui.test.ts
       - name: Deterministic Shopping Brain intent goldset (not live model accuracy)

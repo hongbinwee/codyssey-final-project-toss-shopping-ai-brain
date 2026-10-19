@@ -10,6 +10,7 @@ import { contextFromRequest, signSession } from "./session.ts";
 import {createQaAuth,readQaAuthFile} from "./qa-auth.ts";
 import {qaCommerceEnabled, qaCommerceRequestAllowed, qaCommerceIdentity} from "./qa-commerce.ts";
 import { catalogRequestAllowed, catalogSource, createCatalog } from "./catalog.ts";
+import {openExternalCatalog} from './external-catalog.ts';
 import { addToCart, getCart, removeCartItem, updateCartQuantity } from "./cart.ts";
 import { getWishlist, parseWishlistPut, setWishlist } from "./wishlist.ts";
 import { checkoutQuote, confirmCheckout } from "./checkout.ts";
@@ -118,6 +119,7 @@ const reqCtx = (req: IncomingMessage) =>
   );
 
 export type ServerStartDeps = {
+  openExternalCatalog?:typeof openExternalCatalog;
   webBundlePath?: string;
   localRagSearch?:import("./brain/rag-adapter.ts").LocalRagSearch;
   embedQuery?:(query:string)=>Promise<number[]>;
@@ -130,6 +132,7 @@ export type ServerStartDeps = {
 
 type BrainRagContract = "brain-rag-v1" | "v4";
 type BrainRagConnection = {
+  profile?:string;
   endpoint: string;
   mode?:"remote"|"local";
   dataDir?:string;
@@ -174,6 +177,7 @@ export function brainRagConnectionFromEnv(
   if(categories&&(!categories.length||categories.some(c=>!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(c))||new Set(categories).size!==categories.length))throw Error("invalid BRAIN_RAG_CATEGORIES");
   return {
     endpoint,
+    ...(env.BRAIN_RAG_PROFILE?.trim()?{profile:env.BRAIN_RAG_PROFILE.trim()}:{}),
     ...(mode==="local"?{mode,dataDir,pythonPath:env.BRAIN_RAG_PYTHON,
       modelRevision:env.BRAIN_RAG_MODEL_REVISION,modelCache:env.BRAIN_RAG_MODEL_CACHE,manifestPath}:{}),
     auditId: env.BRAIN_RAG_AUDIT_ID ?? "",
@@ -249,7 +253,10 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       await businessDb.end();throw new Error("QA database identity mismatch");
     }
   }
-  const catalog = createCatalog(source, businessDb);
+  let externalCatalog:Awaited<ReturnType<typeof openExternalCatalog>>;
+  try{externalCatalog=await (deps.openExternalCatalog??openExternalCatalog)(env,source);}
+  catch(error){await businessDb.end();throw error;}
+  const catalog = externalCatalog?.catalog??createCatalog(source, businessDb);
   await buildBundle({
     entryPoints: ["src/web/app.tsx"],
     bundle: true,
@@ -270,6 +277,7 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
         provider,
         rag: ragConnection,
         catalogSource: source,
+        catalog,
         localRagSearch: deps.localRagSearch,
         embedQuery: deps.embedQuery,
       })
@@ -357,12 +365,14 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
       if (!catalogRequestAllowed(source, req.method ?? "", p) && !(qaCommerce && qaCommerceRequestAllowed(req.method ?? "", p)))
         return json(res, 403, {ok:false,error:{code:"READ_ONLY_CATALOG",
           message:qaCommerce?"v4 QA에서는 찜·장바구니 저장만 지원하며 주문·결제는 제공하지 않습니다.":"v4 테스트 상품은 시연용 가격·재고이며 장바구니·찜·주문·결제를 제공하지 않습니다."}});
+      if(externalCatalog&&req.method!=='GET'&&qaCommerceRequestAllowed(req.method??'',p))
+        return json(res,403,{ok:false,error:{code:'CATALOG_WRITES_PAUSED',message:'외부 상품과 로컬 저장소의 정합성 확인 전에는 찜·장바구니 변경을 잠시 지원하지 않습니다.'}});
       if (qaCommerce && qaCommerceRequestAllowed(req.method ?? "", p) && req.method !== "GET" &&
           !brainMutationAllowed(req.headers, env.BRAIN_PUBLIC_ORIGIN))
         return json(res,403,{ok:false,error:{code:"CSRF_REJECTED",message:"허용되지 않은 요청 출처"}});
       if (p === "/api/catalog/context" && req.method === "GET")
         return json(res,200,{ok:true,data:{source,read_only:catalogReadOnly,is_simulated:catalogReadOnly,
-          ...(qaCommerce?{cart_enabled:true,wishlist_enabled:true,checkout_enabled:false}:{})}});
+          ...(qaCommerce?{cart_enabled:!externalCatalog,wishlist_enabled:!externalCatalog,checkout_enabled:false}:{})}});
       if (aiDemo && p.startsWith("/api/") && p !== "/api/agent/turn" &&
           !(req.method === "GET" && /^\/api\/products(?:\/[^/]+(?:\/reviews)?)?$/.test(p)))
         return json(res, 403, { ok: false, error: { code: "READ_ONLY_DEMO", message: "이 AI 시연에서는 상품·리뷰 조회만 제공해요. 일반 쇼핑은 기존 3105 앱을 이용해 주세요." } });
@@ -571,6 +581,7 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
         : server.listen(port, resolve),
   );
   if (brainRuntime) server.on("close", () => { void brainRuntime.close(); });
+  if (externalCatalog) server.on('close',()=>{void externalCatalog.close();});
   return server;
 }
 
