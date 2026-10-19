@@ -23,6 +23,7 @@ import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
 import {requireBrainV9Schema,type SchemaProbe} from "./schema-guard.ts";
 import {routeBrainMessage} from "./routing.ts";
+import {createFastIntentPort} from "./fast-intent.ts";
 
 /** One offline CPU encoder per runtime. Only query vectors, never corpus re-embedding. */
 export async function createLocalQueryEncoder(
@@ -192,10 +193,10 @@ export async function createBrainRuntime(options:{
      ?createLlmGroundedResponder(options.provider):undefined;
    const catalog=createCatalog(options.catalogSource??"public");
    const graph=createPersistentResearchGraph({
-     conversations,memory:preferences,route:routeBrainMessage,
+     conversations,memory:preferences,route:routeBrainMessage,fastResponses:true,
      retriever:options.rag?verifiedRagRetriever(options.rag,catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
-     intent:createIntentPort(providerIntentModel(options.provider,45000),options.rag?.category)
+     intent:createFastIntentPort(createIntentPort(providerIntentModel(options.provider,45000),options.rag?.category))
    },saver,postgresTurnLock(lockDb,db),new FencedTurns(store),groundedResponder);
    return {
      handle:createBrainApi({conversations,preferences,graph,recentHistory:actor=>readBrainHistory(db,actor)}),

@@ -6,7 +6,7 @@ import {resolveShoppingPlan} from "./shopping-plan.ts";
 import type {GroundedExplanation} from "./grounded-response.ts";
 import type {BrainRoute,BrainIntentKind} from "./routing.ts";
 
-export type ShoppingIntent=PlanExtraction;
+export type ShoppingIntent=PlanExtraction & {attributeSources?:Record<string,string>};
 export interface IntentPort {
  extract(userMessage:string,knownPreferences:Preference[],previous?:ShoppingPlan):Promise<ShoppingIntent>
 }
@@ -21,6 +21,7 @@ export interface ResearchDeps {
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
  memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
  route?:(message:string,previous?:ShoppingPlan)=>BrainRoute;
+ fastResponses?:boolean;
 }
 export interface PreparedTurn {
  messageId:string;memories:Preference[];startedAt:number;memoryMs:number

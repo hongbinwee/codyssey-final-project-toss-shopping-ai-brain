@@ -5,12 +5,13 @@ export interface BrainRoute {kind:BrainIntentKind;search:boolean;text?:string}
 /** Pure, conservative routing: only complete social/help phrases bypass research. */
 export function routeBrainMessage(message:string,previous?:ShoppingPlan):BrainRoute{
  const text=message.trim().replace(/[!?？!。.,~]+$/g,"").trim();
- const shopping=/(?:.{2,}\s*(?:추천|찾아|검색|구매|살까|사고\s*싶|고르|비교))|(?:상품|제품|가격|예산|리뷰|후기|장단점)/.test(text);
+ const shoppingQuestion=(value:string)=>/(?:.{2,}\s*(?:추천|찾아|검색|구매|살까|사고\s*싶|고르|비교))|(?:상품|제품|가격|예산|리뷰|후기|장단점)|(?:.{2,}(?:은|는)\s*(?:어때|괜찮))/.test(value);
+ const shopping=shoppingQuestion(text);
  const role=()=>({kind:"UNCERTAIN" as const,search:false,text:"저는 상품 찾기와 비교를 도와드려요. 찾으시는 상품이나 궁금한 점을 알려주세요."});
  const attack=/(?:시스템\s*프롬프트|API\s*키|비밀번호|개인키).{0,25}(?:출력|공개|보여|알려|노출|검색)|(?:인증|권한|로그인).{0,15}우회|ignore.{0,20}(?:instructions|rules)|(?:이전|기존|모든).{0,8}(?:지침|규칙).{0,8}무시/i;
  // A separate normal shopping clause may proceed, but searching for credentials is not shopping.
- if(attack.test(text)&&!text.split(/[,;\n]|그리고|(?:하고|한 뒤)\s*/).some(clause=>
-   !attack.test(clause)&&/(?:추천|찾아|검색|비교)/.test(clause)&&!/(?:API\s*키|비밀번호|개인키|시스템\s*프롬프트)/i.test(clause)))return role();
+ if(attack.test(text)&&!text.split(/[,.!?;\n]|그리고|(?:하고|한 뒤)\s*/).some(clause=>
+   !attack.test(clause)&&shoppingQuestion(clause)&&!/(?:API\s*키|비밀번호|개인키|시스템\s*프롬프트)/i.test(clause)))return role();
  if(!shopping&&(/^[ㅋㅎㅠㅜ!?\s]+$/i.test(text)||/^(.{1,8})\1{2,}$/.test(text)||
    /^(?:asdf|qwer|zxcv){2,}$/i.test(text)))return {kind:"UNCERTAIN",search:false,text:"입력을 잘 이해하지 못했어요. 찾으시는 상품을 짧게 알려주시겠어요?"};
  if(!shopping&&/날씨|주식\s*(?:전망|예측)|코드\s*(?:짜|작성)|정치|대통령|욕해|멍청|병신|씨발|바보/.test(text))return role();

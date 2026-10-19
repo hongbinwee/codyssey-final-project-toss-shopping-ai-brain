@@ -72,12 +72,12 @@ export function createPersistentResearchGraph(
      const started=performance.now();
      const researchResult={
        ...state.researchResult,
-       explanation:groundedResponder
+       explanation:groundedResponder&&(!deps.fastResponses||state.intentRoute.kind==="REVIEW_COMPARE")
          ?await groundedResponder({originalQuestion:state.request.userMessage,
            ranking:state.researchResult.ranking,evidence:state.evidence,plan:state.shoppingPlan})
          :buildGroundedExplanation(state.researchResult.ranking,state.evidence,state.shoppingPlan)
      };
-     researchResult.trace={...researchResult.trace,responseMs:performance.now()-started,
+     researchResult.trace={...researchResult.trace,candidatesReadyMs:started-state.prepared.startedAt,responseMs:performance.now()-started,
        totalMs:performance.now()-state.prepared.startedAt};
      await verify();
      return {researchResult};
