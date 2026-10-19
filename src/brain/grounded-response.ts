@@ -123,7 +123,7 @@ type SourceKind="REAL"|"SYNTHETIC";
 type PromptCandidate={sourceKind:SourceKind;productId:string;variantId:string;productName:string;
  unitPriceWon:number;shippingFeeWon:number;totalPriceWon:number;datasetVersion:string;isSimulated:boolean;
  evidence:{sourceId:string;text:string;sourceKind:SourceKind;sourceVariantId:string|null}[]};
-type PreparedCandidate={prompt:PromptCandidate;sourceTexts:Map<string,string>;sourceKinds:Map<string,SourceKind>;sourceVariants:Map<string,string|null>;ranked:boolean};
+type PreparedCandidate={prompt:PromptCandidate;sourceTexts:Map<string,string>;sourceKinds:Map<string,SourceKind>;sourceVariants:Map<string,string|null>;ranked:boolean;synthetic:boolean};
 type Selection={sourceKind:SourceKind;productId:string;variantId:string;sourceId:string;quote:string};
 export interface GroundedResponseInput {
  originalQuestion:string;ranking:RankingResult;evidence:EvidenceRecord[];plan:ShoppingPlan;
@@ -212,7 +212,7 @@ function prepareCandidate(candidate:ExtendedCandidate,expectedKind:SourceKind,
  return {prompt:{sourceKind:expectedKind,productId:candidate.productId,variantId:candidate.variantId,
    productName,unitPriceWon:candidate.unitPriceWon,shippingFeeWon:candidate.shippingFeeWon,totalPriceWon,
    datasetVersion:candidate.datasetVersion,isSimulated:candidate.isSimulated===true,
-   evidence:[...sourceTexts].map(([sourceId,text])=>({sourceId,text:text.slice(0,1200),sourceKind:sourceKinds.get(sourceId)!,sourceVariantId:sourceVariants.get(sourceId)!}))},sourceTexts,sourceKinds,sourceVariants,ranked};
+   evidence:[...sourceTexts].map(([sourceId,text])=>({sourceId,text:text.slice(0,1200),sourceKind:sourceKinds.get(sourceId)!,sourceVariantId:sourceVariants.get(sourceId)!}))},sourceTexts,sourceKinds,sourceVariants,ranked,synthetic:candidate.synthetic===true};
 }
 
 /** One response call for recommendations/comparisons. Catalog reasons are selected
@@ -315,7 +315,7 @@ function finish(selection:Selection,selected:PreparedCandidate,summary?:string,
  const simulated=c.isSimulated&&includeNotice?"표시된 가격과 재고는 실제 판매 정보가 아니며 주문·결제할 수 없어요. ":"";
  const sourceLabel=selection.sourceKind==="SYNTHETIC"?"합성 리뷰":"수집 리뷰";
  const sourceNotice=includeNotice?(selection.sourceKind==="SYNTHETIC"&&!selected.ranked
-   ?"시연 데이터 참고 내용이에요. ":`${sourceLabel} 의견을 바탕으로 한 상품 정보예요. `):"";
+   ?(selected.synthetic?"합성 리뷰 의견이 포함되어 있어요. ":"시연 데이터 참고 내용이에요. 합성 리뷰 의견이 포함되어 있어요. "):`${sourceLabel} 의견을 바탕으로 한 상품 정보예요. `):"";
  const quoted=summary??`“${selection.quote}”라는 의견이 있어요.`;
   if(selection.sourceKind==="SYNTHETIC")return {kind:selected.ranked?"LLM_GROUNDED":"REFERENCE_ONLY",
     items:selected.ranked?[{productId:c.productId,variantId:c.variantId,name,totalPriceWon:c.totalPriceWon,
@@ -395,7 +395,7 @@ export function createLlmGroundedResponder(provider:Pick<Provider,"chat">):Groun
      const sourceKinds=new Set(chosen.map(row=>row.claim.sourceKind));
      const notice=[
        ...(sourceKinds.has("REAL")?["수집 리뷰 의견이 포함되어 있어요."]:[]),
-       ...(sourceKinds.has("SYNTHETIC")?[items.length?"합성 리뷰 의견이 포함되어 있어요.":"시연 데이터 참고 내용이에요. 합성 리뷰 의견이 포함되어 있어요."]:[]),
+       ...(sourceKinds.has("SYNTHETIC")?[prepared.length===1&&!prepared[0].synthetic&&!items.length?"시연 데이터 참고 내용이에요. 합성 리뷰 의견이 포함되어 있어요.":"합성 리뷰 의견이 포함되어 있어요."]:[]),
        ...(prepared.some(c=>c.prompt.isSimulated)?["표시된 가격과 재고는 실제 판매 정보가 아니며 주문·결제할 수 없어요."]:[])
      ].join(" ");
      return {kind:items.length?"LLM_GROUNDED":"REFERENCE_ONLY",items,citations,text:[notice,...segments].filter(Boolean).join("\n\n"),
