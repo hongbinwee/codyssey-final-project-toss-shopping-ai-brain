@@ -215,7 +215,8 @@ export async function createBrainRuntime(options:{
      timeoutMs:Number(process.env.BRAIN_DECISIONS_TIMEOUT_MS??4000),
      confidenceThreshold:Number(process.env.BRAIN_DECISIONS_CONFIDENCE??0.35),
    }):routeBrainMessage;
-   const converse=createConversationResponder(options.provider);
+   // Existing rule-mode QA remains unchanged; only the explicit Decisions mode uses live conversation generation.
+   const converse=routeMode==="decisions"?createConversationResponder(options.provider):undefined;
    const groundedResponder=options.rag?.contract==="v4"
      ?createLlmGroundedResponder(options.provider):undefined;
    const catalog=createCatalog(options.catalogSource??"public");
