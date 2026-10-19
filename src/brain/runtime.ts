@@ -5,6 +5,9 @@ import {createInterface} from "node:readline";
 import {fileURLToPath} from "node:url";
 import {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
 import {createCatalog,type CatalogSource} from "../catalog.ts";
+import {sql} from "../db.ts";
+import {readCommerceActivity} from "./commerce-signals.ts";
+import {QA_COMMERCE_DATABASE,QA_COMMERCE_ROLE} from "../qa-commerce.ts";
 import {assertServiceRole} from "../db.ts";
 import {verifiedRagRetriever,localRagFetcher,type LocalRagSearch,type RagConnection} from "./rag-adapter.ts";
 import {createLocalRagSearch} from "./local-rag.ts";
@@ -202,8 +205,12 @@ export async function createBrainRuntime(options:{
    const groundedResponder=options.rag?.contract==="v4"
      ?createLlmGroundedResponder(options.provider):undefined;
    const catalog=createCatalog(options.catalogSource??"public");
+   const trustedCommerce=new URL(options.commerceDatabaseUrl??"postgresql://invalid/");
+   const ownQaCommerce=trustedCommerce.hostname==="127.0.0.1"&&trustedCommerce.port==="15440"&&
+     trustedCommerce.pathname==="/"+QA_COMMERCE_DATABASE&&decodeURIComponent(trustedCommerce.username)===QA_COMMERCE_ROLE;
    const graph=createPersistentResearchGraph({
      conversations,memory:preferences,route:routeBrainMessage,fastResponses:true,
+     ...(ownQaCommerce?{activity:(actorUserId:string)=>readCommerceActivity(sql,actorUserId)}:{}),
      retriever:options.rag?verifiedRagRetriever({...options.rag,catalogSource:options.catalogSource??"public"},catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
      intent:createFastIntentPort(createIntentPort(providerIntentModel(options.provider,45000),options.rag?.category))
