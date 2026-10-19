@@ -15,6 +15,8 @@ export interface BrainGraphPort {
 }
 export interface BrainApiDeps {
   recentHistory?:(actorUserId:string)=>Promise<unknown>;
+  listConversations?:(actorUserId:string)=>Promise<Array<{id:string;createdAt:string;title:string|null}>>;
+  conversationHistory?:(actorUserId:string,conversationId:string)=>Promise<{conversationId:string|null;entries:unknown[]}>;
   conversations:Pick<PersistentConversations,"create"|"assertOwned"|"proposePreference"|"confirmPreference">;
   preferences:Pick<PersistentPreferences,"list"|"delete">;
   graph:BrainGraphPort;
@@ -39,9 +41,28 @@ export function createBrainApi(deps:BrainApiDeps) {
       if(method==="GET"&&path==="/api/brain/status")return success({enabled:true,read_only:true,mode:"grounded_research"});
       if(method==="GET"&&path==="/api/brain/history")
         return success(deps.recentHistory?await deps.recentHistory(actorUserId):{conversationId:null,entries:[]});
+      if(method==="GET"&&path==="/api/brain/conversations"){
+        if(!deps.listConversations)return fail(503,"BRAIN_UNAVAILABLE","대화 목록을 불러오지 못했습니다");
+        return success({conversations:await deps.listConversations(actorUserId)});
+      }
       if(method==="POST"&&path==="/api/brain/conversations"){
-        if(Object.keys(body).length) return fail(400,"VALIDATION","지원하지 않는 요청 형식");
-        return success(await deps.conversations.create(actorUserId),201);
+        if(rawBody===null||typeof rawBody!=="object"||Array.isArray(rawBody))
+          return fail(400,"VALIDATION","지원하지 않는 요청 형식");
+        const hasActionId=Object.prototype.hasOwnProperty.call(body,"client_action_id");
+        if(Object.keys(body).some(key=>key!=="client_action_id")||
+           (hasActionId&&!required(body.client_action_id,128)))
+          return fail(400,"VALIDATION","지원하지 않는 요청 형식");
+        const actionId=hasActionId?body.client_action_id as string:undefined;
+        return success(await deps.conversations.create(actorUserId,actionId),201);
+      }
+      const history=path.match(/^\/api\/brain\/conversations\/([a-fA-F0-9-]+)\/history$/);
+      if(method==="GET"&&history){
+        if(!uuid(history[1]))return fail(400,"VALIDATION","대화 ID를 확인해 주세요");
+        if(!deps.conversationHistory)return fail(503,"BRAIN_UNAVAILABLE","대화 기록을 불러오지 못했습니다");
+        await deps.conversations.assertOwned(actorUserId,history[1]);
+        const result=await deps.conversationHistory(actorUserId,history[1]);
+        if(result.conversationId!==history[1])throw new Error("invalid conversation history");
+        return success(result);
       }
       if(method==="GET"&&path==="/api/brain/preferences") {
         const records=await deps.preferences.list(actorUserId);

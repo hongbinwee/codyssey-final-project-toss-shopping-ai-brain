@@ -119,38 +119,44 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await panel.waitFor({timeout:15000});
    console.log("BROWSER_STAGE 05 preview visible");
    const send=async(message)=>{
-     const count=await panel.locator(".msg.ai").count();
+     const count=await panel.locator(".brain-turn").count();
      await panel.getByPlaceholder("쇼핑 조건을 입력하세요").fill(message);
      await panel.getByRole("button",{name:"보내기"}).click();
-     return panel.locator(".msg.ai").nth(count);
+     return panel.locator(".brain-turn").nth(count);
    };
    const first=await send("모니터를 50만원 이하로 추천해줘");
-   await first.locator(".compare-row").first().waitFor({timeout:25000});
-   assert.ok(await first.getByText(/500,000원/).count()>0);
+   await first.locator(".brain-product-card").first().waitFor({timeout:25000});
+   const currentPlan=async()=>{
+     const r=await page.request.get('/api/brain/history');
+     return (await r.json()).data.entries.at(-1).reply.shopping_plan;
+   };
+   assert.equal((await currentPlan()).maxTotalWon,500000);
    const remember=async(value)=>{
      await panel.locator(".state-box select").selectOption(value);
      await panel.getByRole("button",{name:"선호 저장 요청"}).click();
      await panel.getByRole("button",{name:"이 선호를 기억하도록 확인"}).click();
-     await panel.getByText("price_priority: "+value).waitFor({timeout:12000});
+     await panel.getByRole('status').filter({hasText:'저장했어요'}).waitFor({timeout:12000});
+     assert.ok(await panel.getByText(value==='value'?'가격 선호: 가성비 중심':'가격 선호: 성능 중심',{exact:true}).count()>0);
    };
    await remember("value");
    const second=await send("같은 모니터에서 가격이 중요해");
-   await second.locator(".compare-row").first().waitFor({timeout:25000});
-   assert.match(await second.locator(".compare-row").first().innerText(),/QA value monitor/);
+   await second.locator(".brain-product-card").first().waitFor({timeout:25000});
+   assert.match(await second.locator(".brain-product-card").first().innerText(),/QA value monitor/);
    await remember("performance");
    const third=await send("이제 성능을 우선해서 비교해줘");
-   await third.locator(".compare-row").first().waitFor({timeout:25000});
-   assert.match(await third.locator(".compare-row").first().innerText(),/QA performance monitor/);
-   assert.ok(await third.getByText(/500,000원/).count()>0,"existing budget preserved across turns");
+   await third.locator(".brain-product-card").first().waitFor({timeout:25000});
+   assert.match(await third.locator(".brain-product-card").first().innerText(),/QA performance monitor/);
+   assert.equal((await currentPlan()).maxTotalWon,500000,"existing budget preserved across turns");
 
    failNext=true;
    const countBefore=await panel.locator(".msg.ai").count();
    await send("조건 유지하고 다시 보여줘");
    await panel.getByRole("alert").waitFor({timeout:25000});
    assert.equal(await panel.locator(".msg.ai").count(),countBefore,"failed request must not claim successful ranking");
-   assert.equal(await panel.getByPlaceholder("쇼핑 조건을 입력하세요").inputValue(),"조건 유지하고 다시 보여줘","failed user text remains");
-   await panel.getByRole("button",{name:"보내기"}).click();
-   await panel.locator(".msg.ai").nth(countBefore).locator(".compare-row").first().waitFor({timeout:25000});
+   assert.equal(await panel.getByPlaceholder("쇼핑 조건을 입력하세요").inputValue(),"","input is cleared while failed bubble retains original question");
+   assert.ok(await panel.locator('.msg.user').getByText('조건 유지하고 다시 보여줘',{exact:true}).count()>0);
+   await panel.getByRole("button",{name:"다시 시도",exact:true}).click();
+   await panel.locator(".brain-turn").last().locator(".brain-product-card").first().waitFor({timeout:25000});
    assert.ok(ragCalls>=5);
    // LLM planner failure after a completed turn must preserve the last completed plan.
    failNextModelStatus=503;
@@ -159,16 +165,13 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await panel.getByRole("alert").waitFor({timeout:25000});
    assert.equal(await panel.locator(".msg.ai").count(),beforeModelFailure,
      "failed model intent must not display stale or partial recommendation");
-   assert.equal(await panel.getByPlaceholder("쇼핑 조건을 입력하세요").inputValue(),
-     "모니터 예산 유지하며 다시 비교");
-   await panel.getByRole("button",{name:"보내기"}).click();
-   const afterModelRetry=panel.locator(".msg.ai").nth(beforeModelFailure);
-   await afterModelRetry.locator(".compare-row").first().waitFor({timeout:25000});
-   assert.ok(await afterModelRetry.getByText(/500,000원/).count()>0,
-     "failed LLM call cannot destroy previous completed budget plan");
+   assert.ok(await panel.locator('.msg.user').getByText('모니터 예산 유지하며 다시 비교',{exact:true}).count()>0);
+   await panel.getByRole("button",{name:"다시 시도",exact:true}).click();
+   await panel.locator(".brain-turn").last().locator(".brain-product-card").first().waitFor({timeout:25000});
+   assert.equal((await currentPlan()).maxTotalWon,500000,"failed LLM call cannot destroy previous completed budget plan");
    await panel.getByRole("button",{name:"가격 선호 기억 삭제"}).click();
-   await panel.getByText(/저장된 장기 가격 선호만 삭제했어요/).waitFor({timeout:12000});
-   assert.equal(await panel.getByText("price_priority: performance").count(),0,
+   await panel.getByText(/장기 가격 선호만 삭제했어요/).waitFor({timeout:12000});
+   assert.equal(await panel.getByText("가격 선호: 성능 중심",{exact:true}).count(),0,
      "canonical long-term memory removed; previous conversations remain separate");
    failNextModelStatus=429;
    const before429=await panel.locator(".msg.ai").count();
@@ -176,13 +179,10 @@ test("Chromium: log in, save long-term preference, get personalized reranking, f
    await panel.getByRole("alert").waitFor({timeout:25000});
    assert.equal(await panel.locator(".msg.ai").count(),before429,
      "HTTP 429 must not generate a successful recommendation");
-   assert.equal(await panel.getByPlaceholder("쇼핑 조건을 입력하세요").inputValue(),
-     "같은 모니터 조건 유지해줘");
-   await panel.getByRole("button",{name:"보내기"}).click();
-   const after429=panel.locator(".msg.ai").nth(before429);
-   await after429.locator(".compare-row").first().waitFor({timeout:25000});
-   assert.ok(await after429.getByText(/500,000원/).count()>0,
-     "existing budget persists through model 429");
+   assert.ok(await panel.locator('.msg.user').getByText('같은 모니터 조건 유지해줘',{exact:true}).count()>0);
+   await panel.getByRole("button",{name:"다시 시도",exact:true}).click();
+   await panel.locator(".brain-turn").last().locator(".brain-product-card").first().waitFor({timeout:25000});
+   assert.equal((await currentPlan()).maxTotalWon,500000,"existing budget persists through model 429");
    const samples=(await Promise.all(graphTraces)).filter(n=>n!==null);
    assert.ok(samples.length>=4,"four successful CI mock Graph executions must be timed");
    console.log("BRAIN_BROWSER_MOCK_GRAPH_LATENCY",JSON.stringify(summarizeLatency(samples)),

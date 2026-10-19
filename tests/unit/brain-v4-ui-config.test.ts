@@ -151,7 +151,7 @@ test("v4 config forwards the exact deployment version and requires one", () => {
   }), /BRAIN_RAG_CONTRACT/);
 });
 
-test("synthetic ranked candidates render only as reference data with a verified product link", () => {
+test("verified synthetic ranked candidates retain simulation provenance without exposing internal IDs", () => {
   const html = renderRanking({
     ranked: [{ candidate: {
       productId: "synthetic-product", productName: "합성 뷰티 상품", variantId: "variant-1",
@@ -160,10 +160,11 @@ test("synthetic ranked candidates render only as reference data with a verified 
     }, score: 1, evidenceCoverage: 1 }],
     referenceOnly: [], rejected: [], evaluatedCount: 1,
   });
-  assert.ok(html.includes("v4 합성 데이터 · 참고용"));
-  assert.ok(html.includes("참고 정보 (추천 아님)"));
+  assert.ok(html.includes("합성"));
+  assert.ok(html.includes("시연"));
   assert.ok(html.includes("상품 보기"));
-  assert.ok(!html.includes("검증 후보"));
+  assert.ok(!html.includes("variant-1"));
+  assert.ok(!html.includes("추천 적격성을 확인한 상품이 없어요"));
 });
 
 test("unverified v4 synthetic reference candidates have no product link", () => {
@@ -176,8 +177,8 @@ test("unverified v4 synthetic reference candidates have no product link", () => 
     }, reasons: ["실제 리뷰 표본 부족"] }],
     rejected: [], evaluatedCount: 1,
   });
-  assert.ok(html.includes("v4 합성 데이터 · 참고용"));
-  assert.ok(html.includes("Commerce 상품 확인 전"));
+  assert.ok(html.includes("합성"));
+  assert.ok(html.includes("상품 확인 전"));
   assert.ok(!/<button[^>]*>상품 보기<\/button>/.test(html));
 });
 
@@ -190,7 +191,7 @@ test("legacy reference-only candidates keep their existing text-only display", (
     rejected: [], evaluatedCount: 1,
   });
   assert.ok(html.includes("기존 후보"));
-  assert.ok(html.includes("검증 표본 부족"));
+  assert.ok(html.includes("참고"));
   assert.ok(!html.includes("v4 합성 데이터"));
   assert.ok(!html.includes("Commerce 상품 확인 전"));
   assert.ok(!html.includes("상품 보기"));
@@ -219,7 +220,7 @@ test("Brain reference option shows and forwards the exact product and variant ID
   assert.ok(button);
   button?.props.onClick?.({} as MouseEvent<HTMLButtonElement>);
   assert.deepEqual(opened, ["p-beauty", "v-option-b"]);
-  assert.ok(html.includes("옵션 v-option-b"));
+  assert.ok(!html.includes("v-option-b"));
 });
 
 test("requested product variant selects only an available exact match; ordinary entry keeps the first available", () => {

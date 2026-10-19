@@ -1,5 +1,6 @@
 import type { MemoryRepository, Preference, PreferenceKey, PreferenceValue } from './contracts.ts';
 import { assertPreference } from './memory.ts';
+import { createHash } from 'node:crypto';
 
 export interface BrainSqlRunner {
   query<T extends Record<string,unknown>>(sql:string,args:unknown[]):Promise<T[]>;
@@ -9,13 +10,45 @@ export interface BrainSqlDatabase extends BrainSqlRunner {
 }
 function actor(id:string) { if (!id || id.length>256) throw new Error('invalid authenticated actor'); }
 function uid(id:string) { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('invalid conversation identifier'); }
+const CONVERSATION_CREATE_NAMESPACE='toss-shopping-brain/conversation-create/v1';
+function conversationIdForAction(actorUserId:string,clientActionId:string):string {
+  const canonicalJson=JSON.stringify({namespace:CONVERSATION_CREATE_NAMESPACE,actorUserId,clientActionId});
+  const bytes=createHash('sha256').update(canonicalJson,'utf8').digest().subarray(0,16);
+  bytes[6]=(bytes[6]&0x0f)|0x80;
+  bytes[8]=(bytes[8]&0x3f)|0x80;
+  const hex=bytes.toString('hex');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
+function safeConversationTitle(value:unknown):string|null {
+  if(typeof value!=="string")return null;
+  const normalized=value.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g," ").replace(/\s+/g," ").trim();
+  if(!normalized)return null;
+  const characters=Array.from(normalized);
+  return characters.length>80?characters.slice(0,79).join("").trimEnd()+"…":normalized;
+}
 export class PersistentConversations {
   private readonly db:BrainSqlDatabase;
   constructor(db:BrainSqlDatabase){this.db=db;}
-  async create(actorUserId:string):Promise<{id:string;actorUserId:string}> {
-    actor(actorUserId); const id=crypto.randomUUID();
-    await this.db.query('INSERT INTO shopping_brain.conversations(id,actor_user_id) VALUES($1,$2)',[id,actorUserId]);
+  async create(actorUserId:string,clientActionId?:string):Promise<{id:string;actorUserId:string}> {
+    actor(actorUserId);
+    if(clientActionId!==undefined&&(typeof clientActionId!=="string"||!clientActionId.trim()||clientActionId.length>128))
+      throw new Error('invalid conversation creation action');
+    const id=clientActionId===undefined?crypto.randomUUID():conversationIdForAction(actorUserId,clientActionId);
+    await this.db.query('INSERT INTO shopping_brain.conversations(id,actor_user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[id,actorUserId]);
+    await this.assertOwned(actorUserId,id);
     return {id,actorUserId};
+  }
+  async list(actorUserId:string):Promise<Array<{id:string;createdAt:string;title:string|null}>> {
+    actor(actorUserId);
+    const rows=await this.db.query<{id:string;created_at:Date|string;first_user_message:string|null}>(
+      `SELECT c.id,c.created_at,
+        (SELECT m.content FROM shopping_brain.messages m
+         WHERE m.conversation_id=c.id AND m.actor_user_id=c.actor_user_id AND m.role='user'
+         ORDER BY m.created_at ASC,m.id ASC LIMIT 1) AS first_user_message
+       FROM shopping_brain.conversations c
+       WHERE c.actor_user_id=$1 AND c.closed_at IS NULL
+       ORDER BY c.created_at DESC,c.id DESC`,[actorUserId]);
+    return rows.map(row=>({id:row.id,createdAt:new Date(row.created_at).toISOString(),title:safeConversationTitle(row.first_user_message)}));
   }
   async assertOwned(actorUserId:string,conversationId:string):Promise<void> {
     actor(actorUserId);uid(conversationId);

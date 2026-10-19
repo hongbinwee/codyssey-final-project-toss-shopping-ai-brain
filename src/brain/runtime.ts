@@ -86,12 +86,22 @@ export const BRAIN_SERVICE_RIGHTS={
  checkpoint_writes:["SELECT","INSERT","UPDATE"],checkpoint_migrations:["SELECT"],
 } as const;
 
-/** Latest owned conversation only, bounded transcript. Never return raw checkpoints or internal context. */
-export async function readBrainHistory(db:SchemaProbe,actorUserId:string){
+/** Latest or selected owned conversation with a bounded transcript; never return raw checkpoints. */
+export async function readBrainHistory(db:SchemaProbe,actorUserId:string,conversationId?:string){
  if(!actorUserId||actorUserId.length>256)throw new Error("invalid history actor");
- const conversations=await db.unsafe<Array<{id:string}>>(
-   "SELECT id FROM shopping_brain.conversations WHERE actor_user_id=$1 AND closed_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1",[actorUserId]);
- const id=conversations[0]?.id;
+ let id:string|undefined;
+ if(conversationId!==undefined){
+   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(conversationId))
+     throw new Error("invalid history conversation");
+   const conversations=await db.unsafe<Array<{id:string}>>(
+     "SELECT id FROM shopping_brain.conversations WHERE id=$1 AND actor_user_id=$2 AND closed_at IS NULL LIMIT 1",[conversationId,actorUserId]);
+   id=conversations[0]?.id;
+   if(!id)throw new Error("conversation is not owned");
+ }else{
+   const conversations=await db.unsafe<Array<{id:string}>>(
+     "SELECT id FROM shopping_brain.conversations WHERE actor_user_id=$1 AND closed_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1",[actorUserId]);
+   id=conversations[0]?.id;
+ }
  if(!id)return {conversationId:null,entries:[]};
  const rows=await db.unsafe<Array<{message_id:string;client_action_id:string;content:string;completed_result:unknown}>>(
    `SELECT m.id AS message_id,m.client_action_id,m.content,r.completed_result FROM shopping_brain.messages m
@@ -109,7 +119,7 @@ export async function readBrainHistory(db:SchemaProbe,actorUserId:string){
      (result.shoppingPlan?typeof result.shoppingPlan.query!=="string":result.explanation?.kind!=="CONVERSATION")||
      !result.explanation||typeof result.explanation.text!=="string"||typeof result.explanation.kind!=="string")
      throw new Error("invalid canonical Brain receipt");
-   return [{text:row.content,reply:{conversation_id:id,message_id:result.messageId,read_only:true,
+   return [{clientActionId:row.client_action_id,text:row.content,reply:{conversation_id:id,message_id:result.messageId,read_only:true,
      ranking:result.ranking,shopping_plan:result.shoppingPlan??null,intent_kind:result.intentKind,
      explanation:result.explanation,trace:result.trace??{totalMs:0}}}];
  });
@@ -199,7 +209,9 @@ export async function createBrainRuntime(options:{
      intent:createFastIntentPort(createIntentPort(providerIntentModel(options.provider,45000),options.rag?.category))
    },saver,postgresTurnLock(lockDb,db),new FencedTurns(store),groundedResponder);
    return {
-     handle:createBrainApi({conversations,preferences,graph,recentHistory:actor=>readBrainHistory(db,actor)}),
+     handle:createBrainApi({conversations,preferences,graph,recentHistory:actor=>readBrainHistory(db,actor),
+       listConversations:actor=>conversations.list(actor),
+       conversationHistory:(actor,conversationId)=>readBrainHistory(db,actor,conversationId)}),
      close:async()=>{encoder?.close();await Promise.allSettled([db.end(),lockDb.end(),saver!.end()]);}
    };
  }catch(e){
