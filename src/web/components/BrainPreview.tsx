@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 import {apiSafe,newActionKey,fmtWon} from "../api.ts";
+import {resolveBrainInterviewState} from "../brain-interview-state.ts";
 
 type ProductCandidate={
  productId:string;productName?:string;variantId:string;productImage?:string;keywords?:string[];
@@ -12,7 +13,7 @@ type LimitedProduct={candidate:ProductCandidate;reasons:string[]};
 type BrainRankingResult={ranked:RankedProduct[];referenceOnly:LimitedProduct[];rejected:LimitedProduct[];evaluatedCount:number};
 type BrainReply={
  conversation_id:string;message_id:string;read_only:true;intent_kind?:string;
- shopping_plan?:{query:string;maxTotalWon:number|null;requiredConditions:string[];revision:number}|null;
+ shopping_plan?:{query:string;maxTotalWon:number|null;requiredConditions:string[];revision:number;attributePreferences?:string[]}|null;
  explanation?:{text:string;kind:string;items:{productId:string;evidenceIds:string[]}[];limitations:string[];
    failure?:{code:string;httpStatus?:number}}|null;
  ranking:BrainRankingResult;trace:{totalMs:number;graphWallMs?:number};
@@ -142,8 +143,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
     return band>=1&&band<=999?[band]:[];
   }))].sort((a,b)=>a-b).slice(0,4);
   const budgetChoices=(candidateBands.length?candidateBands:[1,2,3]).map(v=>`${v}만원대`);
-  const showEssenceBudget=lastReply?.intent_kind==="SHOPPING_SEARCH"&&!/\d+\s*(?:만\s*)?원/.test(lastPrompt)&&!busy;
- const showEssencePreference=/에센스|세럼/.test(lastPrompt)&&/\d+\s*만\s*원대/.test(lastPrompt)&&!busy;
+ const {showBudgetQuestion:showEssenceBudget,showEssencePurposeQuestion:showEssencePreference}=resolveBrainInterviewState(entries,busy);
  const send=()=>{
    const text=input.trim();if(!text||lock.current||restoring)return;
    const entry:Entry={text,clientActionId:newActionKey(),...(conversation?{conversationId:conversation}:{}),status:"sending"};

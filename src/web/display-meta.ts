@@ -138,12 +138,16 @@ const specMatcher = (group: string, ...keys: string[]) =>
   (product: ProductSummary) =>
     groupOf(product.category) === group && hasSpecs(product, keys);
 
-const ORIGINAL_SUBCATEGORY_KEY = "원본 목록 세부 카테고리";
+// Display taxonomy only; dataset IDs and inferred product-name claims are never used.
+const SOURCE_SUBCATEGORY_KEYS = ["sub_category", "원본 목록 세부 카테고리", "type"];
 const sourceSubcategoryMatcher = (group: string, ...values: string[]) =>
   (product: ProductSummary) =>
     groupOf(product.category) === group &&
     product.matched_variants.some((variant) =>
-      values.includes(variant.effective_specs[ORIGINAL_SUBCATEGORY_KEY]?.trim() ?? ""),
+      SOURCE_SUBCATEGORY_KEYS.some(key => {
+        const value=variant.effective_specs[key];
+        return typeof value==="string"&&value.split(">").some(part=>values.includes(part.trim()));
+      }),
     );
 
 export const SUBCATS: Record<string, Subcat[]> = {
@@ -162,9 +166,9 @@ export const SUBCATS: Record<string, Subcat[]> = {
     },
   ],
   beauty: [
-    { id: "sun", label: "선케어", matches: specMatcher("beauty", "spf", "pa", "uv_type") },
+    { id: "sun", label: "선케어", matches: (product) => sourceSubcategoryMatcher("beauty", "선케어")(product) || specMatcher("beauty", "spf", "pa", "uv_type")(product) },
     { id: "skincare", label: "스킨케어", matches: sourceSubcategoryMatcher("beauty", "스킨케어") },
-    { id: "cleansing", label: "클렌징", matches: specMatcher("beauty", "skin", "cleanser_type", "cleansing_type") },
+    { id: "cleansing", label: "클렌징", matches: (product) => sourceSubcategoryMatcher("beauty", "클렌징")(product) || specMatcher("beauty", "skin", "cleanser_type", "cleansing_type")(product) },
     {
       id: "makeup",
       label: "메이크업",
@@ -174,8 +178,8 @@ export const SUBCATS: Record<string, Subcat[]> = {
     },
   ],
   fashion: [
-    { id: "tee", label: "티셔츠", matches: specMatcher("fashion", "fit", "weight_g_m2", "neck", "sleeve") },
-    { id: "shoes", label: "스니커즈", matches: specMatcher("fashion", "sole", "closure", "shoe_size", "outsole") },
+    { id: "tee", label: "티셔츠", matches: (product) => sourceSubcategoryMatcher("fashion", "반소매 티셔츠", "긴소매 티셔츠", "후드 티셔츠", "피케/카라 티셔츠")(product) || specMatcher("fashion", "fit", "weight_g_m2", "neck", "sleeve")(product) },
+    { id: "shoes", label: "스니커즈", matches: (product) => sourceSubcategoryMatcher("fashion", "스니커즈")(product) || specMatcher("fashion", "sole", "closure", "shoe_size", "outsole")(product) },
   ],
   living: [
     { id: "chair", label: "의자", matches: specMatcher("living", "lumbar", "max_load", "armrest", "recline") },
@@ -183,7 +187,7 @@ export const SUBCATS: Record<string, Subcat[]> = {
   ],
   food: [
     { id: "coffee", label: "커피", matches: specMatcher("food", "roast", "origin", "note") },
-    { id: "protein", label: "프로틴", matches: specMatcher("food", "protein_per_serving", "servings") },
+    { id: "protein", label: "프로틴", matches: (product) => sourceSubcategoryMatcher("food", "프로틴")(product) || specMatcher("food", "protein_per_serving", "servings")(product) },
   ],
 };
 export const subcatOf = (group: string, sub: string) =>

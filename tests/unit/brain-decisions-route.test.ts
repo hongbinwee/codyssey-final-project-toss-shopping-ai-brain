@@ -64,7 +64,7 @@ test("Refusal, low confidence, invalid options, HTTP 429, network failure and mi
   const broken=createDecisionsRouter({apiKey:"test",fetcher:async()=>{throw Error("network failed");}});
   assert.equal((await broken("상품 추천")).search,false);
   assert.throws(()=>createDecisionsRouter({apiKey:""}),/key required/);
-  assert.throws(()=>createDecisionsRouter({apiKey:"test",timeoutMs:1}),/timeout/);
+  assert.throws(()=>createDecisionsRouter({apiKey:"test",timeoutMs:1}),/invalid BRAIN_DECISIONS_TIMEOUT_MS/);
 });
 test("Model refusal/invalid output never becomes a product search; no fetch for oversized inputs",async()=>{
   let called=0;

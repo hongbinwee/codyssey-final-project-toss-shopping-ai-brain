@@ -7,7 +7,7 @@ import {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
 import {createCatalog,type CatalogSource} from "../catalog.ts";
 import {sql} from "../db.ts";
 import {readCommerceActivity} from "./commerce-signals.ts";
-import {qaCommerceIdentity} from "../qa-commerce.ts";
+import {qaCommerceDatabaseIdentityMatches} from "../qa-commerce.ts";
 import {assertServiceRole} from "../db.ts";
 import {verifiedRagRetriever,localRagFetcher,type LocalRagSearch,type RagConnection} from "./rag-adapter.ts";
 import {createLocalRagSearch} from "./local-rag.ts";
@@ -158,6 +158,7 @@ export async function verifyPreparedBrainStorage(db:SchemaProbe):Promise<void>{
 export async function createBrainRuntime(options:{
  brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider;rag?:RagConnection;
  catalogSource?:CatalogSource;
+ qaEnvironment?:string;
  localRagSearch?:LocalRagSearch;
  embedQuery?:(query:string)=>Promise<number[]>
 }) {
@@ -220,12 +221,8 @@ export async function createBrainRuntime(options:{
    const groundedResponder=options.rag?.contract==="v4"
      ?createLlmGroundedResponder(options.provider):undefined;
    const catalog=createCatalog(options.catalogSource??"public");
-   const trustedCommerce=new URL(options.commerceDatabaseUrl??"postgresql://invalid/");
-   const qaIdentity=qaCommerceIdentity({COMMERCE_CATALOG_SOURCE:options.catalogSource});
-   const ownQaCommerce=(options.catalogSource==="test_items"||options.catalogSource==="test_items2")&&
-     trustedCommerce.hostname==="127.0.0.1"&&trustedCommerce.port==="15440"&&
-     trustedCommerce.pathname==="/"+qaIdentity.database&&decodeURIComponent(trustedCommerce.username)===qaIdentity.role&&
-     !trustedCommerce.search;
+   const ownQaCommerce=qaCommerceActivityAllowed({catalogSource:options.catalogSource,
+     commerceDatabaseUrl:options.commerceDatabaseUrl,qaEnvironment:options.qaEnvironment});
    const graph=createPersistentResearchGraph({
      conversations,memory:preferences,route,converse,fastResponses:true,datasetVersion:options.rag?.datasetVersion,
      ...(ownQaCommerce?{activity:(actorUserId:string)=>readCommerceActivity(sql,actorUserId)}:{}),
@@ -244,4 +241,15 @@ export async function createBrainRuntime(options:{
    await Promise.allSettled([db.end(),lockDb.end(),...(saver?[saver.end()]:[])]);
    throw e;
  }
+}
+
+export function qaCommerceActivityAllowed(options:{
+ catalogSource?:CatalogSource;commerceDatabaseUrl?:string;qaEnvironment?:string;
+}):boolean {
+ if(options.catalogSource!=="test_items"&&options.catalogSource!=="test_items2")return false;
+ if(options.qaEnvironment==="system-prompt"&&options.catalogSource!=="test_items2")return false;
+ return qaCommerceDatabaseIdentityMatches({
+   COMMERCE_CATALOG_SOURCE:options.catalogSource,
+   QA_ENVIRONMENT:options.qaEnvironment,
+ },options.commerceDatabaseUrl);
 }

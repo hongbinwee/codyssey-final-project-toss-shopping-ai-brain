@@ -108,8 +108,9 @@ export function createIntentPort(model:IntentModel,catalogCategory?:string|strin
  return {async extract(userMessage:string,memory:Preference[],previous?:ShoppingPlan):Promise<ShoppingIntent>{
    const context=assembleIntentContext(userMessage,memory,previous);
    // A selected Skill is a fixed, trusted procedure; user data remains user-level.
-   const system=SHOPPING_POLICY+"\n"+SYSTEM+"\nBuilt-in shopping procedure: "+context.trustedSkillInstruction+
-    (catalogCategory?"\nCurrent catalog category identifiers: "+JSON.stringify(catalogCategory)+". Choose an exact identifier only when the user's requested product belongs to it. Preserve unsupported product intent; never replace it with a catalog product.":"");
+    const system=SHOPPING_POLICY+"\n"+SYSTEM+"\nBuilt-in shopping procedure: "+context.trustedSkillInstruction
+      +(catalogCategory?"\nCurrent catalog category identifiers: "+JSON.stringify(catalogCategory)+". Choose an exact identifier only when the user's requested product belongs to it. Preserve unsupported product intent; never replace it with a catalog product.":"")
+      +"\nIntent extraction output boundary: This is an internal machine-readable step; user-facing follow-up questions are handled by the application. Return exactly one JSON object matching the schema above. Do not greet the user, ask follow-up questions, explain the result, use Markdown, or include any text before or after the JSON object. Numeric price and budget limits belong only in maxTotalWon with the appropriate budgetMode; never repeat them in requiredConditions. Use requiredConditions only for explicit non-price product constraints from the current user.";
    return parseShoppingIntent(await model.complete(system,context.untrustedUserContent));
  }};
 }

@@ -28,14 +28,19 @@ const baseChunks=[
  chunk({id:"c-p2-review",productId:"p2",type:"review",text:"Bluetooth wireless headset is comfortable",embedding:vector(.6,.8),sourceId:"r-p2"}),
  chunk({id:"c-p3-audio",productId:"p3",type:"review",text:"무선 헤드폰 추천",embedding:vector(.95,.02),category:"audio",sourceId:"r-p3"})
 ];
-const baseProducts=["p1","p2","p3"].map(productId=>({product_id:productId,
+type FixtureProduct={product_id:string;category:string;dataset_version:string;product_payload:{
+ title?:string;category?:string;source_id?:string;features?:{product_type?:string};[key:string]:unknown
+}};
+const baseProducts:FixtureProduct[]=["p1","p2","p3"].map(productId=>({product_id:productId,
  category:productId==="p3"?"audio":"beauty",dataset_version:VERSION,
  product_payload:{title:`상품 ${productId}`,category:productId==="p3"?"audio":"beauty",source_id:`catalog-${productId}`}}));
 const request=(extra:Record<string,unknown>={})=>({request_id:"req-1",original_question:"무선 헤드폰 추천해 주세요",
  query:"무선 헤드폰",category:"beauty",filters:{},required_conditions:[],preferences:[],top_k:5,...extra});
 
 async function withSearch<T>(run:(ctx:{search:(body:unknown)=>Promise<any>;stats:any;queries:string[]})=>Promise<T>,
- chunks=baseChunks,products=baseProducts,encode:(query:string)=>Promise<number[]>=async()=>vector(1,.05)){
+ chunks:typeof baseChunks=baseChunks,products:FixtureProduct[]=baseProducts,
+ encode:(query:string)=>Promise<number[]>=async()=>vector(1,.05),
+ manifest?:ReturnType<typeof parseDatasetManifest>){
  const dataDir=await mkdtemp(join(tmpdir(),"codyssey-local-rag-"));
  try{
    await writeFile(join(dataDir,"evidence_chunks.jsonl"),chunks.map(row=>JSON.stringify(row)).join("\n")+"\n");
@@ -43,9 +48,20 @@ async function withSearch<T>(run:(ctx:{search:(body:unknown)=>Promise<any>;stats
    const mod=await modulePromise;
    assert.equal(typeof mod?.createLocalRagSearch,"function","createLocalRagSearch is not implemented");
    const queries:string[]=[];
-   const local=await mod!.createLocalRagSearch({dataDir,embedQuery:async(query:string)=>{queries.push(query);return encode(query);}});
+   const local=await mod!.createLocalRagSearch({dataDir,embedQuery:async(query:string)=>{queries.push(query);return encode(query);},...(manifest?{manifest}:{})});
    return await run({search:local.search,stats:local.stats,queries});
  }finally{await rm(dataDir,{recursive:true,force:true});}
+}
+
+function fixtureManifest(chunks:typeof baseChunks,products:FixtureProduct[]){
+ const evidence=chunks.map(row=>JSON.stringify(row)).join("\n")+"\n";
+ const indexedProducts=products.map(row=>JSON.stringify(row)).join("\n")+"\n";
+ return parseDatasetManifest({schemaVersion:1,datasetId:"fixture",datasetVersion:VERSION,
+  dataClass:"CANDIDATE",catalogSource:"test_items2",
+  categories:[...new Set(products.map(row=>row.category))],
+  embedding:{model:MODEL,dimensions:384,queryRevision:"a".repeat(40),documentRevision:null},
+  files:{evidenceSha256:createHash("sha256").update(evidence).digest("hex"),
+   indexedProductsSha256:createHash("sha256").update(indexedProducts).digest("hex")}});
 }
 
 test("local RAG returns exact v4 shape, combines Korean BM25 and cosine RRF, and emits only synthetic review sources",async()=>{
@@ -95,6 +111,73 @@ test("English terms contribute BM25 ranking and the query encoder receives the t
    assert.equal(queries[0],"Bluetooth wireless comfortable");
    assert.equal(result.items[0].product_id,"p2");
  });
+});
+
+test("an explicit product query limits retrieval to matching indexed product titles",async()=>{
+ const products=[
+  {...baseProducts[0],product_payload:{...baseProducts[0].product_payload,title:"에스트라 하이드로에센스",features:{product_type:"스킨케어"}}},
+  {...baseProducts[1],product_payload:{...baseProducts[1].product_payload,title:"페리페라 글로이 틴트",features:{product_type:"립 메이크업"}}}
+ ];
+ const chunks=[
+  chunk({id:"essence-review",productId:"p1",type:"review",text:"보습감이 좋아요",embedding:vector(.4,.8)}),
+  chunk({id:"tint-review",productId:"p2",type:"review",text:"촉촉하게 발색돼요",embedding:vector(1,.05)})
+ ];
+ await withSearch(async({search})=>{
+  const result=await search(request({query:"에센스",original_question:"에센스 추천",top_k:5}));
+  assert.deepEqual(result.items.map((item:any)=>item.product_id),["p1"]);
+ },chunks,products,async()=>vector(1,.05));
+});
+
+test("a multiword query matches titles after compact whitespace normalization",async()=>{
+ const products=[
+  {...baseProducts[0],product_payload:{...baseProducts[0].product_payload,title:"에스트라 하이드로에센스",features:{product_type:"스킨케어"}}},
+  {...baseProducts[1],product_payload:{...baseProducts[1].product_payload,title:"페리페라 글로이 틴트",features:{product_type:"립 메이크업"}}}
+ ];
+ const chunks=[
+  chunk({id:"compact-match",productId:"p1",type:"review",text:"보습감이 좋아요",embedding:vector(.4,.8)}),
+  chunk({id:"compact-distractor",productId:"p2",type:"review",text:"촉촉하게 발색돼요",embedding:vector(1,.05)})
+ ];
+ await withSearch(async({search})=>{
+  const result=await search(request({query:"하이드로 에센스",original_question:"하이드로 에센스 추천",top_k:5}));
+  assert.deepEqual(result.items.map((item:any)=>item.product_id),["p1"]);
+ },chunks,products,async()=>vector(1,.05));
+});
+
+test("an explicit product query matches indexed product_type when the title omits it",async()=>{
+ const products=[
+  {...baseProducts[0],product_payload:{...baseProducts[0].product_payload,title:"하이드로 200ml",features:{product_type:"에센스"}}},
+  {...baseProducts[1],product_payload:{...baseProducts[1].product_payload,title:"글로이 틴트",features:{product_type:"립 메이크업"}}}
+ ];
+ const chunks=[
+  chunk({id:"typed-essence-review",productId:"p1",type:"review",text:"산뜻해요",embedding:vector(.4,.8)}),
+  chunk({id:"typed-tint-review",productId:"p2",type:"review",text:"가볍고 좋아요",embedding:vector(1,.05)})
+ ];
+ await withSearch(async({search})=>{
+  const result=await search(request({query:"에센스",original_question:"에센스 추천",top_k:5}));
+  assert.deepEqual(result.items.map((item:any)=>item.product_id),["p1"]);
+ },chunks,products,async()=>vector(1,.05));
+});
+
+test("a generic cross-category query keeps hybrid semantic fallback when no title or type matches",async()=>{
+ const products=baseProducts.map(row=>({...row,product_payload:{category:row.category,source_id:row.product_payload.source_id}}));
+ const manifest=fixtureManifest(baseChunks,products);
+ await withSearch(async({search})=>{
+  const result=await search(request({query:"편하게 사용할 제품",original_question:"편하게 사용할 제품 추천",category:"",top_k:5}));
+  assert.equal(result.items[0].product_id,"p3");
+  assert.deepEqual(new Set(result.items.map((item:any)=>item.product_id)),new Set(["p1","p2","p3"]));
+ },baseChunks,products,async()=>vector(.95,.02),manifest);
+});
+
+test("a title match outside the requested category keeps semantic fallback inside the category",async()=>{
+ const products:FixtureProduct[]=[
+  {...baseProducts[0],product_payload:{title:"하이드로 크림",features:{product_type:"크림"}}},
+  {...baseProducts[1],product_payload:{title:"수분 토너 패드",features:{product_type:"토너 패드"}}},
+  {...baseProducts[2],product_payload:{title:"에센스",features:{product_type:"에센스"}}}
+ ];
+ await withSearch(async({search})=>{
+  const result=await search(request({query:"에센스",original_question:"에센스 추천",category:"beauty",top_k:5}));
+  assert.deepEqual(result.items.map((item:any)=>item.product_id),["p1","p2"]);
+ },baseChunks,products,async()=>vector(1,.05));
 });
 
 test("unsupported filters, preferences, profile switches, and top_k above five are rejected",async()=>{

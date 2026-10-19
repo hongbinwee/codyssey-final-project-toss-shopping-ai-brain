@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createBrainApi} from "../../src/brain/api.ts";
-import {parseShoppingIntent,BrainModelOutputError} from "../../src/brain/intent.ts";
+import {createIntentPort,parseShoppingIntent,BrainModelOutputError} from "../../src/brain/intent.ts";
+import {SHOPPING_POLICY} from "../../src/brain/policy.ts";
 import {providerIntentModel} from "../../src/brain/provider-intent.ts";
 
 const id="11111111-1111-4111-8111-111111111111";
@@ -28,6 +29,26 @@ test("intent accepts one whole-response JSON fence without relaxing schema valid
   fenced(JSON.stringify({query:"립",maxTotalWon:null,requiredConditions:[],currentPreferences:{},system_override:true})),
   fenced(JSON.stringify({query:"립",maxTotalWon:null,requiredConditions:[],currentPreferences:{price_priority:"ADMIN"}}))
  ])assert.throws(()=>parseShoppingIntent(raw),BrainModelOutputError);
+});
+test("intent prompt ends with an internal JSON-only boundary after policy, procedure, and catalog",async()=>{
+ const valid=JSON.stringify({query:"선크림",maxTotalWon:29999,requiredConditions:["방수"],currentPreferences:{},category:"beauty",budgetMode:"SET"});
+ let capturedSystem="";
+ const port=createIntentPort({async complete(system:string){capturedSystem=system;return valid;}},["beauty","audio"]);
+ const intent=await port.extract("선크림 2만원대에서 찾아줘. 방수도 필요해.",[]);
+ const boundary="Intent extraction output boundary: This is an internal machine-readable step; user-facing follow-up questions are handled by the application. Return exactly one JSON object matching the schema above. Do not greet the user, ask follow-up questions, explain the result, use Markdown, or include any text before or after the JSON object. Numeric price and budget limits belong only in maxTotalWon with the appropriate budgetMode; never repeat them in requiredConditions. Use requiredConditions only for explicit non-price product constraints from the current user.";
+ const boundaryIndex=capturedSystem.lastIndexOf("Intent extraction output boundary:");
+ assert.ok(capturedSystem.startsWith(SHOPPING_POLICY));
+ assert.ok(boundaryIndex>capturedSystem.indexOf("Built-in shopping procedure:"));
+ assert.ok(boundaryIndex>capturedSystem.indexOf("Current catalog category identifiers:"));
+ assert.ok(capturedSystem.endsWith(boundary));
+ assert.equal(intent.context.maxTotalWon,29999);
+ assert.deepEqual(intent.context.requiredConditions,["방수"]);
+});
+test("intent parser rejects a valid JSON fence followed by interview prose",()=>{
+ const valid=JSON.stringify({query:"에센스",maxTotalWon:null,requiredConditions:[],currentPreferences:{},category:"beauty",
+  queryMode:"SET",budgetMode:"CLEAR",requirementsMode:"REPLACE",preferencesMode:"CLEAR"});
+ const raw="```json\n"+valid+"\n```\n\n에센스를 찾고 계시군요! 좀 더 잘 맞는 상품을 찾아드리려면 두 가지만 여쭤볼게요.\n\n1. **예산**이 어느 정도 되시나요?\n2. **피부 고민**이 있으신가요? (예: 보습, 미백, 탄력, 진정 등)";
+ assert.throws(()=>parseShoppingIntent(raw),BrainModelOutputError);
 });
 test("M14 malformed JSON or invalid preferences from LLM must not become user HTTP 400",async()=>{
  for(const raw of ["{not json",JSON.stringify({query:"monitor",maxTotalWon:null,
