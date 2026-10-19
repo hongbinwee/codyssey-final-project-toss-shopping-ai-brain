@@ -1,3 +1,4 @@
+import type {ConversationResponder} from "./conversation-response.ts";
 import type {BrainTrace,EvidenceRecord,MemoryRepository,Preference,RankingResult,RetrieverPort} from "./contracts.ts";
 import type {PersistentConversations} from "./persistent-store.ts";
 import {rankProducts} from "./personalization.ts";
@@ -24,7 +25,8 @@ export interface ResearchDeps {
  datasetVersion?:string;
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
  memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
- route?:(message:string,previous?:ShoppingPlan)=>BrainRoute;
+ route?:(message:string,previous?:ShoppingPlan)=>BrainRoute|Promise<BrainRoute>;
+ converse?:ConversationResponder;
  activity?:(actorUserId:string)=>Promise<CommerceActivity>;
  fastResponses?:boolean;
 }
