@@ -350,10 +350,9 @@ export function verifiedRagRetriever(
       candidates.push({
         productName:verified.product.name,productId,variantId,unitPriceWon:variant.unit_price_won,
         shippingFeeWon:verified.shipping_fee_won,
-        rating:typeof row.rating==="number"&&Number.isFinite(row.rating)?row.rating:null,
-        ratingScale:row.ratingScale===5?5:null,
-        wholeReviewCount:whole(row.wholeReviewCount)?row.wholeReviewCount:null,
-        wholeReviewCountVerified:!!audited,conditions,facets
+        rating:audited?row.rating as number:null,ratingScale:audited?5:null,
+        wholeReviewCount:audited?row.wholeReviewCount as number:null,
+        wholeReviewCountVerified:!!audited,conditions,facets,commerceVerified:true
       });
     }
     return {candidates,evidence};

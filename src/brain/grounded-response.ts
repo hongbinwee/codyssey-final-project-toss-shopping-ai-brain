@@ -1,6 +1,7 @@
 import type {Aspect,EvidenceRecord,RankingResult} from "./contracts.ts";
 import type {ShoppingPlan} from "./shopping-plan.ts";
 import type {ChatMsg,Provider} from "../llm.ts";
+import {SHOPPING_POLICY} from "./policy.ts";
 
 export interface GroundedExplanation {
  text:string;
@@ -8,6 +9,7 @@ export interface GroundedExplanation {
    evidenceIds:string[];indicators:{aspect:Aspect;score:number}[]}[];
  citations?:{productId:string;variantId:string;sourceId:string;sourceKind:"REAL"|"SYNTHETIC";quote:string}[];
  limitations:string[];
+ failure?:{code:"MODEL_TIMEOUT"|"MODEL_RATE_LIMIT"|"MODEL_HTTP_ERROR"|"MODEL_UNAVAILABLE";httpStatus?:number};
  kind:"VERIFIED_CANDIDATES"|"REFERENCE_ONLY"|"NO_MATCH"|"LLM_GROUNDED"|"EVIDENCE_INSUFFICIENT"|"CONVERSATION";
 }
 const labels:Record<Aspect,string>={performance:"성능",eye_comfort:"눈 피로 관련",noise:"소음"};
@@ -26,7 +28,7 @@ export function buildGroundedExplanation(ranking:RankingResult,evidence:Evidence
    const reference=ranking.referenceOnly.length;
    return {kind:reference?"REFERENCE_ONLY":"NO_MATCH",items:[],
      text:reference
-       ?`${budget} 조건에서 검증된 추천 후보는 없습니다. ${reference}개 후보는 리뷰 전체 수·평점·근거가 충분히 확인되지 않아 참고 정보로만 제공합니다.`
+       ?`${budget}에서 ${reference}개 상품을 찾았어요. 아직 확인하지 못한 조건이나 시연 데이터가 있어 참고 정보로 안내할게요.`
        :`${budget} 조건을 만족하며 근거가 확인된 추천 후보를 찾지 못했습니다. 조건을 조정하거나 검증된 정보를 추가해 주세요.`,
      limitations:[reference?"참고용 후보를 추천 적격 상품으로 취급하지 않습니다.":"확인된 추천 후보가 없습니다.",criteria].filter(Boolean)};
  }
@@ -57,11 +59,12 @@ export function buildGroundedExplanation(ranking:RankingResult,evidence:Evidence
      (p.evidenceIds.length?` 근거 ID: ${p.evidenceIds.join(", ")}.`:"");
  });
  return {kind:"VERIFIED_CANDIDATES",items,
-   text:`${budget}을 기준으로 현재 구매 조건과 저장된 선호를 반영했습니다. ${criteria} `+
+     text:`${budget}을 기준으로 상품 정보와 확인된 조건을 비교했어요. ${criteria} `+
      segments.join(" ")+" 이 순서는 개인화 실험 점수이며 리뷰 원문에 대한 사실 검증이나 구매 만족도를 보장하지 않습니다.",
    limitations:[...new Set([
      ...(ranking.referenceOnly.length?["추가로 근거가 부족한 참고용 후보가 있습니다."]:[]),
-     "Aspect 지표는 RAG 제공 점수입니다. 원문 의미와 품질은 실제 데이터 평가가 필요합니다."
+     "평점·전체 리뷰 수·속성의 미확인 값은 추정하지 않았습니다.",
+     ...ranking.ranked.slice(0,3).flatMap(x=>x.limitations??[])
    ])]};
 }
 
@@ -196,14 +199,20 @@ export function createLlmGroundedResponder(provider:Pick<Provider,"chat">):Groun
    let responseContent:string|null=null,toolCalls:unknown;
    try{
      const messages:ChatMsg[]=[
-       {role:"system",content:responseSystem},
+       {role:"system",content:SHOPPING_POLICY+"\n"+responseSystem},
        {role:"user",content:JSON.stringify({originalQuestion:input.originalQuestion.slice(0,1000),
          shoppingPlan:input.plan,
          candidates:realCandidates.map(x=>x.prompt),referenceOnly:syntheticCandidates.map(x=>x.prompt)})}
      ];
      const response=await provider.chat(messages,[],{signal:AbortSignal.timeout(90_000)});
      responseContent=response.content;toolCalls=response.tool_calls;
-   }catch{return insufficient();}
+   }catch(error){
+     const status=error instanceof Error?error.message.match(/^LLM http (\d{3})$/):null;
+     const timeout=error instanceof Error&&(error.message==="LLM timeout"||error.name==="TimeoutError"||error.name==="AbortError");
+     const httpStatus=status?Number(status[1]):undefined;
+     return {...insufficient(),failure:{code:timeout?"MODEL_TIMEOUT":httpStatus===429?"MODEL_RATE_LIMIT":httpStatus?"MODEL_HTTP_ERROR":"MODEL_UNAVAILABLE",
+       ...(httpStatus?{httpStatus}:{})}};
+   }
    const claims=parseClaims(responseContent,toolCalls);
    if(claims){
      const chosen:{claim:GroundedClaim;selected:PreparedCandidate}[]=[];

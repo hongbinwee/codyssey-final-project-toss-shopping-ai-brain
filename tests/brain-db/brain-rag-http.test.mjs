@@ -124,8 +124,8 @@ test("signed-session HTTP -> mock audited RAG -> Commerce verification -> persis
    audit="unaudited";
    const noProof=await turn("rag-turn-4");
    assert.equal(noProof.status,200);
-   assert.equal(noProof.body.data.ranking.ranked.length,0,"Missing trusted audit must fail recommendation gate");
-   assert.equal(noProof.body.data.ranking.referenceOnly.length,2);
+   assert.equal(noProof.body.data.ranking.ranked.length,2,"rating/count audit absence is not an eligibility gate");
+   assert.ok(noProof.body.data.ranking.ranked.every(p=>p.candidate.rating===null&&p.candidate.wholeReviewCount===null&&p.limitations.includes("whole_review_count_unverified")));
    assert.ok(ragCalls>=4);
    const [cart]=await shop.unsafe("SELECT count(*)::int AS n FROM carts");
    const [writes]=await shop.unsafe("SELECT count(*)::int AS n FROM action_requests");

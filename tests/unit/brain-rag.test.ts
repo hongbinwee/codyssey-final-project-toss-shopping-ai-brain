@@ -63,13 +63,13 @@ test("RAG accepts data-defined attribute keys while retaining product-scoped evi
  (payload.candidates[0] as unknown as {facets:unknown}).facets={battery_life:{score:.8,evidenceIds:["performance-b"]}};
  await assert.rejects(()=>create(payload).retriever.search({query:"headphones",maxTotalWon:null,requiredConditions:[]}),/cross-product/);
 });
-test("unsupported provenance never crosses recommendation gate",async()=>{
+test("unsupported rating provenance is discarded instead of fabricated",async()=>{
  const payload=resultRows();
  payload.candidates[0].reviewCountAuditId="unreviewed";
  const r=await create(payload).retriever.search({query:"모니터",maxTotalWon:null,requiredConditions:[]});
  assert.equal(r.candidates[0].wholeReviewCountVerified,false);
  const rank=rankProducts(r.candidates,r.evidence,ctx("value"),[]);
- assert.ok(rank.referenceOnly.some(x=>x.candidate.productId==="p-a"));
+ assert.equal(r.candidates[0].rating,null);assert.equal(r.candidates[0].wholeReviewCount,null);assert.ok(rank.ranked.some(x=>x.candidate.productId==="p-a"&&x.limitations?.includes("whole_review_count_unverified")));
 });
 test("out-of-stock and mismatched variants never become eligible candidates",async()=>{
  const payload=resultRows();

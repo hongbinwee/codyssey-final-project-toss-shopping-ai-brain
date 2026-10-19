@@ -72,13 +72,13 @@ test("explanation cannot display foreign-product review IDs",()=>{
  assert.ok(explanation.items.every(i=>i.evidenceIds.every(id=>id.startsWith(i.productId+"-"))));
  assert.doesNotMatch(explanation.text,/p-b-performance.*p-a/);
 });
-test("unverified review totals never lead to product recommendations or false claims",()=>{
+test("unverified review totals remain disclosed without inventing counts",()=>{
  const candidate=mockCandidate("a",false),ev=evidence("a");
  const ranked=rankProducts([candidate],ev,ctx,[]);
  const result=buildGroundedExplanation(ranked,ev,ctx);
- assert.equal(result.items.length,0);
- assert.equal(result.kind,"REFERENCE_ONLY");
- assert.doesNotMatch(result.text,/1순위 CI item/);
+ assert.equal(result.items.length,1);
+ assert.equal(result.kind,"VERIFIED_CANDIDATES");
+ assert.ok(result.limitations.includes("whole_review_count_unverified"));
 });
 test("synthetic REVIEW evidence must fail even when matching product identity",()=>{
  const p=mockCandidate("a"),ev=evidence("a");

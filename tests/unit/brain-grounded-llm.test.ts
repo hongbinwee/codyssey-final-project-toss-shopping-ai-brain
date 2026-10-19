@@ -42,6 +42,16 @@ const defaultQuote="착용감이 편하고 오래 사용해도 귀가 덜 아팠
 const cite=(productId="p-1",variantId="v-blue",sourceId="review-11",sourceKind="REAL",quote=defaultQuote)=>
  JSON.stringify({sourceKind,productId,variantId,sourceId,quote});
 
+test("model failures are classified without leaking errors or inventing evidence",async()=>{
+ for(const [error,code,status] of [[new Error("LLM timeout"),"MODEL_TIMEOUT",undefined],
+   [new Error("LLM http 429"),"MODEL_RATE_LIMIT",429],[new Error("LLM http 403"),"MODEL_HTTP_ERROR",403],
+   [new Error("private secret error"),"MODEL_UNAVAILABLE",undefined]] as const){
+  const response=await create(error).respond(ask(product()));
+  assert.equal(response.failure?.code,code);assert.equal(response.failure?.httpStatus,status);
+  assert.equal(response.kind,"EVIDENCE_INSUFFICIENT");assert.doesNotMatch(JSON.stringify(response),/private secret/);
+ }
+});
+
 test("empty grounded claims report that a suitable candidate was not verified",async()=>{
  const result=await create(JSON.stringify({claims:[]})).respond(ask(product()));
  assert.equal(result.kind,"EVIDENCE_INSUFFICIENT");assert.equal(result.items.length,0);

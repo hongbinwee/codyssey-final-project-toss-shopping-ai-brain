@@ -101,16 +101,16 @@ test("grounded response references only matching evidence IDs and never invents 
  assert.ok(explanation.items.every(it=>it.evidenceIds.every(eid=>eid.endsWith(it.productId.slice(-1)))));
  assert.doesNotMatch(explanation.text,/눈 피로가 확실히 줄|객관적으로 최고/);
 });
-test("nonqualifying candidates receive no fabricated recommendation",()=>{
+test("unverified whole counts are disclosed and never fabricated",()=>{
  const p=candidate("a",90000);p.wholeReviewCountVerified=false;
  const evidence=["perf","eye","noise"].map(name=>({
    id:name+"-a",productId:"p-a",variantId:null,kind:"REVIEW" as const,sourceKind:"REAL" as const
  }));
  const result=rankProducts([p],evidence,{...oldPlan,requiredConditions:[]},[]);
  const explanation=buildGroundedExplanation(result,evidence,oldPlan);
- assert.equal(explanation.kind,"REFERENCE_ONLY");
- assert.equal(explanation.items.length,0);
- assert.match(explanation.text,/참고 정보/);
+ assert.equal(explanation.kind,"VERIFIED_CANDIDATES");
+ assert.equal(explanation.items.length,1);
+ assert.ok(explanation.limitations.includes("whole_review_count_unverified"));
 });
 
 test("synthetic review evidence cannot satisfy recommendation ranking",()=>{

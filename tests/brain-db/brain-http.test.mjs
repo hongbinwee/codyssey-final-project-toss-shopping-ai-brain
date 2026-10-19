@@ -123,8 +123,8 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
     assert.equal(turn.status,200);
     const result=(await turn.json()).data;
     assert.equal(result.read_only,true);
-    assert.equal(result.ranking.ranked.length,0,"no verified Amazon-wide counts, so no recommendation");
-    assert.ok(result.ranking.referenceOnly.some(p=>p.candidate.productId==="p-http-monitor"));
+    assert.equal(result.ranking.ranked.length,1,"verified Commerce price, unknown source review count is not a hard gate");
+    assert.ok(result.ranking.ranked.some(p=>p.candidate.productId==="p-http-monitor"&&p.limitations.includes("whole_review_count_unverified")));
     const sourceMessage=result.message_id;
     console.log("BRAIN_HTTP_STEP 07 graph-and-reference-result-received");
     const propose=await request("/api/brain/preferences/proposals","POST",

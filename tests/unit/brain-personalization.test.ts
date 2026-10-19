@@ -24,16 +24,16 @@ test("missing critical facet cannot be rewarded by shrinking denominator",()=>{
  const ps=products();delete (ps[0].facets as Partial<typeof ps[0]["facets"]>).performance;ps[0].unitPriceWon=1000;
  const ranked=rankProducts(ps,evidence,ctx({price_priority:"performance"}),[]);
  assert.equal(ranked.ranked[0].candidate.productId,"p-b");
- assert.ok(ranked.referenceOnly.some(x=>x.reasons.includes("missing_critical_aspect:performance")));
+ assert.ok(ranked.ranked.find(x=>x.candidate.productId==="p-a")?.missingAspects.includes("performance"));
 });
-test("unverified whole review count cannot pass G2",()=>{
+test("unverified whole count remains unknown without excluding price-verified candidates",()=>{
  const ps=products();ps[0].wholeReviewCountVerified=false;ps[0].wholeReviewCount=null as never;
- assert.equal(rankProducts(ps,evidence,ctx(),[]).ranked.length,1);
+ const r=rankProducts(ps,evidence,ctx(),[]);assert.equal(r.ranked.length,2);assert.ok(r.ranked.find(x=>x.candidate.productId==="p-a")?.limitations?.includes("whole_review_count_unverified"));
 });
-test("rating and review-count gates match strict thresholds",()=>{
- const p=products()[0];p.rating=3.5;assert.ok(eligibility(p).includes("rating_below_G2"));
- p.rating=3.6;p.wholeReviewCount=9;assert.ok(eligibility(p).includes("whole_review_count_below_G2"));
- p.wholeReviewCount=10;assert.deepEqual(eligibility(p),[]);
+test("low ratings and small review counts are signals, invalid values remain unknown",()=>{
+ const p=products()[0];p.rating=3.5;assert.deepEqual(eligibility(p),[]);
+ p.rating=3.6;p.wholeReviewCount=9;assert.deepEqual(eligibility(p),[]);
+ p.rating=NaN;assert.ok(eligibility(p).includes("rating_unverified"));
 });
 test("cross-product evidence blocks unsupported facet",()=>{
  const ps=products();ps[0].facets.performance.evidenceIds=["performance-b"];
@@ -63,7 +63,7 @@ test("category ranking uses requested evidence-backed attributes without monitor
  const result=rankProducts([p] as never,[proof("battery-a","p-a")],scope,[]);
  assert.equal(result.ranked.length,1);assert.deepEqual(result.ranked[0].missingAspects,[]);
  const missing=rankProducts([{...p,facets:{}}] as never,[],scope,[]);
- assert.equal(missing.ranked.length,0);assert.ok(missing.referenceOnly[0].reasons.some(x=>x.includes("battery_life")));
+ assert.equal(missing.ranked.length,1);assert.deepEqual(missing.ranked[0].missingAspects,["battery_life"]);assert.ok(missing.ranked[0].evidenceCoverage<1);
  const cross=rankProducts([p] as never,[proof("battery-a","p-b")],scope,[]);
  assert.equal(cross.ranked.length,0);assert.equal(cross.rejected.length,1);
 });
