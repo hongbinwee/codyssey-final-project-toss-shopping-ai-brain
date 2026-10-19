@@ -64,6 +64,8 @@ jobs:
         run: npm run build
       - name: Brain isolated regression and API tests
         run: node --experimental-strip-types --test --test-concurrency=1 tests/brain-sandbox/*.test.mjs tests/unit/brain-*.test.ts
+      - name: Catalog navigation and read-only UI regression
+        run: node --test tests/unit/catalog-lookup.test.ts tests/unit/commerce-ui.test.ts
       - name: Deterministic Shopping Brain intent goldset (not live model accuracy)
         run: |
           mkdir -p /tmp/brain-eval
@@ -88,6 +90,8 @@ jobs:
           status=$?
           cat /tmp/brain-http.log
           exit "$status"
+      - name: Owned conversation history and memory preservation
+        run: node --test tests/brain-db/brain-conversation-history.test.mjs
       - name: Authenticated RAG E2E with two users and preference reversal
         run: |
           set +e
@@ -97,6 +101,8 @@ jobs:
           exit "$status"
       - name: Install isolated Chromium browser for Brain UI
         run: npx playwright install --with-deps chromium
+      - name: Chat UX regression with isolated HTTP fixtures (no live LLM)
+        run: node --test tests/brain-browser/qa16-chat.test.mjs tests/brain-browser/qa16-catalog.test.mjs
       - name: Browser E2E for memory, personalized ranking and retry
         run: |
           set +e
