@@ -30,7 +30,7 @@ const safeImage=(value:string|undefined)=>value&&(/^(?:https?:\/\/|\/[^/])/.test
 const money=(value:unknown):value is number=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0;
 const recommendationLabel=(role:RankedProduct["recommendationRole"])=>role==="PERSONALIZED"?"나에게 맞춤":role==="REVIEW_VERIFIED"?"후기 검증형":role==="ALTERNATIVE"?"비교 대안":null;
 
-export function BrainRanking({ranking,onOpenProduct}:{ranking:BrainRankingResult;onOpenProduct:(id:string,variantId?:string)=>void}){
+export function BrainRanking({ranking,onOpenProduct,onExcludeProduct}:{ranking:BrainRankingResult;onOpenProduct:(id:string,variantId?:string)=>void;onExcludeProduct?:(id:string)=>void}){
  const seen=new Set<string>();
  const unique=<T extends {candidate:ProductCandidate}>(rows:T[]):T[]=>rows.filter(row=>{
    if(seen.has(row.candidate.productId))return false;seen.add(row.candidate.productId);return true;
@@ -53,6 +53,7 @@ export function BrainRanking({ranking,onOpenProduct}:{ranking:BrainRankingResult
        {p.commerceVerified===true
          ?<button className="link" onClick={()=>onOpenProduct(p.productId,p.variantId)}>상품 보기</button>
          :<p className="muted sm">상품 확인 전 · 상세보기 준비 중</p>}
+       {!reference&&onExcludeProduct&&<button className="link" onClick={()=>onExcludeProduct(p.productId)}>이 상품 제외</button>}
      </div>
    </article>)}
  </section>;
@@ -130,6 +131,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
  };
  const lastPrompt=entries.at(-1)?.text??"";
  const showEssenceBudget=/에센스|세럼/.test(lastPrompt)&&!/\d+\s*(?:만\s*)?원/.test(lastPrompt)&&!busy;
+ const showEssencePreference=/에센스|세럼/.test(lastPrompt)&&/\d+\s*만\s*원대/.test(lastPrompt)&&!busy;
  const send=()=>{
    const text=input.trim();if(!text||lock.current||restoring)return;
    const entry:Entry={text,clientActionId:newActionKey(),...(conversation?{conversationId:conversation}:{}),status:"sending"};
@@ -201,7 +203,7 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
        {e.reply&&<><div className="msg ai"><p>{e.reply.explanation?.failure
          ?friendlyFailure(e.reply.explanation.failure.code)+" 아래 검색 결과는 확인할 수 있어요."
          :e.reply.explanation?.text??"상품 정보를 확인했어요."}</p></div>
-         {e.reply.explanation?.kind!=="CONVERSATION"&&<BrainRanking ranking={e.reply.ranking} onOpenProduct={onOpenProduct}/>}
+         {e.reply.explanation?.kind!=="CONVERSATION"&&<BrainRanking ranking={e.reply.ranking} onOpenProduct={onOpenProduct} onExcludeProduct={i===entries.length-1&&!busy?(id)=>sendChoice(`이 상품 제외: ${id}`):undefined}/>}
        </>}
      </div>)}
      {sourceMessage&&conversation&&entries.at(-1)?.reply?.explanation?.kind!=="CONVERSATION"&&<div className="state-box">
@@ -218,6 +220,8 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
        <button className="link" onClick={()=>void clear()} disabled={busy}>가격 선호 기억 삭제</button>
      </div>}
      {showEssenceBudget&&<div className="state-box" aria-label="에센스 가격대 선택"><b>가격대는 얼마를 생각하세요?</b><div className="brain-quick-choices">{["1만원대","2만원대","3만원대","상관없어요"].map(v=><button key={v} className="btn" disabled={busy||restoring} onClick={()=>sendChoice(v==="상관없어요"?"에센스를 찾고 있어요. 예산은 상관없어요.":`에센스를 ${v}에서 찾고 있어요. 이 가격대만 확인해 주세요.`)}>{v}</button>)}</div></div>}
+     {showEssencePreference&&<div className="state-box" aria-label="에센스 사용 목적 선택"><b>에센스에서 가장 중요하게 생각하는 점은 무엇인가요?</b><div className="brain-quick-choices">{["보습","진정","산뜻한 사용감","상관없어요"].map(v=><button key={v} className="btn" disabled={busy||restoring} onClick={()=>sendChoice(v==="상관없어요"?"에센스의 기능 선호는 상관없어요. 이전 예산 범위는 유지해줘.":`에센스에서 ${v}을 중요하게 생각해요. 이전 예산 범위는 유지하고 추천해줘.`)}>{v}</button>)}</div></div>}
+     {entries.at(-1)?.reply?.ranking?.ranked?.length>0&&!busy&&<button className="btn" disabled={restoring} onClick={()=>sendChoice("다른 제품 보기")}>다른 제품 보기 (방금 추천 제외)</button>}
      {notice&&<p role="status" className="muted sm">{notice}</p>}
      {error&&<p role="alert">{error}</p>}
      <div ref={bottom}/>
