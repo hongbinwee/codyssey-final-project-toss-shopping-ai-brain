@@ -4,6 +4,7 @@ import {apiSafe,newActionKey,fmtWon} from "../api.ts";
 type ProductCandidate={
  productId:string;productName?:string;variantId:string;productImage?:string;keywords?:string[];
  unitPriceWon?:number|null;shippingFeeWon?:number|null;
+ rating?:number|null;ratingScale?:number|null;wholeReviewCount?:number|null;wholeReviewCountVerified?:boolean;
  sourceKind?:"REAL"|"SYNTHETIC";datasetVersion?:string;commerceVerified?:boolean;isSimulated?:boolean;
 };
 type RankedProduct={candidate:ProductCandidate;score:number;evidenceCoverage:number;recommendationRole?:"PERSONALIZED"|"REVIEW_VERIFIED"|"ALTERNATIVE";personalizationSignals?:("CART"|"WISHLIST"|"PURCHASE")[]};
@@ -48,6 +49,8 @@ export function BrainRanking({ranking,onOpenProduct,onExcludeProduct}:{ranking:B
      <div className="brain-product-info">{!reference&&recommendationLabel(recommendationRole)&&<p className="muted sm">{recommendationLabel(recommendationRole)}</p>}<b>{p.productName??"상품명 확인 중"}</b>
        {!!personalizationSignals?.length&&<p className="muted sm">맞춤 근거: {personalizationSignals.map(signal=>signal==="CART"?"장바구니":signal==="WISHLIST"?"찜":"구매 기록").join(" · ")}</p>}
        <p>{money(p.unitPriceWon)?fmtWon(p.unitPriceWon):"가격 정보 확인 전"}</p>
+       {recommendationRole==="REVIEW_VERIFIED"&&p.ratingScale===5&&typeof p.rating==="number"&&p.wholeReviewCountVerified===true&&typeof p.wholeReviewCount==="number"&&<p className="muted sm">평점 {p.rating.toFixed(1)}/5 · 상품 전체 리뷰 {p.wholeReviewCount}개 (3.5점 초과 · 10개 이상 기준)</p>}
+       {recommendationRole==="PERSONALIZED"&&!personalizationSignals?.length&&<p className="muted sm">현재 조건과 검증된 상품 근거로 비교한 후보예요.</p>}
        {(p.keywords??[]).slice(0,3).map((keyword,i)=><span key={i} className="chip">{keyword}</span>)}
        {reference&&<p className="muted sm">참고 상품 · 필수 조건이나 근거를 더 확인해야 해요.</p>}
        {p.commerceVerified===true
