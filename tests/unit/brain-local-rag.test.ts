@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {mkdtemp,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {createHash} from "node:crypto";
+import {parseDatasetManifest} from "../../src/brain/dataset-manifest.ts";
+import {parseV4Response} from "../../src/brain/rag-adapter.ts";
 
 const MODEL="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2";
 const VERSION="test_items:sha256=0123456789abcdef:products=3:reviews=2";
@@ -66,6 +69,11 @@ test("local RAG returns exact v4 shape, combines Korean BM25 and cosine RRF, and
    assert.equal(stats.vectorDimensions,384);
    assert.equal(stats.embeddingModel,MODEL);
    assert.match(stats.evidenceSha256,/^[a-f0-9]{64}$/);
+   assert.ok(result.search_trace.bm25Ms>=0);assert.ok(result.search_trace.vectorMs>=0);
+   assert.ok(result.search_trace.embeddingMs>=0);assert.ok(result.search_trace.fusionMs>=0);
+   assert.equal(result.search_trace.vectorScannedCount,3);
+   assert.ok(result.search_trace.bm25HitCount>0);assert.equal(result.search_trace.fusedProductCount,2);
+   assert.equal(parseV4Response(result,VERSION).items[0].evidence[0].sourceId,"r-p1");
  });
 });
 
@@ -131,4 +139,29 @@ test("indexed category is applied and raw source metadata is not reconstructed",
    assert.equal(result.items.some((x:any)=>x.product_id==="p3"),false);
    assert.deepEqual(result.items[0].evidence[0].source_metadata,baseChunks[0].source_metadata);
  });
+});
+
+test("manifest selects a different encoder and category, and rejects corpus substitution before embedding",async()=>{
+ const dataDir=await mkdtemp(join(tmpdir(),"codyssey-manifest-rag-"));
+ try{
+  const rows=[{...baseChunks[3],embedding:[1,0],embedding_model:"org/audio-encoder"}];
+  const evidence=rows.map(x=>JSON.stringify(x)).join("\n")+"\n";
+  const products=JSON.stringify(baseProducts[2])+"\n";
+  await writeFile(join(dataDir,"evidence_chunks.jsonl"),evidence);
+  await writeFile(join(dataDir,"indexed_products.jsonl"),products);
+  const manifest=parseDatasetManifest({schemaVersion:1,datasetId:"audio",datasetVersion:VERSION,
+   dataClass:"SYNTHETIC_PRODUCT",catalogSource:"test_items",categories:["audio"],
+   embedding:{model:"org/audio-encoder",dimensions:2,queryRevision:"a".repeat(40),documentRevision:null},
+   files:{evidenceSha256:createHash("sha256").update(evidence).digest("hex"),
+    indexedProductsSha256:createHash("sha256").update(products).digest("hex")}});
+  let embedded=0;
+  const mod=await modulePromise;assert.ok(mod);
+  const local=await mod.createLocalRagSearch({dataDir,embedQuery:async()=>{embedded++;return [1,0];},manifest} as never);
+  assert.equal(local.stats.embeddingModel,"org/audio-encoder");
+  assert.equal(local.stats.vectorDimensions,2);
+  const result=await local.search(request({category:"audio"}));
+  assert.equal(result.items[0].product_id,"p3");assert.equal(embedded,1);
+  await writeFile(join(dataDir,"indexed_products.jsonl"),products+"\n");
+  await assert.rejects(()=>mod.createLocalRagSearch({dataDir,embedQuery:async()=>[1,0],manifest} as never),/manifest/i);
+ }finally{await rm(dataDir,{recursive:true,force:true});}
 });

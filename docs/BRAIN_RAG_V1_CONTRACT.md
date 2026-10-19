@@ -123,9 +123,24 @@ DB team prerequisites (not executed by this change):
   rejected server-observed client address was 172.20.0.1; the DB owner must verify
   that routing/NAT scope before authorizing it. Do not disable TLS certificate checks.
 - Separate `brain_*` DB/service role and approved Brain migrations/checkpointer setup.
-  Existing startup uses PostgresSaver.setup (DDL); its provisioning privileges must
-  be resolved separately, never by granting the Commerce read role admin privileges.
+  Ordinary startup checks prepared checkpoint tables and never calls setup/DDL.
+  Provisioning remains separate; never grant the Commerce read role admin privileges.
 
 Current evidence: RAG API search/version checks passed previously. The catalog/ID,
 simulated-price and write-denial paths are tested with mocks; direct DB ID matching,
 browser E2E and deployment remain NOT_RUN pending the service role/network setup.
+
+## Swapping a local search dataset
+
+`BRAIN_RAG_MANIFEST_PATH` optionally selects an absolute, server-owned JSON file;
+omitting it preserves the existing v4 encoder settings. See `SearchDatasetManifest`
+in `src/brain/dataset-manifest.ts` for the versioned shape. Declare dataset ID/version,
+catalog source, categories, both corpus SHA-256 values and the offline encoder's model,
+dimensions and pinned revision. Unknown document-model revision stays `null`, never
+an assertion that query/document provenance was verified. Known revisions must match.
+Startup rejects mismatched version/category/catalog/model/dimensions/corpus and injected
+search/encoder bypasses. Runtime downloads no models and rebuilds no document embeddings.
+The current local transport still supports synthetic-review datasets with the existing
+`test_items` Commerce mapping and ID contract; audited-real sources and arbitrary schemas
+need their own approved mapping. Keep evaluation files outside the two search JSONL files.
+Replacing data/DB mappings requires separate approval; this code does not perform imports.

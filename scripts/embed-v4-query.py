@@ -6,8 +6,8 @@ import os
 import re
 import sys
 
-MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-DIMENSIONS = 384
+MODEL_ID = os.environ.get("CODEX_RAG_MODEL_ID", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+DIMENSIONS = int(os.environ.get("CODEX_RAG_DIMENSIONS", "384"))
 
 
 def main() -> int:
@@ -19,6 +19,8 @@ def main() -> int:
     revision = os.environ.get("CODEX_V4_MODEL_REVISION", "")
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise RuntimeError("CODEX_V4_MODEL_REVISION must be the downloaded 40-character model commit")
+    if not re.fullmatch(r"[-\w.]+/[-\w.]+", MODEL_ID) or not 1 <= DIMENSIONS <= 4096:
+        raise RuntimeError("invalid query encoder model or dimensions")
 
     from sentence_transformers import SentenceTransformer
 

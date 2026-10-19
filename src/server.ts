@@ -134,6 +134,7 @@ type BrainRagConnection = {
   pythonPath?:string;
   modelRevision?:string;
   modelCache?:string;
+  manifestPath?:string;
   auditId: string;
   token?: string;
   contract: BrainRagContract;
@@ -149,6 +150,9 @@ export function brainRagConnectionFromEnv(
   const dataDir=mode==="local"?env.BRAIN_RAG_DATA_DIR:undefined;
   if(mode==="local"&&(!dataDir||!isAbsolute(dataDir)))
     throw new Error("local RAG requires absolute BRAIN_RAG_DATA_DIR");
+  const manifestPath=env.BRAIN_RAG_MANIFEST_PATH?.trim();
+  if(manifestPath&&(mode!=="local"||!isAbsolute(manifestPath)))
+    throw new Error("BRAIN_RAG_MANIFEST_PATH requires local mode and an absolute path");
   // Local mode never connects to this sentinel URL; only an in-process fetcher is allowed.
   const endpoint = mode==="local"?"http://127.0.0.1/v4-local":env.BRAIN_RAG_URL;
   if (!endpoint) return undefined;
@@ -166,7 +170,7 @@ export function brainRagConnectionFromEnv(
   return {
     endpoint,
     ...(mode==="local"?{mode,dataDir,pythonPath:env.BRAIN_RAG_PYTHON,
-      modelRevision:env.BRAIN_RAG_MODEL_REVISION,modelCache:env.BRAIN_RAG_MODEL_CACHE}:{}),
+      modelRevision:env.BRAIN_RAG_MODEL_REVISION,modelCache:env.BRAIN_RAG_MODEL_CACHE,manifestPath}:{}),
     auditId: env.BRAIN_RAG_AUDIT_ID ?? "",
     token: env.BRAIN_RAG_TOKEN,
     contract,

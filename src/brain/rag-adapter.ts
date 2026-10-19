@@ -14,6 +14,7 @@ export interface RagConnection {
   pythonPath?:string;
   modelRevision?:string;
   modelCache?:string;
+  manifestPath?:string;
   auditId?:string;
   token?:string;
   timeoutMs?:number;
@@ -65,7 +66,6 @@ function text(v:unknown,max=160):v is string {
 }
 function score(v:unknown):v is number{return typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=1;}
 function whole(v:unknown):v is number {return typeof v==="number"&&Number.isSafeInteger(v)&&v>=0;}
-const aspects:Aspect[]=["performance","eye_comfort","noise"];
 const maxResponseBytes=400_000;
 const pickRecord=(v:unknown):GroundedFacet|undefined=>{
   const x=obj(v);
@@ -94,7 +94,7 @@ export function parseV4Response(raw:unknown,expectedVersion:string):ParsedV4Resp
     const evidence:ParsedV4Evidence[]=item.evidence.flatMap(rawEvidence=>{
       const entry=obj(rawEvidence),metadata=obj(entry?.source_metadata);
       if(!entry||(entry.product_id!==undefined&&entry.product_id!==item.product_id)||
-         (entry.source_version!==undefined&&entry.source_version!==expectedVersion))
+         (entry.source_version!==undefined&&entry.source_version!==null&&entry.source_version!==expectedVersion))
         throw new Error("RAG v4 evidence scope or version mismatch");
       // The live index also returns product-description chunks. They are not
       // verified review evidence and must not be passed to the review lookup.
@@ -154,13 +154,14 @@ async function retrieveV4(
   getProduct:ProductLookup,
   fetcher:typeof fetch,
   reviewLookup:ReviewLookup,
-):Promise<{candidates:ProductCandidate[];evidence:EvidenceRecord[]}> {
+):Promise<{candidates:ProductCandidate[];evidence:EvidenceRecord[];trace?:Record<string,number>}> {
   if(!text(input.requestId,128)||!text(input.originalQuestion,3000)||
      !text(input.query,250)||!Array.isArray(input.requiredConditions)||
      input.requiredConditions.length>25||!input.requiredConditions.every(x=>text(x,128)))
     throw new Error("invalid RAG v4 request");
   const category=connection.category??"beauty";
   if(!text(category,80))throw new Error("invalid RAG v4 category");
+  if(input.category&&input.category!==category)return {candidates:[],evidence:[]};
   const response=await fetcher(target.toString(),{
     method:"POST",redirect:"error",signal:AbortSignal.timeout(timeout),
     headers:{"content-type":"application/json",...(connection.token?{authorization:"Bearer "+connection.token}:{})},
@@ -168,7 +169,8 @@ async function retrieveV4(
       query:input.query,category,filters:{},required_conditions:input.requiredConditions,
       preferences:[],top_k:5})
   });
-  const parsed=parseV4Response(await boundedJson(response),connection.datasetVersion!);
+  const rawResponse=await boundedJson(response);
+  const parsed=parseV4Response(rawResponse,connection.datasetVersion!);
   const candidates:ProductCandidate[]=[],evidence:EvidenceRecord[]=[];
   for(const item of parsed.items){
     const got=await getProduct({product_id:item.productId});
@@ -203,7 +205,17 @@ async function retrieveV4(
     }
   }
   if(candidates.length>100)throw new Error("RAG v4 candidate limit");
-  return {candidates,evidence};
+  const trace:Record<string,number>={};
+  // Only the in-process transport supplies stage measurements; never trust remote timings.
+  if(connection.mode==="local"){
+    const measured=obj(obj(rawResponse)?.search_trace);
+    for(const key of ["embeddingMs","bm25Ms","vectorMs","fusionMs","bm25HitCount","vectorScannedCount","fusedProductCount"]){
+      const value=measured?.[key];
+      if(typeof value==="number"&&Number.isFinite(value)&&value>=0)trace[key]=value;
+    }
+    trace.verifiedCandidateCount=candidates.length;trace.verifiedReviewCount=evidence.length;
+  }
+  return {candidates,evidence,...(Object.keys(trace).length?{trace}:{})};
 }
 export function validateRagEndpoint(endpoint:string):URL {
   let u:URL;
@@ -305,7 +317,9 @@ export function verifiedRagRetriever(
       const variant=verified.variants.find(v=>v.variant_id===variantId);
       if(!variant||variant.availability!=="AVAILABLE"||variant.stock_qty<=0)continue;
       const rawFacets=obj(row.facets)??{},facets:ProductCandidate["facets"]={};
-      for(const aspect of aspects){
+      if(Object.keys(rawFacets).length>25)throw Error("RAG facet limit");
+      for(const aspect of Object.keys(rawFacets)){
+        if(!/^[a-z][a-z0-9_]{0,79}$/.test(aspect))throw Error("invalid RAG facet identifier");
         const f=pickRecord(rawFacets[aspect]);if(f)facets[aspect]=f;
       }
       // A retrieved claim must cite evidence for this exact Commerce product

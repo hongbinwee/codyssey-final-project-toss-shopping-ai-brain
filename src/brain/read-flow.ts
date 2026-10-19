@@ -13,7 +13,7 @@ export interface ResearchResult {
  conversationId:string;messageId:string;clientActionId?:string;ranking:RankingResult;
  shoppingPlan?:ShoppingPlan;
  explanation?:GroundedExplanation;
- trace:{memoryMs:number;intentMs:number;retrievalMs:number;rankMs:number;totalMs:number}
+ trace:{memoryMs:number;intentMs:number;retrievalMs:number;rankMs:number;totalMs:number;[key:string]:number}
 }
 export interface ResearchDeps {
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
@@ -72,7 +72,8 @@ export async function resolveTurnPlan(req:Request,prepared:PreparedTurn,previous
 export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:ShoppingPlan,deps:ResearchDeps):Promise<RetrievedTurn>{
  const retrievalStart=performance.now();
  const fetched=await deps.retriever.search({query:plan.query,maxTotalWon:plan.maxTotalWon,
-   requiredConditions:plan.requiredConditions,requestId:req.requestId,originalQuestion:req.userMessage});
+   requiredConditions:plan.requiredConditions,requestId:req.requestId,originalQuestion:req.userMessage,
+   ...(plan.category?{category:plan.category}:{})});
  if(!fetched||!Array.isArray(fetched.candidates)||!Array.isArray(fetched.evidence)||
     fetched.candidates.length>100||fetched.evidence.length>2500)throw new Error("invalid retrieval result");
  const retrievalMs=performance.now()-retrievalStart;
@@ -88,7 +89,7 @@ export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:Shoppi
  const rankMs=performance.now()-rankedAt;
  return {
    result:{conversationId:req.conversationId,messageId:prepared.messageId,clientActionId:req.clientActionId,ranking,
-     shoppingPlan:plan,trace:{memoryMs:prepared.memoryMs,
+     shoppingPlan:plan,trace:{...fetched.trace,memoryMs:prepared.memoryMs,
        intentMs:Math.max(0,retrievalStart-prepared.startedAt-prepared.memoryMs),
        retrievalMs,rankMs,totalMs:performance.now()-prepared.startedAt}},
    evidence:fetched.evidence

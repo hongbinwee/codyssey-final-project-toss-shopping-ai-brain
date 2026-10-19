@@ -53,6 +53,16 @@ test("RAG ranking actually changes by user preference while candidate set is ide
  assert.equal(rankProducts(r.candidates,r.evidence,ctx("performance"),[]).ranked[0].candidate.productId,"p-b");
  assert.match(JSON.stringify(adapter.headers()),/ci-only/);
 });
+
+test("RAG accepts data-defined attribute keys while retaining product-scoped evidence checks",async()=>{
+ const payload=resultRows();
+ for(const row of payload.candidates)(row as unknown as {facets:unknown}).facets={battery_life:{score:.8,evidenceIds:["performance-"+row.productId.slice(-1)]}};
+ const result=await create(payload).retriever.search({query:"headphones",maxTotalWon:null,requiredConditions:[]});
+ assert.equal(result.candidates[0].facets.battery_life?.score,.8);
+ assert.equal(result.candidates[0].facets.performance,undefined);
+ (payload.candidates[0] as unknown as {facets:unknown}).facets={battery_life:{score:.8,evidenceIds:["performance-b"]}};
+ await assert.rejects(()=>create(payload).retriever.search({query:"headphones",maxTotalWon:null,requiredConditions:[]}),/cross-product/);
+});
 test("unsupported provenance never crosses recommendation gate",async()=>{
  const payload=resultRows();
  payload.candidates[0].reviewCountAuditId="unreviewed";

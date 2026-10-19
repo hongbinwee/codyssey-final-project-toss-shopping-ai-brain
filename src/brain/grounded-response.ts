@@ -10,7 +10,6 @@ export interface GroundedExplanation {
  limitations:string[];
  kind:"VERIFIED_CANDIDATES"|"REFERENCE_ONLY"|"NO_MATCH"|"LLM_GROUNDED"|"EVIDENCE_INSUFFICIENT";
 }
-const aspects:Aspect[]=["performance","eye_comfort","noise"];
 const labels:Record<Aspect,string>={performance:"성능",eye_comfort:"눈 피로 관련",noise:"소음"};
 /**
  * Deterministic, source-restricted explanations. Deliberately avoids converting
@@ -33,7 +32,7 @@ export function buildGroundedExplanation(ranking:RankingResult,evidence:Evidence
  }
  const items=ranking.ranked.slice(0,3).map(({candidate})=>{
    const ids:string[]=[],indicators:{aspect:Aspect;score:number}[]=[];
-   for(const aspect of aspects){
+   for(const aspect of Object.keys(candidate.facets)){
      const f=candidate.facets[aspect];
      if(!f)continue;
      const legitimate=f.evidenceIds.filter(id=>{
@@ -52,7 +51,7 @@ export function buildGroundedExplanation(ranking:RankingResult,evidence:Evidence
      evidenceIds:[...new Set(ids)].slice(0,12),indicators};
  });
  const segments=items.map((p,index)=>{
-   const detail=p.indicators.map(x=>`${labels[x.aspect]} ${x.score.toFixed(2)}`).join(", ");
+   const detail=p.indicators.map(x=>`${Object.hasOwn(labels,x.aspect)?labels[x.aspect]:x.aspect} ${x.score.toFixed(2)}`).join(", ");
    return `${index+1}순위 ${p.name}: 총 ${p.totalPriceWon.toLocaleString("ko-KR")}원. `+
      (detail?`RAG가 제공한 근거 연결 평가 지표: ${detail}.`:"")+
      (p.evidenceIds.length?` 근거 ID: ${p.evidenceIds.join(", ")}.`:"");

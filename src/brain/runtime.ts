@@ -8,6 +8,7 @@ import {createCatalog,type CatalogSource} from "../catalog.ts";
 import {assertServiceRole} from "../db.ts";
 import {verifiedRagRetriever,localRagFetcher,type LocalRagSearch,type RagConnection} from "./rag-adapter.ts";
 import {createLocalRagSearch} from "./local-rag.ts";
+import {loadDatasetManifest,verifyDatasetManifest} from "./dataset-manifest.ts";
 import type {Provider} from "../llm.ts";
 import {createLlmGroundedResponder} from "./grounded-response.ts";
 import {brainDatabaseFromPostgres} from "./pg-adapter.ts";
@@ -24,12 +25,16 @@ import {requireBrainV9Schema,type SchemaProbe} from "./schema-guard.ts";
 
 /** One offline CPU encoder per runtime. Only query vectors, never corpus re-embedding. */
 export async function createLocalQueryEncoder(
- options:{pythonPath:string;revision:string;modelCache:string},spawnProcess:typeof spawn=spawn,
+ options:{pythonPath:string;revision:string;modelCache:string;model?:string;dimensions?:number},spawnProcess:typeof spawn=spawn,
 ):Promise<{embedQuery:(query:string)=>Promise<number[]>;close:()=>void}>{
  if(!isAbsolute(options.pythonPath)||!isAbsolute(options.modelCache)||!/^[a-f0-9]{40}$/.test(options.revision))
    throw new Error("local encoder requires absolute Python/cache paths and pinned model revision");
+ const model=options.model??"sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",dimensions=options.dimensions??384;
+ if(!/^[-\w.]+\/[-\w.]+$/.test(model)||!Number.isSafeInteger(dimensions)||dimensions<1||dimensions>4096)
+   throw new Error("invalid local encoder model or dimensions");
  const env:NodeJS.ProcessEnv={HF_HOME:options.modelCache,HF_HUB_CACHE:join(options.modelCache,"hub"),HF_HUB_OFFLINE:"1",TRANSFORMERS_OFFLINE:"1",
-   CODEX_V4_MODEL_REVISION:options.revision,PYTHONUTF8:"1",TOKENIZERS_PARALLELISM:"false"};
+   CODEX_V4_MODEL_REVISION:options.revision,CODEX_RAG_MODEL_ID:model,CODEX_RAG_DIMENSIONS:String(dimensions),
+   PYTHONUTF8:"1",TOKENIZERS_PARALLELISM:"false"};
  for(const key of ["PATH","Path","SystemRoot","WINDIR","TEMP","TMP"])
    if(process.env[key])env[key]=process.env[key];
  const child=spawnProcess(options.pythonPath,["-u",fileURLToPath(new URL("../../scripts/embed-v4-query.py",import.meta.url))],
@@ -49,11 +54,10 @@ export async function createLocalQueryEncoder(
    const request=pending;
    if(!request){close();return;}
    try{
-     if(line.length>40000)throw new Error();
+     if(line.length>dimensions*32+1024)throw new Error();
      const data=JSON.parse(line);
-     if(data.model!=="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"||
-        data.revision!==options.revision||data.dimensions!==384||!Array.isArray(data.embedding)||
-        data.embedding.length!==384||!data.embedding.every((v:unknown)=>typeof v==="number"&&Number.isFinite(v)))throw new Error();
+     if(data.model!==model||data.revision!==options.revision||data.dimensions!==dimensions||!Array.isArray(data.embedding)||
+        data.embedding.length!==dimensions||!data.embedding.every((v:unknown)=>typeof v==="number"&&Number.isFinite(v)))throw new Error();
      clearTimeout(request.timer);pending=undefined;request.resolve(data.embedding);
    }catch{close();}
  });
@@ -142,20 +146,29 @@ export async function createBrainRuntime(options:{
  let localSearch=options.localRagSearch;
  let encoder:Awaited<ReturnType<typeof createLocalQueryEncoder>>|undefined;
  if(options.rag?.mode==="local"){
+   if(options.rag.manifestPath&&(options.localRagSearch||options.embedQuery))
+     throw Error("dataset manifest cannot use injected search or encoder");
    if(options.catalogSource!=="test_items")throw new Error("local RAG requires the read-only test_items catalog");
    if(options.rag.contract!=="v4"||!options.rag.dataDir||!isAbsolute(options.rag.dataDir))
      throw new Error("local RAG requires v4 data directory");
+   const manifest=options.rag.manifestPath?await loadDatasetManifest(options.rag.manifestPath):undefined;
+   if(manifest&&(manifest.catalogSource!==options.catalogSource||manifest.datasetVersion!==options.rag.datasetVersion||
+     !manifest.categories.includes(options.rag.category??"")||manifest.embedding.queryRevision!==options.rag.modelRevision))
+     throw Error("dataset manifest does not match runtime settings");
    if(!localSearch){
      let embedQuery=options.embedQuery;
      if(!embedQuery){
        const {pythonPath,modelRevision,modelCache}=options.rag;
        if(!pythonPath||!modelRevision||!modelCache)throw new Error("local RAG query encoder must be provided; no remote fallback");
-       encoder=await createLocalQueryEncoder({pythonPath,revision:modelRevision,modelCache});
+       encoder=await createLocalQueryEncoder({pythonPath,revision:modelRevision,modelCache,
+         model:manifest?.embedding.model,dimensions:manifest?.embedding.dimensions});
        embedQuery=encoder.embedQuery;
      }
      try{
-     const local=await createLocalRagSearch({dataDir:options.rag.dataDir,embedQuery});
+     const local=await createLocalRagSearch({dataDir:options.rag.dataDir,embedQuery,manifest});
      if(local.stats.datasetVersion!==options.rag.datasetVersion)throw new Error("local RAG dataset version mismatch");
+     if(manifest)verifyDatasetManifest(manifest,{...local.stats,catalogSource:options.catalogSource!,
+       category:options.rag.category!,queryRevision:options.rag.modelRevision!});
      localSearch=local.search;
      }catch(error){encoder?.close();throw error;}
    }
@@ -180,7 +193,7 @@ export async function createBrainRuntime(options:{
      conversations,memory:preferences,
      retriever:options.rag?verifiedRagRetriever(options.rag,catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
-     intent:createIntentPort(providerIntentModel(options.provider,45000))
+     intent:createIntentPort(providerIntentModel(options.provider,45000),options.rag?.category)
    },saver,postgresTurnLock(lockDb,db),new FencedTurns(store),groundedResponder);
    return {
      handle:createBrainApi({conversations,preferences,graph,recentHistory:actor=>readBrainHistory(db,actor)}),

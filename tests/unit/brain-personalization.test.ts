@@ -56,3 +56,24 @@ test("budget constraints are enforced before personalized ranking",()=>{
  assert.equal(r.ranked[0].candidate.productId,"p-a");
  assert.ok(r.rejected.some(x=>x.reasons.includes("over_total_budget")));
 });
+
+test("category ranking uses requested evidence-backed attributes without monitor defaults",()=>{
+ const p={...candidate("a",180000,.5,.5),facets:{battery_life:{score:.9,evidenceIds:["battery-a"]}}};
+ const scope={maxTotalWon:500000,requiredConditions:[],currentPreferences:{},category:"audio",attributePreferences:["battery_life"]};
+ const result=rankProducts([p] as never,[proof("battery-a","p-a")],scope,[]);
+ assert.equal(result.ranked.length,1);assert.deepEqual(result.ranked[0].missingAspects,[]);
+ const missing=rankProducts([{...p,facets:{}}] as never,[],scope,[]);
+ assert.equal(missing.ranked.length,0);assert.ok(missing.referenceOnly[0].reasons.some(x=>x.includes("battery_life")));
+ const cross=rankProducts([p] as never,[proof("battery-a","p-b")],scope,[]);
+ assert.equal(cross.ranked.length,0);assert.equal(cross.rejected.length,1);
+});
+
+test("missing soft attribute is disclosed without becoming a hard exclusion or shrinking the score denominator",()=>{
+ const p={...candidate("a",180000,.5,.5),facets:{battery_life:{score:.9,evidenceIds:["battery-a"]},comfort:{score:.8,evidenceIds:["comfort-a"]}}};
+ const result=rankProducts([p] as never,[proof("battery-a","p-a"),proof("comfort-a","p-a")],{
+  maxTotalWon:500000,requiredConditions:[],currentPreferences:{},category:"audio",
+  attributePreferences:["battery_life","comfort","portability"]},[]);
+ assert.equal(result.ranked.length,1);assert.deepEqual(result.ranked[0].missingAspects,["portability"]);
+ assert.ok(result.ranked[0].evidenceCoverage<1);
+ assert.ok(result.ranked[0].score<result.ranked[0].evidenceCoverage);
+});

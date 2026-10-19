@@ -21,6 +21,16 @@ function weightsFor(p:Record<PreferenceKey,PreferenceValue>){
  if(p.noise_sensitivity==="important")w.noise+=.35;
  return w;
 }
+function dimensionsFor(ctx:ShoppingContext,p:Record<PreferenceKey,PreferenceValue>):{facets:Aspect[];weights:Record<string,number>}{
+ if(!ctx.category)return {facets,weights:weightsFor(p)}; // Existing saved plans retain their versioned behavior.
+ const requested=[...new Set(ctx.attributePreferences??[])];
+ if(typeof ctx.category!=="string"||!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(ctx.category)||requested.length>12||
+   requested.some(key=>!/^(?!cost$)[a-z][a-z0-9_]{0,79}$/.test(key)))throw Error("invalid category attributes");
+ const cost=requested.length?(p.price_priority==="value"?.7:p.price_priority==="performance"?.2:.5):1;
+ const result:Record<string,number>={cost};
+ for(const key of requested)result[key]=(1-cost)/requested.length;
+ return {facets:requested,weights:result};
+}
 /** Same recommendation-eligibility thresholds as Commerce G2, separately versioned pending review. */
 export function eligibility(p:ProductCandidate):string[]{
  const r:string[]=[];
@@ -39,7 +49,10 @@ function evidenceValid(ids:string[],p:ProductCandidate,idx:Map<string,EvidenceRe
 /** Fixed global denominator; missing evidence cannot improve a candidate's score. */
 export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceRecord[],ctx:ShoppingContext,memories:Preference[]):RankingResult{
  if(ctx.maxTotalWon!==null&&(!Number.isSafeInteger(ctx.maxTotalWon)||ctx.maxTotalWon<0))throw new Error("invalid budget");
- const pref=effectivePreferences(memories,ctx.currentPreferences),w=weightsFor(pref),denom=Object.values(w).reduce((x,y)=>x+y,0);
+ const scoped=ctx.category?memories.filter(p=>p.key==="price_priority"):memories;
+ const current=ctx.category?{price_priority:ctx.currentPreferences.price_priority}:ctx.currentPreferences;
+ const pref=effectivePreferences(scoped,current),dimensions=dimensionsFor(ctx,pref),w=dimensions.weights,
+   activeFacets=dimensions.facets,denom=Object.values(w).reduce((x,y)=>x+y,0);
  const idx=new Map<string,EvidenceRecord>(),duplicates=new Set<string>();
  for(const e of evidence){if(idx.has(e.id))duplicates.add(e.id);idx.set(e.id,e);}
  const ranked:RankedCandidate[]=[],referenceOnly:RankingResult["referenceOnly"]=[],rejected:RankingResult["rejected"]=[];
@@ -54,7 +67,7 @@ export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceReco
   const total=money(p.unitPriceWon)&&money(p.shippingFeeWon)?p.unitPriceWon!+p.shippingFeeWon!:null;
   if(ctx.maxTotalWon!==null&&total!==null&&total>ctx.maxTotalWon)reasons.push("over_total_budget");
   for(const condition of ctx.requiredConditions)if(!evidenceValid(p.conditions[condition]??[],p,idx,duplicates))reasons.push("unverified_required_condition:"+condition);
-  for(const facet of facets){const f=p.facets[facet];if(f&&(!Number.isFinite(f.score)||f.score<0||f.score>1||!evidenceValid(f.evidenceIds,p,idx,duplicates)))reasons.push("invalid_or_cross_product_facet:"+facet);}
+  for(const [facet,f] of Object.entries(p.facets)){if(f&&(!/^[a-z][a-z0-9_]{0,79}$/.test(facet)||!Number.isFinite(f.score)||f.score<0||f.score>1||!evidenceValid(f.evidenceIds,p,idx,duplicates)))reasons.push("invalid_or_cross_product_facet:"+facet);}
   if(reasons.length){rejected.push({candidate:p,reasons});continue;}
   const gate=eligibility(p);
   if(gate.length){referenceOnly.push({candidate:p,reasons:gate});continue;}
@@ -64,12 +77,13 @@ export function rankProducts(candidates:ProductCandidate[],evidence:EvidenceReco
      :(maxCost>minCost?Math.max(0,Math.min(1,(maxCost-total)/(maxCost-minCost))):1);
    signals.push({name:"cost",weight:w.cost,score:costScore});
   }
-  for(const facet of facets){const f=p.facets[facet];if(f)signals.push({name:facet,weight:w[facet],score:f.score});}
+  for(const facet of activeFacets){const f=p.facets[facet];if(f)signals.push({name:facet,weight:w[facet],score:f.score});}
   const coverage=signals.reduce((a,b)=>a+b.weight,0)/denom;
-  const critical=facets.filter(f=>w[f]/denom>=.25&&!p.facets[f]);
-  if(coverage<.65||critical.length){referenceOnly.push({candidate:p,reasons:[...(coverage<.65?["insufficient_evidence_coverage"]:[]),...critical.map(a=>"missing_critical_aspect:"+a)]});continue;}
+  const critical=ctx.category?[]:activeFacets.filter(f=>w[f]/denom>=.25&&!p.facets[f]);
+  if(coverage<.65||critical.length){referenceOnly.push({candidate:p,reasons:[...(coverage<.65?["insufficient_evidence_coverage"]:[]),
+    ...critical.map(a=>"missing_critical_aspect:"+a),...(ctx.category?activeFacets.filter(f=>!p.facets[f]).map(a=>"missing_preferred_attribute:"+a):[])]});continue;}
   const score=signals.reduce((a,b)=>a+b.weight*b.score,0)/denom;
-  ranked.push({candidate:p,score,evidenceCoverage:coverage,missingAspects:facets.filter(f=>!p.facets[f]),effectivePreferences:{...pref}});
+  ranked.push({candidate:p,score,evidenceCoverage:coverage,missingAspects:activeFacets.filter(f=>!p.facets[f]),effectivePreferences:{...pref}});
  }
  ranked.sort((a,b)=>b.score-a.score);
  return {ranked,referenceOnly,rejected,evaluatedCount:candidates.length};

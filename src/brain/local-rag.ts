@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
 import {readFile} from "node:fs/promises";
 import {join} from "node:path";
+import {parseDatasetManifest,type SearchDatasetManifest} from "./dataset-manifest.ts";
 
 const modelId="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2";
 const dimensions=384,rrfConstant=60,maxEvidencePerProduct=5;
@@ -53,14 +54,14 @@ function tokenize(value:string):string[]{
 function frequencies(terms:string[]):Map<string,number>{
  const result=new Map<string,number>();for(const term of terms)result.set(term,(result.get(term)??0)+1);return result;
 }
-function recordToChunk(row:JsonObject,index:number,version:string,seen:Set<string>):Chunk{
+function recordToChunk(row:JsonObject,index:number,version:string,seen:Set<string>,model:string,size:number):Chunk{
  const id=row.chunk_id,productId=row.product_id,sourceId=row.source_id,category=row.category,
    sourceType=row.source_type,meta=row.source_metadata,embedding=row.embedding;
  if(row.dataset_version!==version)throw new Error(`evidence dataset version mismatch at row ${index+1}`);
- if(row.embedding_model!==modelId)throw new Error(`evidence embedding model mismatch at row ${index+1}`);
- if(!Array.isArray(embedding)||embedding.length!==dimensions||
+ if(row.embedding_model!==model)throw new Error(`evidence embedding model mismatch at row ${index+1}`);
+ if(!Array.isArray(embedding)||embedding.length!==size||
     !embedding.every(x=>typeof x==="number"&&Number.isFinite(x)))
-   throw new Error(`evidence embedding must be a finite ${dimensions}-dimensional vector at row ${index+1}`);
+   throw new Error(`evidence embedding must be a finite ${size}-dimensional vector at row ${index+1}`);
  if(!text(id,128)||!text(productId,128)||!text(sourceId,128)||!text(category,80)||
    !text(sourceType,80)||!bodyText(row.evidence_text,5000)||!bodyText(row.embedding_text,20000)||
    !object(meta))
@@ -73,7 +74,7 @@ function recordToChunk(row:JsonObject,index:number,version:string,seen:Set<strin
  const terms=tokenize(row.embedding_text);
  return {product_id:productId,chunk_id:id,source_type:sourceType,source_id:sourceId,
    source_version:row.source_version,category,evidence_text:row.evidence_text,embedding_text:row.embedding_text,
-   dataset_version:version,embedding_model:modelId,source_metadata:meta,embedding:vector,norm,
+   dataset_version:version,embedding_model:model,source_metadata:meta,embedding:vector,norm,
    terms:frequencies(terms),length:terms.length};
 }
 function requestOf(value:unknown):SearchRequest{
@@ -109,7 +110,7 @@ function bm25(docs:Chunk[],queryTerms:string[]):Map<string,number>{
  return result;
 }
 function cosine(query:readonly number[],queryNorm:number,doc:Chunk):number{
- let dot=0;for(let i=0;i<dimensions;i++)dot+=query[i]*doc.embedding[i];return dot/(queryNorm*doc.norm);
+ let dot=0;for(let i=0;i<query.length;i++)dot+=query[i]*doc.embedding[i];return dot/(queryNorm*doc.norm);
 }
 function ranked(scores:Map<string,number>,docs:Chunk[]):Map<string,number>{
  const byId=new Map(docs.map(doc=>[doc.chunk_id,doc]));
@@ -121,17 +122,24 @@ function syntheticReview(chunk:Chunk):boolean{
    chunk.source_metadata.synthetic===true&&text(chunk.source_metadata.variant_id,128);
 }
 
-export async function createLocalRagSearch(options:{dataDir:string;embedQuery:EmbedQuery}):Promise<{
- search:(body:unknown)=>Promise<{dataset_version:string;items:{product_id:string;rrf_score:number;evidence:JsonObject[]}[]}>;
+export async function createLocalRagSearch(options:{dataDir:string;embedQuery:EmbedQuery;manifest?:SearchDatasetManifest}):Promise<{
+ search:(body:unknown)=>Promise<{dataset_version:string;items:{product_id:string;rrf_score:number;evidence:JsonObject[]}[];search_trace?:Record<string,number>}>;
  stats:LocalRagStats
 }>{
  if(!text(options.dataDir,2048)||typeof options.embedQuery!=="function")throw new Error("invalid local RAG options");
  const evidencePath=join(options.dataDir,"evidence_chunks.jsonl"),productsPath=join(options.dataDir,"indexed_products.jsonl");
  const [evidenceBuffer,productsBuffer]=await Promise.all([readFile(evidencePath),readFile(productsPath)]);
+ const manifest=options.manifest?parseDatasetManifest(options.manifest):undefined;
+ const evidenceSha256=createHash("sha256").update(evidenceBuffer).digest("hex");
+ const indexedProductsSha256=createHash("sha256").update(productsBuffer).digest("hex");
+ if(manifest&&(manifest.dataClass!=="SYNTHETIC_PRODUCT"||manifest.files.evidenceSha256!==evidenceSha256||
+   manifest.files.indexedProductsSha256!==indexedProductsSha256))throw Error("dataset manifest corpus or source-class mismatch");
+ const activeModel=manifest?.embedding.model??modelId,activeDimensions=manifest?.embedding.dimensions??dimensions;
  const chunkRows=parseJsonl(evidenceBuffer,"evidence_chunks.jsonl"),productRows=parseJsonl(productsBuffer,"indexed_products.jsonl");
  const versions=new Set(chunkRows.map(row=>row.dataset_version));
  if(versions.size!==1||!text([...versions][0],128))throw new Error("evidence dataset version missing or inconsistent");
  const datasetVersion=[...versions][0] as string;
+ if(manifest&&manifest.datasetVersion!==datasetVersion)throw Error("dataset manifest version mismatch");
  const products=new Map<string,IndexedProduct>();
  for(const [index,row] of productRows.entries()){
    if(!text(row.product_id,128)||!text(row.category,80)||row.dataset_version!==datasetVersion||!object(row.product_payload))
@@ -141,28 +149,34 @@ export async function createLocalRagSearch(options:{dataDir:string;embedQuery:Em
  }
  if(!products.size||chunkRows.some(row=>!products.has(row.product_id as string)))
    throw new Error("evidence product mapping is incomplete");
- const seenChunks=new Set<string>(),chunks=chunkRows.map((row,index)=>recordToChunk(row,index,datasetVersion,seenChunks));
+ const seenChunks=new Set<string>(),chunks=chunkRows.map((row,index)=>recordToChunk(row,index,datasetVersion,seenChunks,activeModel,activeDimensions));
+ if(manifest&&(chunks.some(c=>!manifest.categories.includes(c.category))||
+   [...products.values()].some(p=>!manifest.categories.includes(p.category))))throw Error("dataset manifest category mismatch");
  const sourceTypeCounts:Record<string,number>={};
  for(const chunk of chunks)sourceTypeCounts[chunk.source_type]=(sourceTypeCounts[chunk.source_type]??0)+1;
- const stats:LocalRagStats={datasetVersion,embeddingModel:modelId,vectorDimensions:dimensions,
+ const stats:LocalRagStats={datasetVersion,embeddingModel:activeModel,vectorDimensions:activeDimensions,
    chunkCount:chunks.length,productCount:products.size,
    syntheticReviewChunkCount:chunks.filter(syntheticReview).length,sourceTypeCounts,
-   evidenceSha256:createHash("sha256").update(evidenceBuffer).digest("hex"),
-   indexedProductsSha256:createHash("sha256").update(productsBuffer).digest("hex")};
+   evidenceSha256,indexedProductsSha256};
 
  return {stats,async search(input){
    const body=requestOf(input),docs=chunks.filter(chunk=>chunk.category===body.category&&
      products.get(chunk.product_id)?.category===body.category);
    if(!docs.length)return {dataset_version:datasetVersion,items:[]};
    const embedText=[body.query,...body.required_conditions].join(" ");
+   const embeddingStarted=performance.now();
    const queryVector=await options.embedQuery(embedText);
-   if(!Array.isArray(queryVector)||queryVector.length!==dimensions||
+   const embeddingMs=performance.now()-embeddingStarted;
+   if(!Array.isArray(queryVector)||queryVector.length!==activeDimensions||
      !queryVector.every(value=>typeof value==="number"&&Number.isFinite(value)))
-     throw new Error("query embedding must have 384 finite dimensions");
+     throw new Error(`query embedding must have ${activeDimensions} finite dimensions`);
    let queryNormSquared=0;for(const value of queryVector)queryNormSquared+=value*value;
    const queryNorm=Math.sqrt(queryNormSquared);if(!Number.isFinite(queryNorm)||queryNorm===0)throw new Error("query embedding has zero norm");
+   const bm25Started=performance.now();
    const bm25Scores=bm25(docs,tokenize([body.query,body.original_question,...body.required_conditions].join(" ")));
+   const bm25Ms=performance.now()-bm25Started,vectorStarted=performance.now();
    const vectorScores=new Map(docs.map(doc=>[doc.chunk_id,cosine(queryVector,queryNorm,doc)]));
+   const vectorMs=performance.now()-vectorStarted,fusionStarted=performance.now();
    const bm25Ranks=ranked(bm25Scores,docs),vectorRanks=ranked(vectorScores,docs);
    const byChunk=new Map(docs.map(doc=>[doc.chunk_id,doc]));
    const scores=new Map<string,number>();
@@ -192,6 +206,7 @@ export async function createLocalRagSearch(options:{dataDir:string;embedQuery:Em
      if(evidence.length)items.push({product_id:productId,rrf_score:group.score,evidence});
      if(items.length===body.top_k)break;
    }
-   return {dataset_version:datasetVersion,items};
+   return {dataset_version:datasetVersion,items,search_trace:{embeddingMs,bm25Ms,vectorMs,fusionMs:performance.now()-fusionStarted,
+     bm25HitCount:bm25Scores.size,vectorScannedCount:vectorScores.size,fusedProductCount:groups.size}};
  }};
 }

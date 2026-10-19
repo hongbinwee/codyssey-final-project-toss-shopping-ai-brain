@@ -27,7 +27,8 @@ export function assembleIntentContext(userMessage:string,memories:Preference[],p
  const remembered=[...latest].map(([key,record])=>({key,value:record.value})).slice(0,3);
  const context=previous?{
    query:previous.query,maxTotalWon:previous.maxTotalWon,
-   requiredConditions:previous.requiredConditions,currentPreferences:previous.currentPreferences
+   requiredConditions:previous.requiredConditions,currentPreferences:previous.currentPreferences,
+   ...(previous.category?{category:previous.category,attributePreferences:previous.attributePreferences??[]}:{})
  }:null;
  return {
    trustedSkillId:selected.id,

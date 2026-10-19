@@ -117,6 +117,13 @@ test("v4 live review scope rejects cross-product and cross-version evidence", ()
   }
 });
 
+test("unknown source_version is not confused with the verified dataset envelope",()=>{
+ const response=v4Response();
+ const withUnknown={...response,items:[{...response.items[0],evidence:[{...response.items[0].evidence[0],source_version:null}]}]};
+ assert.equal(rag.parseV4Response(withUnknown,DATASET_VERSION).items[0].evidence[0].sourceId,"r-v4-1");
+ assert.throws(()=>rag.parseV4Response({...withUnknown,dataset_version:"other"},DATASET_VERSION),/version/);
+});
+
 test("read flow forwards the trace id and unmodified question separately from the intent query", async () => {
   let observed: Record<string, unknown> | undefined;
   await retrieveTurn(

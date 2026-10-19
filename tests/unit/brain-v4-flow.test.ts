@@ -78,6 +78,28 @@ test("local encoder rejects mismatched model provenance before returning query v
  }
 });
 
+test("deployment manifest cannot be bypassed with an injected search or unverified encoder",async()=>{
+ const dbUrl=new URL("postgres://127.0.0.1/brain_manifest_test");dbUrl.username="fixture";dbUrl.password="unit-only";
+ const base={brainDatabaseUrl:dbUrl.toString(),provider:{name:"live:unit"},
+  catalogSource:"test_items",rag:{mode:"local",contract:"v4",endpoint:"http://127.0.0.1/local",
+   dataDir:process.cwd(),datasetVersion:"fixture",manifestPath:process.execPath}};
+ await assert.rejects(()=>runtime.createBrainRuntime({...base,localRagSearch:async()=>({})} as never),/manifest.*injected/i);
+ await assert.rejects(()=>runtime.createBrainRuntime({...base,embedQuery:async()=>[1]} as never),/manifest.*injected/i);
+});
+
+test("offline encoder uses manifest-selected model and dimensions without exposing secrets",async()=>{
+ const stdout=new PassThrough(),stdin=new PassThrough(),stderr=new PassThrough();
+ const child=Object.assign(new EventEmitter(),{stdout,stdin,stderr,kill(){return true;}});
+ stdin.on("data",()=>setImmediate(()=>stdout.write(JSON.stringify({model:"org/audio-encoder",revision:"a".repeat(40),
+  dimensions:2,embedding:[1,.5]})+"\n")));
+ const encoder=await runtime.createLocalQueryEncoder({pythonPath:process.execPath,modelCache:process.cwd(),
+  revision:"a".repeat(40),model:"org/audio-encoder",dimensions:2},((_file:unknown,_args:unknown,opts:{env:Record<string,string>})=>{
+   assert.equal(opts.env.CODEX_RAG_MODEL_ID,"org/audio-encoder");assert.equal(opts.env.CODEX_RAG_DIMENSIONS,"2");
+   assert.equal(opts.env.LLM_API_KEY,undefined);return child;
+  }) as never);
+ try{assert.deepEqual(await encoder.embedQuery("audio"),[1,.5]);}finally{encoder.close();}
+});
+
 test("runtime verifies pre-provisioned storage using SELECT only and fails closed without bootstrap rights",async()=>{
  const calls:string[]=[];
  const rights=Object.keys(BRAIN_SERVICE_RIGHTS).map(table_name=>({table_name,ready:true}));

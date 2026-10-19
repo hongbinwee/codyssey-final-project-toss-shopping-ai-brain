@@ -11,6 +11,21 @@ const intent=(x={})=>({
  query:"monitor",context:{maxTotalWon:null,requiredConditions:[],
  currentPreferences:{}},...x
 });
+
+test("data-defined soft attributes persist within a category and clear across category changes",()=>{
+ const first=parseShoppingIntent(JSON.stringify({query:"headphones",maxTotalWon:100000,requiredConditions:[],currentPreferences:{},
+  category:"audio",attributePreferences:["battery_life"],queryMode:"SET",budgetMode:"SET"}));
+ const plan=resolveShoppingPlan(null,first);
+ const follow=resolveShoppingPlan(plan,intent({queryMode:"KEEP",budgetMode:"KEEP"}));
+ assert.equal(follow.category,"audio");assert.deepEqual(follow.attributePreferences,["battery_life"]);
+ assert.deepEqual(follow.requiredConditions,[]);
+ const changed=resolveShoppingPlan(follow,intent({query:"vacuum",queryMode:"SET",budgetMode:"CLEAR",
+  context:{maxTotalWon:null,requiredConditions:[],currentPreferences:{},category:"household"}}));
+ assert.equal(changed.category,"household");assert.deepEqual(changed.attributePreferences,[]);
+ assert.deepEqual(plan.attributePreferences,["battery_life"]);
+ assert.throws(()=>parseShoppingIntent(JSON.stringify({query:"x",maxTotalWon:null,requiredConditions:[],currentPreferences:{},
+  category:"audio",attributePreferences:["cost"]})),/attribute/);
+});
 test("follow-up retains old budget and hard requirements; merges explicitly stated preference",()=>{
  const next=resolveShoppingPlan(oldPlan,intent({queryMode:"KEEP",budgetMode:"KEEP",
   requirementsMode:"KEEP",context:{maxTotalWon:null,requiredConditions:[],

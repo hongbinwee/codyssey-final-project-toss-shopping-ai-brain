@@ -29,6 +29,9 @@ function validateContext(extracted:PlanExtraction):void{
     if(!keys.has(k as PreferenceKey)||!values[k as PreferenceKey].includes(v as PreferenceValue))
       throw new Error("invalid shopping plan preference");
   }
+  if(c.category!==undefined&&!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(c.category))throw Error("invalid shopping category");
+  if(c.attributePreferences!==undefined&&(!c.category||!Array.isArray(c.attributePreferences)||c.attributePreferences.length>12||
+    c.attributePreferences.some(k=>typeof k!=="string"||!/^(?!cost$)[a-z][a-z0-9_]{0,79}$/.test(k))))throw Error("invalid shopping attributes");
 }
 /**
  * Only explicit mode CLEAR clears a saved constraint. Older single-turn
@@ -42,11 +45,13 @@ export function resolveShoppingPlan(previous:ShoppingPlan|null|undefined,extract
     if(extracted.budgetMode==="SET"&&now.maxTotalWon===null)throw new Error("SET budget missing");
     return {query:extracted.query.trim(),maxTotalWon:extracted.budgetMode==="CLEAR"?null:now.maxTotalWon,
       requiredConditions:extracted.requirementsMode==="CLEAR"?[]:[...new Set(now.requiredConditions)],
-      currentPreferences:extracted.preferencesMode==="CLEAR"?{}:{...now.currentPreferences},revision:1};
+      currentPreferences:extracted.preferencesMode==="CLEAR"?{}:{...now.currentPreferences},revision:1,
+      ...(now.category?{category:now.category,attributePreferences:extracted.preferencesMode==="CLEAR"?[]:[...new Set(now.attributePreferences??[])]}:{})};
   }
   if(extracted.queryMode==="SET"&&extracted.budgetMode===undefined)
     throw new Error("new task must explicitly decide budget retention");
-  const newTask=extracted.queryMode==="SET";
+  const categoryChanged=!!now.category&&!!previous.category&&now.category!==previous.category;
+  const newTask=extracted.queryMode==="SET"||categoryChanged;
   const query=extracted.queryMode==="KEEP"||(!extracted.queryMode&&previous.query===extracted.query)
     ? previous.query : extracted.query.trim();
   const budget=extracted.budgetMode==="CLEAR"?null
@@ -64,6 +69,9 @@ export function resolveShoppingPlan(previous:ShoppingPlan|null|undefined,extract
     :newTask?[]:previous.requiredConditions;
   const prefs=extracted.preferencesMode==="CLEAR"||newTask?{}:{...previous.currentPreferences};
   if(extracted.preferencesMode!=="CLEAR")Object.assign(prefs,now.currentPreferences);
+  const category=now.category??(newTask?undefined:previous.category);
+  const attributes=extracted.preferencesMode==="CLEAR"?[]:now.attributePreferences??(newTask?[]:previous.attributePreferences??[]);
   return {query,maxTotalWon:budget,requiredConditions:[...new Set(requirements)].slice(0,12),
-    currentPreferences:prefs,revision:previous.revision+1};
+    currentPreferences:prefs,revision:previous.revision+1,
+    ...(category?{category,attributePreferences:[...new Set(attributes)]}:{})};
 }
