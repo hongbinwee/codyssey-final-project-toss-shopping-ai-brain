@@ -17,14 +17,17 @@ export function WishButton({
   product,
   onGoWish,
   className,
+  commerceEnabled = true,
 }: {
   userId: string | null;
   // 시트 표시용 — 카드/상세가 이미 가진 상품 정보를 그대로 넘긴다.
   product: WishSheetProduct;
   onGoWish: () => void;
   className: string;
+  commerceEnabled?: boolean;
 }) {
-  const t = useWishToggle(userId, product.product_id);
+  const t = useWishToggle(commerceEnabled ? userId : null, product.product_id);
+  if (!commerceEnabled) return null;
   return (
     <>
       <button

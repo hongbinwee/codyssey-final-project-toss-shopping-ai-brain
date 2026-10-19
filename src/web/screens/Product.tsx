@@ -27,12 +27,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiSafe, fmtWon, newActionKey, shipFeeLabel, AMBIGUOUS_CODES, type ApiResult } from "../api.ts";
 import type {
-  CartView, MatchedVariant, ProductDetail, ProductSummary, ReviewsResult, SearchResult,
+  CartView, MatchedVariant, ProductDetail, ProductSummary, ReviewsResult,
 } from "../../contracts.ts";
 import { CatalogNotice, Empty, ErrorState, Loading } from "../components/CommerceState.tsx";
 import { BottomSheet } from "../components/BottomSheet.tsx";
 import { ReviewRow, Stars } from "../components/ReviewBits.tsx";
 import { PRODUCT_META, SPEC_LABEL, productImg } from "../display-meta.ts";
+import { variantStockLabel } from "../commerce-ui.ts";
 import {
   listCartPending, putPending, removePending, lookupAction,
   type PendingWrite,
@@ -48,6 +49,7 @@ import {
 } from "../detail-resume.ts";
 import { recordRecentView } from "../recent-viewed.ts";
 import { createReviewPager } from "../review-pager.ts";
+import { fetchProductsByIds } from "../catalog-lookup.ts";
 
 type RatingLoad =
   | { state: "loading" }
@@ -67,6 +69,7 @@ export function Product({
   cartCount,
   onBuyNow,
   onOpenWish,
+  commerceEnabled,
 }: {
   productId: string;
   initialVariantId?: string;
@@ -82,6 +85,7 @@ export function Product({
   onBuyNow: (target: { variant_id: string; quantity: number }) => void;
   // 찜 진입 — Ref08 하단 하트 CTA와 저장 시트의 '바로가기' 목적지 [PMQA-070].
   onOpenWish: () => void;
+  commerceEnabled: boolean;
 }) {
   const [detail, setDetail] = useState<ApiResult<ProductDetail> | null>(null);
   const [reviews, setReviews] = useState<ApiResult<ReviewsResult> | null>(null);
@@ -174,14 +178,15 @@ export function Product({
   // 실패와 미포함은 별도 상태로 보존해 빈 리뷰와 혼동하지 않는다.
   const loadSummary = useCallback(async (pid: string, my: number) => {
     setSummary({ state: "loading" });
-    const r = await apiSafe<SearchResult>("/api/products?limit=50");
+    const r = await fetchProductsByIds([pid]);
     if (seq.current !== my) return;
     if (!r.ok) {
       setSummary({ state: "error" });
       return;
     }
-    const match = r.data.items.find((x) => x.product_id === pid);
-    setSummary(match ? { state: "loaded", summary: match } : { state: "unmatched" });
+    const match = r.found.find((x) => x.product_id === pid);
+    if (match) setSummary({ state: "loaded", summary: match });
+    else setSummary(r.unread.includes(pid) ? { state: "error" } : { state: "unmatched" });
   }, []);
 
   // 플로팅 내비 → 이미지 일부와 정보 영역이 함께 보이는 시점에 solid 바로
@@ -317,7 +322,7 @@ export function Product({
   }
 
   async function add() {
-    if (!selected || adding || busyRef.current || anyPending || !detail?.ok || detail.data.catalog_context?.read_only)
+    if (!commerceEnabled || !selected || adding || busyRef.current || anyPending || !detail?.ok || detail.data.catalog_context?.read_only)
       return;
     busyRef.current = true;
     setAdding(true);
@@ -501,10 +506,12 @@ export function Product({
         <button className="dn-btn" aria-label="검색" onClick={onOpenSearch}>
           <IcSearch size={20} />
         </button>
-        <button className="dn-btn" aria-label="장바구니" onClick={onOpenCart}>
-          <IcCart size={21} />
-          {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
-        </button>
+        {commerceEnabled && (
+          <button className="dn-btn" aria-label="장바구니" onClick={onOpenCart}>
+            <IcCart size={21} />
+            {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+          </button>
+        )}
       </div>
     </nav>
   );
@@ -716,7 +723,7 @@ export function Product({
           옵션 선택 <IcChevronRight size={14} />
         </span>
       </button>
-      {selected && (
+      {selected && commerceEnabled && !detail.data.catalog_context?.read_only && (
         <div className="qty-row">
           <span>수량</span>
           <div className="qty-ctrl">
@@ -735,7 +742,9 @@ export function Product({
               +
             </button>
           </div>
-          <span className="muted">재고 {selected.stock_qty}개</span>
+          <span className="muted">
+            {variantStockLabel(selected.availability, selected.stock_qty, false)}
+          </span>
         </div>
       )}
 
@@ -831,8 +840,10 @@ export function Product({
         </section>
       )}
 
-      {detail.data.catalog_context?.read_only ? <div className="bottom-bar">
-        <span>v4 테스트 상품 · 조회 전용 · 주문·결제 불가</span>
+      {!commerceEnabled || detail.data.catalog_context?.read_only ? <div className="bottom-bar">
+        <span>{detail.data.catalog_context?.read_only
+          ? "v4 테스트 상품 · 조회 전용 · 주문·결제 불가"
+          : "쇼핑 기능을 확인하고 있어요"}</span>
       </div> : <div className={"bottom-bar" + (anyPending ? " has-note" : "")}>
         {anyPending && (
           // 미확정 write가 있으면 고정 바 최상단에서 바로 복구로 진입 — 상세
@@ -851,6 +862,7 @@ export function Product({
           <WishButton
             className="detail-heart"
             userId={userId}
+            commerceEnabled={commerceEnabled}
             product={{
               product_id: productId,
               name: p.name,
@@ -919,7 +931,7 @@ export function Product({
                       ? v.availability === "SOLD_OUT"
                         ? "품절"
                         : "판매 중단"
-                      : "재고 " + v.stock_qty + "개"}
+                      : variantStockLabel(v.availability, v.stock_qty, !commerceEnabled)}
                   </span>
                 </button>
               );

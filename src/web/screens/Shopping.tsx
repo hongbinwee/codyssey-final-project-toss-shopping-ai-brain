@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { apiSafe, fmtWon, type ApiResult } from "../api.ts";
 import type { ProductSummary, SearchResult } from "../../contracts.ts";
+import { loadSearchPages } from "../search-loader.ts";
 import { ProductCard } from "../components/ProductCard.tsx";
 import { WishProductCard } from "../components/WishProductCard.tsx";
 import { WishButton } from "../components/WishButton.tsx";
@@ -136,14 +137,33 @@ function SubcatItem({
   onNav: (cat: string, sub?: string) => void;
 }) {
   const s = subcatOf(groupId, subId);
+  const [imgErr, setImgErr] = useState(false);
+  const rep = s ? items.find((item) => s.matches(item)) : undefined;
+  const count = s ? items.filter((item) => s.matches(item)).length : 0;
+  useEffect(() => setImgErr(false), [rep?.product_id]);
   if (!s) return null;
-  const rep = items.find((i) => i.product_id === s.productIds[0]);
   return (
-    <button className="sub-item" onClick={() => onNav(groupId, s.id)}>
+    <button
+      className="sub-item"
+      aria-label={`${s.label} ${count}개 상품`}
+      onClick={() => onNav(groupId, s.id)}
+    >
       <span className={"sub-circle" + (square ? " sq" : "")}>
-        {rep && <img src={productImg(rep)} alt="" loading="lazy" />}
+        {rep && !imgErr ? (
+          <img
+            src={productImg(rep)}
+            alt=""
+            loading="lazy"
+            onError={() => setImgErr(true)}
+          />
+        ) : (
+          <span className="sub-icon-fallback" aria-hidden="true">
+            {s.label.slice(0, 1)}
+          </span>
+        )}
       </span>
       <span className="sub-label">{s.label}</span>
+      <span className="sub-count">{count}개</span>
     </button>
   );
 }
@@ -159,6 +179,7 @@ function HomeView({
   onOpenCart,
   userId,
   onGoWish,
+  commerceEnabled,
 }: {
   items: ProductSummary[];
   userName: string;
@@ -168,6 +189,7 @@ function HomeView({
   onOpenCart: () => void;
   userId: string | null;
   onGoWish: () => void;
+  commerceEnabled: boolean;
 }) {
   const byId = new Map(items.map((i) => [i.product_id, i]));
   const hero = HOME_HERO.map((id) => byId.get(id)).filter(Boolean) as ProductSummary[];
@@ -214,7 +236,7 @@ function HomeView({
     { icon: IcBulb, label: "리빙", run: () => onNav("living") },
     { icon: IcReceipt, label: "내 주문", run: onOpenOrders },
     { icon: IcCart, label: "장바구니", run: onOpenCart },
-  ];
+  ].filter((shortcut) => commerceEnabled || shortcut.label !== "장바구니");
   return (
     <>
       <Hero products={hero} onOpen={onOpen} />
@@ -243,6 +265,7 @@ function HomeView({
             key={p.product_id}
             p={p}
             userId={userId}
+            commerceEnabled={commerceEnabled}
             onOpen={() => onOpen(p.product_id)}
             onGoWish={onGoWish}
           />
@@ -260,6 +283,7 @@ function GroupHome({
   onOpen,
   userId,
   onGoWish,
+  commerceEnabled,
 }: {
   cat: string;
   items: ProductSummary[];
@@ -268,6 +292,7 @@ function GroupHome({
   onOpen: (id: string) => void;
   userId: string | null;
   onGoWish: () => void;
+  commerceEnabled: boolean;
 }) {
   const byId = new Map(items.map((i) => [i.product_id, i]));
   const hero = (GROUP_HERO[cat] ?? [])
@@ -307,6 +332,7 @@ function GroupHome({
               key={p.product_id}
               p={p}
               userId={userId}
+              commerceEnabled={commerceEnabled}
               onOpen={() => onOpen(p.product_id)}
               onGoWish={onGoWish}
             />
@@ -319,6 +345,7 @@ function GroupHome({
               key={p.product_id}
               p={p}
               userId={userId}
+              commerceEnabled={commerceEnabled}
               onOpen={() => onOpen(p.product_id)}
               onGoWish={onGoWish}
             />
@@ -431,6 +458,7 @@ function SaleView({
   onOpen,
   userId,
   onGoWish,
+  commerceEnabled,
 }: {
   items: ProductSummary[];
   sub: string;
@@ -438,6 +466,7 @@ function SaleView({
   onOpen: (id: string) => void;
   userId: string | null;
   onGoWish: () => void;
+  commerceEnabled: boolean;
 }) {
   const deals = items.filter(
     (i) =>
@@ -511,6 +540,7 @@ function SaleView({
                     key={p.product_id}
                     p={p}
                     userId={userId}
+                    commerceEnabled={commerceEnabled}
                     onOpen={() => onOpen(p.product_id)}
                     onGoWish={onGoWish}
                   />
@@ -539,6 +569,7 @@ function SaleView({
               <WishButton
                 className="wish-heart"
                 userId={userId}
+                commerceEnabled={commerceEnabled}
                 product={{
                   product_id: p.product_id,
                   name: p.name,
@@ -561,12 +592,14 @@ function SeasonView({
   onOpen,
   userId,
   onGoWish,
+  commerceEnabled,
 }: {
   items: ProductSummary[];
   userName: string;
   onOpen: (id: string) => void;
   userId: string | null;
   onGoWish: () => void;
+  commerceEnabled: boolean;
 }) {
   const byId = new Map(items.map((i) => [i.product_id, i]));
   const picks = SEASONAL.map((id) => byId.get(id)).filter(Boolean) as ProductSummary[];
@@ -602,6 +635,7 @@ function SeasonView({
             <WishButton
               className="wish-heart"
               userId={userId}
+              commerceEnabled={commerceEnabled}
               product={{
                 product_id: p.product_id,
                 name: p.name,
@@ -631,6 +665,7 @@ function SeasonView({
             <WishButton
               className="wish-heart"
               userId={userId}
+              commerceEnabled={commerceEnabled}
               product={{
                 product_id: p.product_id,
                 name: p.name,
@@ -654,6 +689,7 @@ function ListView({
   onOpen,
   userId,
   onGoWish,
+  commerceEnabled,
 }: {
   cat: string;
   sub: string;
@@ -662,10 +698,11 @@ function ListView({
   onOpen: (id: string) => void;
   userId: string | null;
   onGoWish: () => void;
+  commerceEnabled: boolean;
 }) {
   const sc = sub ? subcatOf(cat, sub) : undefined;
   const list = sc
-    ? items.filter((i) => sc.productIds.includes(i.product_id))
+    ? items.filter((i) => sc.matches(i))
     : items.filter((i) => groupOf(i.category) === cat);
   // 첫 로컬탭 '추천'은 그룹 전체 목록에서 recommended 태그 상품을 앞에 둔다
   // [Observed 100 첫 탭 / Project 정렬]. 실제 랭킹·개인화 주장은 없다.
@@ -712,6 +749,7 @@ function ListView({
               key={p.product_id}
               p={p}
               userId={userId}
+              commerceEnabled={commerceEnabled}
               onOpen={() => onOpen(p.product_id)}
               onGoWish={onGoWish}
             />
@@ -732,6 +770,7 @@ export function Shopping({
   onOpenCart,
   userId,
   onOpenWish,
+  commerceEnabled,
 }: {
   category: string;
   sub: string;
@@ -742,16 +781,32 @@ export function Shopping({
   onOpenCart: () => void;
   userId: string | null;
   onOpenWish: () => void;
+  commerceEnabled: boolean;
 }) {
   const [res, setRes] = useState<ApiResult<SearchResult> | null>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
-    apiSafe<SearchResult>("/api/products?limit=50")
-      .then(setRes)
-      .finally(() => setLoading(false));
+    void (async () => {
+      const result = await loadSearchPages(
+        "/api/products?limit=50",
+        (url) => apiSafe<SearchResult>(url),
+        () => !active,
+      );
+      if (!active || "stale" in result) return;
+      setRes(
+        result.ok
+          ? { ok: true, data: result.data }
+          : { ok: false, error: result.error },
+      );
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
   }, [tick]);
 
   const items = res?.ok ? res.data.items : [];
@@ -836,6 +891,7 @@ export function Shopping({
           onOpenCart={onOpenCart}
           userId={userId}
           onGoWish={onOpenWish}
+          commerceEnabled={commerceEnabled}
         />
       ) : view === "cathome" ? (
         <GroupHome
@@ -846,6 +902,7 @@ export function Shopping({
           onOpen={onOpenProduct}
           userId={userId}
           onGoWish={onOpenWish}
+          commerceEnabled={commerceEnabled}
         />
       ) : view === "category" ? (
         <CategoryBrowser items={items} onNav={onNav} />
@@ -857,6 +914,7 @@ export function Shopping({
           onOpen={onOpenProduct}
           userId={userId}
           onGoWish={onOpenWish}
+          commerceEnabled={commerceEnabled}
         />
       ) : view === "season" ? (
         <SeasonView
@@ -865,6 +923,7 @@ export function Shopping({
           onOpen={onOpenProduct}
           userId={userId}
           onGoWish={onOpenWish}
+          commerceEnabled={commerceEnabled}
         />
       ) : (
         <ListView
@@ -875,6 +934,7 @@ export function Shopping({
           onOpen={onOpenProduct}
           userId={userId}
           onGoWish={onOpenWish}
+          commerceEnabled={commerceEnabled}
         />
       )}
     </div>

@@ -24,6 +24,9 @@ export function Cart({
   onOpenProduct,
   onOpenRecent,
   onOpenWish,
+  commerceEnabled,
+  catalogReadOnly,
+  onOpenShop,
 }: {
   cart: CartView | null;
   onCartLoaded: (v: CartView) => void;
@@ -33,6 +36,9 @@ export function Cart({
   onOpenProduct: (id: string) => void;
   onOpenRecent: () => void;
   onOpenWish: () => void;
+  commerceEnabled: boolean;
+  catalogReadOnly: boolean;
+  onOpenShop: () => void;
 }) {
   const [res, setRes] = useState<ApiResult<CartView> | null>(
     cart ? { ok: true, data: cart } : null,
@@ -94,11 +100,12 @@ export function Cart({
     );
   }
   useEffect(() => {
+    if (!commerceEnabled) return;
     const g = readGate.current;
     reload(); // 적용되는 최신 응답이 loading을 해제한다 — gen은 내부 배정
     return () => g.kill(); // 언마운트 — 진행 중 조회의 적용을 차단한다 [MAJOR069-07]
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [commerceEnabled]);
 
   // 선택은 카트 항목 id에 고정한다. 새 항목은 선택 상태로 들어오고,
   // 삭제된 항목은 선택 집합에서도 제거한다.
@@ -341,6 +348,17 @@ export function Cart({
     await reload();
   }
 
+  if (!commerceEnabled)
+    return (
+      <div className="screen">
+        <div className="state-box" role="status">
+          {catalogReadOnly
+            ? "읽기 전용 시연에서는 장바구니를 사용할 수 없어요."
+            : "쇼핑 기능을 확인하고 있어요."}
+        </div>
+        <button className="btn primary" onClick={onOpenShop}>쇼핑 홈</button>
+      </div>
+    );
   if (loading) return <Loading />;
   if (!res) return null;
   if (!res.ok)

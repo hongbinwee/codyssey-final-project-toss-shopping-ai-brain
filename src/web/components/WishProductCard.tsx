@@ -15,19 +15,22 @@ export function WishProductCard({
   onOpen,
   onGoWish,
   variant,
+  commerceEnabled = true,
 }: {
   p: ProductSummary;
   userId: string | null;
   onOpen: () => void;
   onGoWish: () => void;
   variant?: "search";
+  commerceEnabled?: boolean;
 }) {
   return (
     <div className="wish-cell">
-      <ProductCard p={p} onOpen={onOpen} variant={variant} />
+      <ProductCard p={p} onOpen={onOpen} variant={variant} hideCommerce={!commerceEnabled} />
       <WishButton
         className="wish-heart"
         userId={userId}
+        commerceEnabled={commerceEnabled}
         product={{
           product_id: p.product_id,
           name: p.name,

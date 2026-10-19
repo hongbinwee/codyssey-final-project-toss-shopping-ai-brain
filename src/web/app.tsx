@@ -5,6 +5,8 @@ import type { CartView, CheckoutTarget } from "../contracts.ts";
 import { bindPendingUser } from "./pending.ts";
 import { takeDetailResume } from "./detail-resume.ts";
 import { CatalogNotice } from "./components/CommerceState.tsx";
+import { isCommerceEnabled, type CatalogUiContext } from "./commerce-ui.ts";
+import { activeBottomNavSlot } from "./bottom-nav-state.ts";
 import { visibleCart, type OwnedCart } from "./cart-scope.ts";
 import { Shopping } from "./screens/Shopping.tsx";
 import { Search } from "./screens/Search.tsx";
@@ -210,10 +212,12 @@ function App() {
   const [user, setUser] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
-  const [catalogReadOnly, setCatalogReadOnly] = useState(false);
+  const [catalogContext, setCatalogContext] = useState<CatalogUiContext | null>(null);
+  const [catalogContextError, setCatalogContextError] = useState(false);
   const [loggingOut,setLoggingOut]=useState(false);
   const [logoutError,setLogoutError]=useState("");
   const [route, setRoute] = useState<Route>(parseHash());
+  const [rootNavSlot, setRootNavSlot] = useState<"home" | "shop">("home");
   const [agentOpen, setAgentOpen] = useState<AgentBrain | null>(null);
   // Brain별 대화를 따로 유지한다 (서버도 user:brain 단위로 히스토리를 나눈다).
   const [agentMsgs, setAgentMsgs] = useState<Record<AgentBrain, AgentReply[]>>({
@@ -231,12 +235,21 @@ function App() {
   const lastY = useRef(0);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const allBtnRef = useRef<HTMLButtonElement | null>(null);
+  const commerceEnabled = isCommerceEnabled(catalogContext);
+  const catalogReadOnly =
+    catalogContext?.read_only === true && catalogContext.is_simulated;
+  const commerceEnabledRef = useRef(commerceEnabled);
+  commerceEnabledRef.current = commerceEnabled;
   useEffect(() => {
     let active = true;
-    setCatalogReadOnly(false);
-    if (userId) void apiSafe<{read_only:boolean;is_simulated:boolean}>("/api/catalog/context").then(r => {
-      if (active && r.ok) setCatalogReadOnly(r.data.read_only && r.data.is_simulated);
-    });
+    setCatalogContext(null);
+    setCatalogContextError(false);
+    if (userId)
+      void apiSafe<CatalogUiContext>("/api/catalog/context").then((r) => {
+        if (!active) return;
+        if (r.ok) setCatalogContext(r.data);
+        else setCatalogContextError(true);
+      });
     return () => { active = false; };
   }, [userId]);
   // '전체' 메뉴 시트 — 열 때 첫 항목 포커스, ESC로 닫기, 닫을 때 전체 버튼으로 포커스 복귀 [Project]
@@ -306,6 +319,7 @@ function App() {
   const cartReadSeq = useRef(0);
   const refreshCart = useCallback(() => {
     const owner = userIdRef.current;
+    if (!owner || !commerceEnabledRef.current) return;
     const my = ++cartReadSeq.current;
     apiSafe<CartView>("/api/cart").then(
       (r) =>
@@ -317,15 +331,15 @@ function App() {
   }, []);
   // 자식 화면이 직접 확정한 최신 CartView 적용 — owner는 호출 시점의 actor.
   const applyCart = useCallback((v: CartView, owner: string | null) => {
-    if (userIdRef.current !== owner) return; // 다른 계정 세대의 결과 차단
+    if (!commerceEnabledRef.current || userIdRef.current !== owner) return;
     cartReadSeq.current++;
     setCartState({ owner, v });
   }, []);
   useEffect(() => {
     cartReadSeq.current++; // 진행 중 이전 actor read 무효화
     setCartState(null);    // 이전 actor 카트 스냅샷 제거(첫 렌더는 owner 필터가 차단)
-    if (userId) refreshCart();
-  }, [userId, refreshCart]);
+    if (userId && commerceEnabled) refreshCart();
+  }, [userId, refreshCart, commerceEnabled]);
 
   // 렌더 시점 owner 필터 — 스냅샷의 owner가 현재 actor와 다르면 어떤
   // 자식·배지에도 이전 계정 카트를 노출하지 않는다 [069-06].
@@ -339,8 +353,15 @@ function App() {
     product_id: route.name === "product" || route.name === "reviews" ? route.id : undefined,
     order_id: route.name === "order" ? route.id : undefined,
   };
-  const cartCount = cart?.items.length ?? 0;
+  const cartCount = commerceEnabled ? cart?.items.length ?? 0 : 0;
   const showNav = NAV_ROUTES.has(route.name);
+  const activeNavSlot = activeBottomNavSlot(
+    route.name,
+    route.name === "shop" ? route.category : "",
+    agentOpen,
+    menuOpen,
+    rootNavSlot,
+  );
   // 쇼핑/검색 화면은 Toss 기준 좁은 좌우 여백을 쓴다 [Observed ~10px]
   const shopPad = route.name === "shop" || route.name === "search";
   // 리스트 뷰(그룹/서브카테고리)는 글로벌 검색 헤더 대신 전용 헤더를 쓴다
@@ -402,14 +423,16 @@ function App() {
           >
             <IcUser size={23} />
           </button>
-          <button
-            className="icon-btn"
-            aria-label="장바구니"
-            onClick={() => goto({ name: "cart" })}
-          >
-            <IcCart size={23} />
-            {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
-          </button>
+          {commerceEnabled && (
+            <button
+              className="icon-btn"
+              aria-label="장바구니"
+              onClick={() => goto({ name: "cart" })}
+            >
+              <IcCart size={23} />
+              {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+            </button>
+          )}
         </header>
       )}
       {/* 리스트 뷰 전용 헤더 — ← · 그룹명▾ · 검색 · 장바구니 [Observed 100].
@@ -434,14 +457,16 @@ function App() {
           >
             <IcSearch size={23} />
           </button>
-          <button
-            className="icon-btn"
-            aria-label="장바구니"
-            onClick={() => goto({ name: "cart" })}
-          >
-            <IcCart size={23} />
-            {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
-          </button>
+          {commerceEnabled && (
+            <button
+              className="icon-btn"
+              aria-label="장바구니"
+              onClick={() => goto({ name: "cart" })}
+            >
+              <IcCart size={23} />
+              {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+            </button>
+          )}
         </header>
       )}
       {route.name === "shop" && miniTop && !shopList && (
@@ -475,6 +500,11 @@ function App() {
         </header>
       )}
       <main>
+        {catalogContextError && (
+          <div className="state-box" role="alert">
+            쇼핑 기능 정보를 확인하지 못했어요. 새로고침 후 다시 시도해 주세요.
+          </div>
+        )}
         {catalogReadOnly && <>
           <div className="state-box">
             <span>현재 테스트 계정: {userId}</span>{" "}
@@ -502,6 +532,7 @@ function App() {
             onOpenCart={() => goto({ name: "cart" })}
             userId={userId}
             onOpenWish={() => goto({ name: "recent", tab: "wish" })}
+            commerceEnabled={commerceEnabled}
           />
         )}
         {route.name === "search" && (
@@ -514,6 +545,7 @@ function App() {
             onOpenCart={() => goto({ name: "cart" })}
             userId={userId}
             onOpenWish={() => goto({ name: "recent", tab: "wish" })}
+            commerceEnabled={commerceEnabled}
           />
         )}
         {route.name === "product" && (
@@ -531,6 +563,7 @@ function App() {
             onCartChanged={(v) => applyCart(v, userId)}
             cartCount={cartCount}
             onOpenWish={() => goto({ name: "recent", tab: "wish" })}
+            commerceEnabled={commerceEnabled}
             onBuyNow={(t) =>
               goto({
                 name: "checkout",
@@ -564,6 +597,9 @@ function App() {
             onOpenProduct={(id) => goto({ name: "product", id })}
             onOpenRecent={() => goto({ name: "recent" })}
             onOpenWish={() => goto({ name: "recent", tab: "wish" })}
+            commerceEnabled={commerceEnabled}
+            catalogReadOnly={catalogReadOnly}
+            onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
           />
         )}
         {route.name === "checkout" && (
@@ -618,6 +654,8 @@ function App() {
             onOpenCart={() => goto({ name: "cart" })}
             onOpenProduct={(id) => goto({ name: "product", id })}
             onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
+            commerceEnabled={commerceEnabled}
+            catalogReadOnly={catalogReadOnly}
           />
         )}
         {route.name === "myshop" && (
@@ -630,6 +668,7 @@ function App() {
             onOpenOrder={(id) => goto({ name: "order", id })}
             onOpenProduct={(id) => goto({ name: "product", id })}
             onOpenShop={() => goto({ name: "shop", category: "", sub: "" })}
+            commerceEnabled={commerceEnabled}
           />
         )}
       </main>
@@ -640,30 +679,33 @@ function App() {
               홈=앱 루트(쇼핑 홈), 혜택=특가 탭 진입, 쇼핑=쇼핑 서비스 루트(active 슬롯),
               증권→AI(프로젝트 핵심 진입), 전체=메뉴 시트 [Observed 구조 / Project 매핑] */}
           <button
-            className="nav-item"
-            onClick={() => goto({ name: "shop", category: "", sub: "" })}
+            className={"nav-item" + (activeNavSlot === "home" ? " on" : "")}
+            aria-current={activeNavSlot === "home" ? "page" : undefined}
+            onClick={() => { setRootNavSlot("home"); goto({ name: "shop", category: "", sub: "" }); }}
           >
             <IcHome size={22} />홈
           </button>
           <button
-            className="nav-item"
+            className={"nav-item" + (activeNavSlot === "benefit" ? " on" : "")}
+            aria-current={activeNavSlot === "benefit" ? "page" : undefined}
             onClick={() => goto({ name: "shop", category: "sale", sub: "" })}
           >
             <IcTag size={22} />혜택
           </button>
           <button
-            className={"nav-item" + (route.name === "shop" ? " on" : "")}
-            aria-current={route.name === "shop" ? "page" : undefined}
-            onClick={() => goto({ name: "shop", category: "", sub: "" })}
+            className={"nav-item" + (activeNavSlot === "shop" ? " on" : "")}
+            aria-current={activeNavSlot === "shop" ? "page" : undefined}
+            onClick={() => { setRootNavSlot("shop"); goto({ name: "shop", category: "", sub: "" }); }}
           >
             {/* 선택 상태는 채움 아이콘 — Reference의 filled bag [Observed→Project] */}
-            {route.name === "shop" ? <IcBagFill size={22} /> : <IcCart size={22} />}쇼핑
+            {activeNavSlot === "shop" ? <IcBagFill size={22} /> : <IcCart size={22} />}쇼핑
           </button>
           <button
-            className="nav-item"
+            className={"nav-item" + (activeNavSlot === "ai" ? " on" : "")}
             disabled={!AGENT_TURN_ENABLED}
             title="AI 쇼핑 도우미"
-            aria-expanded={agentOpen === "shopping"}
+            aria-expanded={agentOpen !== null}
+            aria-pressed={activeNavSlot === "ai"}
             onClick={() => setAgentOpen("shopping")}
           >
             <IcSparkle size={22} />AI
@@ -671,9 +713,10 @@ function App() {
           </button>
           <button
             ref={allBtnRef}
-            className="nav-item"
+            className={"nav-item" + (activeNavSlot === "all" ? " on" : "")}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
+            aria-pressed={activeNavSlot === "all"}
             onClick={() => setMenuOpen(true)}
           >
             <IcMenu size={22} />전체
@@ -696,7 +739,7 @@ function App() {
                 { icon: IcSearch, label: "검색", run: () => goto({ name: "search", query: "" }) },
                 { icon: IcSparkle, label: "AI 쇼핑 도우미", run: () => setAgentOpen("shopping"), soon: !AGENT_TURN_ENABLED },
               ] as const
-            ).map((m) => (
+            ).filter((m) => commerceEnabled || m.label !== "장바구니").map((m) => (
               <button
                 key={m.label}
                 className="menu-item"
