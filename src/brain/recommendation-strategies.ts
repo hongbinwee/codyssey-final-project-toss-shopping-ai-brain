@@ -12,7 +12,7 @@ export interface LabeledCandidate extends RankedCandidate {
  recommendationRole?:RecommendationRole;
  personalizationSignals?:Array<"CART"|"WISHLIST"|"PURCHASE">;
 }
-function signalsFor(id:string,activity:CommerceActivity):LabeledCandidate["personalizationSignals"]{
+function signalsFor(id:string,activity:CommerceActivity):NonNullable<LabeledCandidate["personalizationSignals"]>{
  const signals:NonNullable<LabeledCandidate["personalizationSignals"]>=[];
  if(activity.cartProductIds.includes(id))signals.push("CART");
  if(activity.wishlistProductIds.includes(id))signals.push("WISHLIST");
