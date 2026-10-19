@@ -178,8 +178,8 @@ export const SUBCATS: Record<string, Subcat[]> = {
     },
   ],
   fashion: [
-    { id: "tee", label: "티셔츠", matches: specMatcher("fashion", "fit", "weight_g_m2", "neck", "sleeve") },
-    { id: "shoes", label: "스니커즈", matches: specMatcher("fashion", "sole", "closure", "shoe_size", "outsole") },
+    { id: "tee", label: "티셔츠", matches: (product) => sourceSubcategoryMatcher("fashion", "반소매 티셔츠", "긴소매 티셔츠", "후드 티셔츠", "피케/카라 티셔츠")(product) || specMatcher("fashion", "fit", "weight_g_m2", "neck", "sleeve")(product) },
+    { id: "shoes", label: "스니커즈", matches: (product) => sourceSubcategoryMatcher("fashion", "스니커즈")(product) || specMatcher("fashion", "sole", "closure", "shoe_size", "outsole")(product) },
   ],
   living: [
     { id: "chair", label: "의자", matches: specMatcher("living", "lumbar", "max_load", "armrest", "recline") },
@@ -187,7 +187,7 @@ export const SUBCATS: Record<string, Subcat[]> = {
   ],
   food: [
     { id: "coffee", label: "커피", matches: specMatcher("food", "roast", "origin", "note") },
-    { id: "protein", label: "프로틴", matches: specMatcher("food", "protein_per_serving", "servings") },
+    { id: "protein", label: "프로틴", matches: (product) => sourceSubcategoryMatcher("food", "프로틴")(product) || specMatcher("food", "protein_per_serving", "servings")(product) },
   ],
 };
 export const subcatOf = (group: string, sub: string) =>

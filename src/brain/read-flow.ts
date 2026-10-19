@@ -1,8 +1,11 @@
+import type {ConversationResponder} from "./conversation-response.ts";
 import type {BrainTrace,EvidenceRecord,MemoryRepository,Preference,RankingResult,RetrieverPort} from "./contracts.ts";
 import type {PersistentConversations} from "./persistent-store.ts";
 import {rankProducts} from "./personalization.ts";
+import {curateRecommendations,type CommerceActivity} from "./recommendation-strategies.ts";
 import type {PlanExtraction,ShoppingPlan} from "./shopping-plan.ts";
 import {resolveShoppingPlan} from "./shopping-plan.ts";
+import {parseKrwTenThousandBand} from "./price-band.ts";
 import type {GroundedExplanation} from "./grounded-response.ts";
 import type {BrainRoute,BrainIntentKind} from "./routing.ts";
 
@@ -22,7 +25,9 @@ export interface ResearchDeps {
  datasetVersion?:string;
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
  memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
- route?:(message:string,previous?:ShoppingPlan)=>BrainRoute;
+ route?:(message:string,previous?:ShoppingPlan)=>BrainRoute|Promise<BrainRoute>;
+ converse?:ConversationResponder;
+ activity?:(actorUserId:string)=>Promise<CommerceActivity>;
  fastResponses?:boolean;
 }
 export interface PreparedTurn {
@@ -71,8 +76,19 @@ export async function prepareTurn(req:Request,deps:ResearchDeps):Promise<Prepare
  return {messageId,memories,startedAt:t0,memoryMs:performance.now()-t0};
 }
 export async function resolveTurnPlan(req:Request,prepared:PreparedTurn,previous:ShoppingPlan|null|undefined,deps:ResearchDeps):Promise<ShoppingPlan>{
+ const trimmed=req.userMessage.trim();
+ const last=previous?.lastDisplayedProductIds??[];
+ const excludeOne=last.find(id=>trimmed===`이 상품 제외: ${id}`);
+ const excludeAll=trimmed==="다른 제품 보기"||trimmed==="추천 상품 전부 제외";
+ if(previous&&(excludeOne||excludeAll)){
+   const extra=excludeAll?last:[excludeOne!];
+   return {...previous,excludedProductIds:[...new Set([...(previous.excludedProductIds??[]),...extra])].slice(0,100),revision:previous.revision+1};
+ }
  const intent=await deps.intent.extract(req.userMessage,prepared.memories,previous??undefined);
- const plan=resolveShoppingPlan(previous,intent);
+ let plan=resolveShoppingPlan(previous,intent);
+ const explicitBand=parseKrwTenThousandBand(req.userMessage);
+ if(explicitBand)plan={...plan,...explicitBand};
+ else if(intent.budgetMode==="SET")plan={...plan,minTotalWon:undefined};
  if(!plan.query||plan.query.length>200)throw new Error("invalid shopping plan");
  return plan;
 }
@@ -85,7 +101,16 @@ export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:Shoppi
     fetched.candidates.length>100||fetched.evidence.length>2500)throw new Error("invalid retrieval result");
  const retrievalMs=performance.now()-retrievalStart;
  const rankedAt=performance.now();
- const ranking=rankProducts(fetched.candidates,fetched.evidence,plan,prepared.memories);
+ const baseRanking=rankProducts(fetched.candidates,fetched.evidence,plan,prepared.memories);
+ const excluded=new Set(plan.excludedProductIds??[]);
+ if(excluded.size){
+  const removed=baseRanking.ranked.filter(x=>excluded.has(x.candidate.productId));
+  baseRanking.ranked=baseRanking.ranked.filter(x=>!excluded.has(x.candidate.productId));
+  baseRanking.referenceOnly=baseRanking.referenceOnly.filter(x=>!excluded.has(x.candidate.productId));
+  baseRanking.rejected.push(...removed.map(x=>({candidate:x.candidate,reasons:["user_excluded"]})));
+ }
+ const activity=deps.activity?await deps.activity(req.actorUserId):undefined;
+ const ranking=deps.activity?curateRecommendations(baseRanking,activity):baseRanking;
  const conditionOnlyReferences=ranking.rejected.filter(item=>
    isConditionOnlySyntheticReference(item,plan.requiredConditions,fetched.evidence));
  if(conditionOnlyReferences.length){
@@ -96,7 +121,7 @@ export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:Shoppi
  const rankMs=performance.now()-rankedAt;
  return {
    result:{conversationId:req.conversationId,messageId:prepared.messageId,clientActionId:req.clientActionId,ranking,
-     shoppingPlan:plan,trace:{...fetched.trace,memoryMs:prepared.memoryMs,
+     shoppingPlan:{...plan,lastDisplayedProductIds:[...new Set([...ranking.ranked.map(x=>x.candidate.productId),...ranking.referenceOnly.map(x=>x.candidate.productId)])].slice(0,3)},trace:{...fetched.trace,memoryMs:prepared.memoryMs,
        intentMs:Math.max(0,retrievalStart-prepared.startedAt-prepared.memoryMs),
        retrievalMs,rankMs,totalMs:performance.now()-prepared.startedAt}},
    evidence:fetched.evidence

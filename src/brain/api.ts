@@ -9,7 +9,7 @@ import {executionMode} from "./execution-mode.ts";
 export interface BrainGraphPort {
   invoke(input:{actorUserId:string;conversationId:string;requestId:string;clientActionId:string;userMessage:string}):Promise<{
     conversationId:string;messageId:string;ranking:RankingResult;trace:Record<string,number>;
-    shoppingPlan?:ShoppingPlan;explanation?:GroundedExplanation;intentKind?:BrainIntentKind;
+    shoppingPlan?:ShoppingPlan;explanation?:GroundedExplanation;intentKind?:BrainIntentKind;datasetVersion?:string;
   }>;
   getOwnedState(actorUserId:string,conversationId:string):Promise<{values?:Record<string,unknown>}>;
 }

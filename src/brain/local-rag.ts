@@ -23,7 +23,7 @@ interface Chunk {
  category:string;evidence_text:string;embedding_text:string;dataset_version:string;embedding_model:string;
  source_metadata:JsonObject;embedding:Float32Array;norm:number;terms:Map<string,number>;length:number
 }
-interface IndexedProduct {category:string}
+interface IndexedProduct {category:string;title?:string;productType?:string}
 interface SearchRequest {
  request_id:string;original_question:string;query:string;category:string;filters:Record<string,unknown>;
  required_conditions:string[];preferences:unknown[];top_k:number
@@ -40,6 +40,19 @@ function text(value:unknown,max:number):value is string{
 function bodyText(value:unknown,max:number):value is string{
  return typeof value==="string"&&value.length>0&&value.length<=max&&
    !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(value);
+}
+function compactProductLabel(value:string):string{
+ return value.normalize("NFKC").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu,"");
+}
+function matchingProductIds(query:string,category:string,products:Map<string,IndexedProduct>):Set<string>|undefined{
+ const needle=compactProductLabel(query);if(!needle)return undefined;
+ const matches=new Set<string>();
+ for(const [productId,product] of products){
+   if(category&&product.category!==category)continue;
+   if([product.title,product.productType].some(value=>value!==undefined&&compactProductLabel(value).includes(needle)))
+     matches.add(productId);
+ }
+ return matches.size?matches:undefined;
 }
 function parseJsonl(buffer:Buffer,name:string):JsonObject[]{
  const rows:JsonObject[]=[];
@@ -160,7 +173,10 @@ export async function createLocalRagSearch(options:{dataDir:string;embedQuery:Em
    if(!text(row.product_id,128)||!text(row.category,80)||row.dataset_version!==datasetVersion||!object(row.product_payload))
      throw new Error(`invalid indexed product at row ${index+1}`);
    if(products.has(row.product_id))throw new Error("duplicate indexed product ID");
-   products.set(row.product_id,{category:row.category});
+   const features=object(row.product_payload.features)?row.product_payload.features:undefined;
+   const title=text(row.product_payload.title,5000)?row.product_payload.title:undefined;
+   const productType=features&&text(features.product_type,256)?features.product_type:undefined;
+   products.set(row.product_id,{category:row.category,...(title?{title}:{}),...(productType?{productType}:{})});
  }
  if(!products.size)throw new Error("evidence product mapping is incomplete");
  const seenChunks=new Set<string>(),chunks:Chunk[]=[];
@@ -182,8 +198,10 @@ export async function createLocalRagSearch(options:{dataDir:string;embedQuery:Em
  return {stats,async search(input){
    const body=requestOf(input);
    if(!body.category&&(!manifest||manifest.categories.length<2))throw Error("global search requires a multi-category manifest");
+   // Exact full-query title/type matches constrain candidates; otherwise retain the semantic hybrid path.
+   const matchingIds=matchingProductIds(body.query,body.category,products);
    const docs=chunks.filter(chunk=>(!body.category||chunk.category===body.category)&&
-     products.get(chunk.product_id)?.category===chunk.category);
+     products.get(chunk.product_id)?.category===chunk.category&&(!matchingIds||matchingIds.has(chunk.product_id)));
    if(!docs.length)return {dataset_version:datasetVersion,items:[]};
    const embedText=[body.query,...body.required_conditions].join(" ");
    const embeddingStarted=performance.now();

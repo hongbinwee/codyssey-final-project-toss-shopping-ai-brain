@@ -1,7 +1,7 @@
 import type {PreferenceKey,PreferenceValue,ShoppingContext} from "./contracts.ts";
 
 /** Task-local context, separate from confirmed cross-session user memories. */
-export interface ShoppingPlan extends ShoppingContext { query:string; revision:number }
+export interface ShoppingPlan extends ShoppingContext { query:string; revision:number; excludedProductIds?:string[];lastDisplayedProductIds?:string[] }
 export interface PlanOperations {
   queryMode?:"KEEP"|"SET";
   budgetMode?:"KEEP"|"SET"|"CLEAR";
@@ -19,7 +19,7 @@ const values:Record<PreferenceKey,readonly PreferenceValue[]>={
 };
 function validateContext(extracted:PlanExtraction):void{
   const c=extracted.context;
-  if(!c||!validBudget(c.maxTotalWon)||!Array.isArray(c.requiredConditions)||
+  if(!c||!validBudget(c.maxTotalWon)||(c.minTotalWon!==undefined&&(!Number.isSafeInteger(c.minTotalWon)||c.minTotalWon<0||c.maxTotalWon!==null&&c.minTotalWon>c.maxTotalWon))||!Array.isArray(c.requiredConditions)||
      c.requiredConditions.length>12||c.requiredConditions.some(x=>typeof x!=="string"||!x.trim()||x.length>80)||
      !c.currentPreferences||typeof c.currentPreferences!=="object"||Array.isArray(c.currentPreferences))
      throw new Error("invalid shopping plan context");
@@ -45,6 +45,7 @@ export function resolveShoppingPlan(previous:ShoppingPlan|null|undefined,extract
     if(extracted.budgetMode==="SET"&&now.maxTotalWon===null)throw new Error("SET budget missing");
     return {query:extracted.query.trim(),maxTotalWon:extracted.budgetMode==="CLEAR"?null:now.maxTotalWon,
       requiredConditions:extracted.requirementsMode==="CLEAR"?[]:[...new Set(now.requiredConditions)],
+      ...(now.minTotalWon!==undefined?{minTotalWon:now.minTotalWon}:{}),
       currentPreferences:extracted.preferencesMode==="CLEAR"?{}:{...now.currentPreferences},revision:1,
       ...(now.category?{category:now.category,attributePreferences:extracted.preferencesMode==="CLEAR"?[]:[...new Set(now.attributePreferences??[])]}:{})};
   }
@@ -71,7 +72,11 @@ export function resolveShoppingPlan(previous:ShoppingPlan|null|undefined,extract
   if(extracted.preferencesMode!=="CLEAR")Object.assign(prefs,now.currentPreferences);
   const category=now.category??(newTask?undefined:previous.category);
   const attributes=extracted.preferencesMode==="CLEAR"?[]:now.attributePreferences??(newTask?[]:previous.attributePreferences??[]);
-  return {query,maxTotalWon:budget,requiredConditions:[...new Set(requirements)].slice(0,12),
+  const minTotalWon=extracted.budgetMode==="CLEAR"?undefined
+    :extracted.budgetMode==="SET"?now.minTotalWon
+    :newTask?now.minTotalWon:now.minTotalWon??previous.minTotalWon;
+  return {query,maxTotalWon:budget,...(minTotalWon!==undefined?{minTotalWon}:{}),
+    ...(!newTask?{excludedProductIds:previous.excludedProductIds,lastDisplayedProductIds:previous.lastDisplayedProductIds}:{}),requiredConditions:[...new Set(requirements)].slice(0,12),
     currentPreferences:prefs,revision:previous.revision+1,
     ...(category?{category,attributePreferences:[...new Set(attributes)]}:{})};
 }

@@ -20,3 +20,23 @@ test('legacy source taxonomy and supported specification fallbacks remain compat
  assert.equal(subcatOf('beauty','sun')!.matches(product({spf:'50'})),true);
  assert.equal(subcatOf('beauty','cleansing')!.matches(product({cleanser_type:'foam'})),true);
 });
+test('food protein source taxonomy maps only explicit 프로틴 categories',()=>{
+ assert.equal(subcatOf('food','protein')!.matches(product({sub_category:'뷰티 > 헬스/푸드 > 헬스 보충제 > 프로틴'},'food')),true);
+ assert.equal(subcatOf('food','protein')!.matches(product({type:'프로틴'},'food')),true);
+ assert.equal(subcatOf('food','protein')!.matches(product({sub_category:'건강식품'},'food')),false);
+ assert.equal(subcatOf('food','coffee')!.matches(product({sub_category:'푸드'},'food')),false);
+ assert.equal(subcatOf('beauty','protein')?.matches(product({sub_category:'프로틴'},'food')),undefined);
+});
+test('fashion source taxonomy maps only the explicit tee aliases and sneaker path',()=>{
+ for(const label of ['반소매 티셔츠','긴소매 티셔츠','후드 티셔츠','피케/카라 티셔츠'])
+  assert.equal(subcatOf('fashion','tee')!.matches(product({sub_category:`상의 > ${label}`},'fashion')),true,label);
+ assert.equal(subcatOf('fashion','tee')!.matches(product({sub_category:'상의'},'fashion')),false);
+ assert.equal(subcatOf('fashion','shoes')!.matches(product({sub_category:'신발 > 스니커즈 > 캔버스/단화'},'fashion')),true);
+ assert.equal(subcatOf('fashion','shoes')!.matches(product({sub_category:'신발 > 구두 > 더비 슈즈'},'fashion')),false);
+});
+test('source taxonomy matching preserves existing fashion and food spec fallbacks',()=>{
+ assert.equal(subcatOf('fashion','tee')!.matches(product({fit:'regular'},'fashion')),true);
+ assert.equal(subcatOf('fashion','shoes')!.matches(product({sole:'rubber'},'fashion')),true);
+ assert.equal(subcatOf('food','coffee')!.matches(product({roast:'medium'},'food')),true);
+ assert.equal(subcatOf('food','protein')!.matches(product({protein_per_serving:'20g'},'food')),true);
+});

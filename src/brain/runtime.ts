@@ -5,6 +5,9 @@ import {createInterface} from "node:readline";
 import {fileURLToPath} from "node:url";
 import {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
 import {createCatalog,type CatalogSource} from "../catalog.ts";
+import {sql} from "../db.ts";
+import {readCommerceActivity} from "./commerce-signals.ts";
+import {qaCommerceDatabaseIdentityMatches} from "../qa-commerce.ts";
 import {assertServiceRole} from "../db.ts";
 import {verifiedRagRetriever,localRagFetcher,type LocalRagSearch,type RagConnection} from "./rag-adapter.ts";
 import {createLocalRagSearch} from "./local-rag.ts";
@@ -23,6 +26,8 @@ import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
 import {requireBrainV9Schema,type SchemaProbe} from "./schema-guard.ts";
 import {routeBrainMessage} from "./routing.ts";
+import {createDecisionsRouter} from "./decisions-route.ts";
+import {createConversationResponder} from "./conversation-response.ts";
 import {createFastIntentPort} from "./fast-intent.ts";
 import {currentDatasetResult} from "./dataset-state.ts";
 import type {ResearchResult} from "./read-flow.ts";
@@ -154,6 +159,7 @@ export async function createBrainRuntime(options:{
  brainDatabaseUrl:string;commerceDatabaseUrl?:string;provider:Provider;rag?:RagConnection;
  catalogSource?:CatalogSource;
  catalog?:ReturnType<typeof createCatalog>;
+ qaEnvironment?:string;
  localRagSearch?:LocalRagSearch;
  embedQuery?:(query:string)=>Promise<number[]>
 }) {
@@ -203,11 +209,24 @@ export async function createBrainRuntime(options:{
    saver=PostgresSaver.fromConnString(url,{schema:"shopping_brain"});
    const store=brainDatabaseFromPostgres(db);
    const conversations=new PersistentConversations(store),preferences=new PersistentPreferences(store);
+   const routeMode=process.env.BRAIN_ROUTE_MODE?.trim()||"rules";
+   if(routeMode!=="rules"&&routeMode!=="decisions")throw Error("BRAIN_ROUTE_MODE must be rules or decisions");
+   // The decisions mode uses ONLY Decisions: never run a rules pre-pass or fallback.
+   const route=routeMode==="decisions"?createDecisionsRouter({
+     apiKey:process.env.OPENAI_DECISIONS_API_KEY||process.env.OPENAI_API_KEY||"",
+     timeoutMs:Number(process.env.BRAIN_DECISIONS_TIMEOUT_MS??4000),
+     confidenceThreshold:Number(process.env.BRAIN_DECISIONS_CONFIDENCE??0.35),
+   }):routeBrainMessage;
+   // Existing rule-mode QA remains unchanged; only the explicit Decisions mode uses live conversation generation.
+   const converse=routeMode==="decisions"?createConversationResponder(options.provider):undefined;
    const groundedResponder=options.rag?.contract==="v4"
      ?createLlmGroundedResponder(options.provider):undefined;
    const catalog=options.catalog??createCatalog(options.catalogSource??"public");
+   const ownQaCommerce=qaCommerceActivityAllowed({catalogSource:options.catalogSource,
+     commerceDatabaseUrl:options.commerceDatabaseUrl,qaEnvironment:options.qaEnvironment});
    const graph=createPersistentResearchGraph({
-     conversations,memory:preferences,route:routeBrainMessage,fastResponses:true,datasetVersion:options.rag?.datasetVersion,
+     conversations,memory:preferences,route,converse,fastResponses:true,datasetVersion:options.rag?.datasetVersion,
+     ...(ownQaCommerce?{activity:(actorUserId:string)=>readCommerceActivity(sql,actorUserId)}:{}),
      retriever:options.rag?verifiedRagRetriever({...options.rag,catalogSource:options.catalogSource??"public"},catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
      intent:createFastIntentPort(createIntentPort(providerIntentModel(options.provider,45000),options.rag?.categories??options.rag?.category))
@@ -223,4 +242,15 @@ export async function createBrainRuntime(options:{
    await Promise.allSettled([db.end(),lockDb.end(),...(saver?[saver.end()]:[])]);
    throw e;
  }
+}
+
+export function qaCommerceActivityAllowed(options:{
+ catalogSource?:CatalogSource;commerceDatabaseUrl?:string;qaEnvironment?:string;
+}):boolean {
+ if(options.catalogSource!=="test_items"&&options.catalogSource!=="test_items2")return false;
+ if(options.qaEnvironment==="system-prompt"&&options.catalogSource!=="test_items2")return false;
+ return qaCommerceDatabaseIdentityMatches({
+   COMMERCE_CATALOG_SOURCE:options.catalogSource,
+   QA_ENVIRONMENT:options.qaEnvironment,
+ },options.commerceDatabaseUrl);
 }

@@ -8,7 +8,7 @@ import { assertServiceRole, connectDb, sql, type Q } from "./db.ts";
 import { ensureDevDb } from "./devdb.ts";
 import { contextFromRequest, signSession } from "./session.ts";
 import {createQaAuth,readQaAuthFile} from "./qa-auth.ts";
-import {qaCommerceEnabled, qaCommerceRequestAllowed, qaCommerceIdentity} from "./qa-commerce.ts";
+import {qaCommerceEnabled, qaCommerceRequestAllowed, qaCommerceIdentity, qaCommerceConnectedIdentityMatches} from "./qa-commerce.ts";
 import { catalogRequestAllowed, catalogSource, createCatalog } from "./catalog.ts";
 import {openExternalCatalog} from './external-catalog.ts';
 import { addToCart, getCart, removeCartItem, updateCartQuantity } from "./cart.ts";
@@ -194,16 +194,16 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
   if(env.QA_AUTH_ENABLED&&!["0","1"].includes(env.QA_AUTH_ENABLED))throw new Error("invalid QA_AUTH_ENABLED");
   const qa=env.QA_AUTH_ENABLED==="1";
   const qaCommerce = qaCommerceEnabled(env);
-  const qaIdentity=qaCommerceIdentity(env);
   let qaAuth:ReturnType<typeof createQaAuth>|undefined;
   if(qa){
+    const qaIdentity=qaCommerceIdentity(env);
     const url=new URL(env.DATABASE_URL??"");
-    if(!["test_items","test_items2"].includes(env.COMMERCE_CATALOG_SOURCE??"")||env.COMMERCE_CATALOG_SOURCE==="test_items2"&&!qaCommerce||url.hostname!=="127.0.0.1"||url.port!=="15440"||
+    if(!["test_items","test_items2"].includes(env.COMMERCE_CATALOG_SOURCE??"")||env.COMMERCE_CATALOG_SOURCE==="test_items2"&&!qaCommerce||url.hostname!=="127.0.0.1"||url.port!==String(qaIdentity.port)||
       url.pathname!=="/"+(qaCommerce?qaIdentity.database:"toss_v4_test_items_20261018_w01")||decodeURIComponent(url.username)!==(qaCommerce?qaIdentity.role:"commerce_v4_reader")||url.search||
       !env.SESSION_SECRET?.trim()||!env.QA_AUTH_FILE)throw new Error("QA auth requires the approved local read-only catalog");
     if(env.BRAIN_ENABLED==="1"){
       const brainUrl=new URL(env.BRAIN_DATABASE_URL??"");
-      if(brainUrl.hostname!=="127.0.0.1"||brainUrl.port!=="15440"||brainUrl.pathname!=="/"+qaIdentity.brainDatabase||
+      if(brainUrl.hostname!=="127.0.0.1"||brainUrl.port!==String(qaIdentity.port)||brainUrl.pathname!=="/"+qaIdentity.brainDatabase||
         decodeURIComponent(brainUrl.username)!==qaIdentity.brainRole||brainUrl.search)
         throw new Error("QA auth requires the approved isolated Brain database");
     }
@@ -249,7 +249,9 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
   }
   if(qa){
     const [identity]=await businessDb.unsafe("SELECT current_database() AS db,current_user AS role,inet_server_port() AS port,current_setting('transaction_read_only') AS read_only");
-    if(identity?.db!==(qaCommerce?qaIdentity.database:"toss_v4_test_items_20261018_w01")||identity.role!==(qaCommerce?qaIdentity.role:"commerce_v4_reader")||Number(identity.port)!==15440||identity.read_only!==(qaCommerce?"off":"on")){
+    if(!identity||!qaCommerceConnectedIdentityMatches(env,identity as unknown as {
+      db?:unknown;role?:unknown;port?:unknown;read_only?:unknown;
+    },qaCommerce)){
       await businessDb.end();throw new Error("QA database identity mismatch");
     }
   }
@@ -278,6 +280,7 @@ export async function start(port = config.port, deps: ServerStartDeps = {}) {
         rag: ragConnection,
         catalogSource: source,
         catalog,
+        qaEnvironment: env.QA_ENVIRONMENT,
         localRagSearch: deps.localRagSearch,
         embedQuery: deps.embedQuery,
       })
