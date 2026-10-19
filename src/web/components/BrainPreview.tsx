@@ -57,7 +57,7 @@ export function BrainRanking({ranking,explanation,onOpenProduct,onExcludeProduct
        {(p.keywords??[]).filter(k=>!/(?:type|sub_category|source_kind|[a-z]+_[a-z]+)/.test(k)).slice(0,3).map((keyword,i)=><span key={i} className="chip">{keyword}</span>)}
        {reference&&<p className="muted sm">참고 상품 · 필수 조건이나 근거를 더 확인해야 해요.</p>}
        {p.commerceVerified===true
-         ?<button className="link" onClick={()=>onOpenProduct(p.productId,p.variantId)}>상품 보기</button>
+         ?<div className="brain-product-actions"><button className="link brain-product-open" aria-label="상품 보기" onClick={()=>onOpenProduct(p.productId,p.variantId)}>상품 보기<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></button></div>
          :<p className="muted sm">상품 확인 전 · 상세보기 준비 중</p>}
        {!reference&&onExcludeProduct&&<button className="link" onClick={()=>onExcludeProduct(p.productId)}>이 상품 제외</button>}
      </div>

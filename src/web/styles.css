@@ -1851,3 +1851,5 @@ button.cart-thumb { border: 0; padding: 0; cursor: pointer; }
 .brain-panel .brain-send{display:grid;place-items:center;width:44px;height:44px;flex:0 0 44px;padding:0;border-radius:50%;background:var(--accent);color:#fff}.brain-panel .brain-send:disabled{background:var(--field);color:var(--muted)}
 @media(max-width:420px){.brain-panel .agent-head{padding:16px}.brain-panel .brain-conversations{padding:9px 16px}.brain-panel .agent-body{padding:20px 14px}.brain-panel .brain-interview{padding:18px 16px}.brain-panel .brain-product-image{width:78px;height:96px}.brain-panel .brain-product-card{padding:12px;gap:11px}.brain-panel .brain-product-price{font-size:18px}}
 @media(prefers-reduced-motion:reduce){.brain-panel .brain-choice{transition:none}}
+
+.brain-panel .brain-product-actions{display:flex;justify-content:flex-end;margin-top:8px}.brain-panel .brain-product-info .brain-product-open{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:6px 0 6px 10px;font-weight:600;white-space:nowrap}.brain-product-open svg{flex-shrink:0}
