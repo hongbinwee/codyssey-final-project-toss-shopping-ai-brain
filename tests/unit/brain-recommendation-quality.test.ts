@@ -59,6 +59,16 @@ test('recommendation review summaries require exact product, variant, version an
  }
 });
 
+test('internal catalog classification keys never become user-facing recommendation reasons',async()=>{
+ const evidence:EvidenceRecord[]=[{id:'class',productId:'p-mask',variantId:'v-mask',kind:'SPEC',sourceKind:'SYNTHETIC',verified:true,datasetVersion:'fixture-quality',sourceRef:'comparison_family',text:'마스크팩'}];
+ const respond=createLlmGroundedResponder({async chat(messages){
+   const facts=JSON.parse(messages[1].content!).candidates[0].facts;
+   assert.equal(facts.some((f:{text:string})=>f.text.includes('comparison_family')),false);
+   return {content:JSON.stringify({recommendations:[{productId:'p-mask',variantId:'v-mask',factIds:['budget'],reviewClaims:[]}]})};
+ }});
+ assert.equal((await respond({originalQuestion:'마스크팩 추천',ranking:ranking(),evidence,plan,mode:'RECOMMEND'})).kind,'LLM_GROUNDED');
+});
+
 test('retrieval receives explicit preferences and scoped approved Memory without default invention',async()=>{
  const requests:any[]=[];const memory=(key:Preference['key'],value:Preference['value']):Preference=>({userId:'tester_05',key,value,sourceConversationId:'c',sourceMessageId:'m',updatedAt:'2026-10-20'});
  const req={actorUserId:'tester_05',conversationId:'c',requestId:'r',clientActionId:'a',userMessage:'마스크팩 추천'};
