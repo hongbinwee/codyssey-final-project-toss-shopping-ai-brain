@@ -22,6 +22,7 @@ import {commerceRetriever} from "./commerce-retriever.ts";
 import {providerIntentModel} from "./provider-intent.ts";
 import {createIntentPort} from "./intent.ts";
 import {requireBrainV9Schema,type SchemaProbe} from "./schema-guard.ts";
+import {routeBrainMessage} from "./routing.ts";
 
 /** One offline CPU encoder per runtime. Only query vectors, never corpus re-embedding. */
 export async function createLocalQueryEncoder(
@@ -104,11 +105,12 @@ export async function readBrainHistory(db:SchemaProbe,actorUserId:string){
    if(!result||typeof result!=="object"||result.conversationId!==id||result.messageId!==row.message_id||
      result.clientActionId!==row.client_action_id||typeof row.content!=="string"||
      !result.ranking||!["ranked","referenceOnly","rejected"].every(key=>Array.isArray(result.ranking[key]))||
-     !result.shoppingPlan||typeof result.shoppingPlan.query!=="string"||
+     (result.shoppingPlan?typeof result.shoppingPlan.query!=="string":result.explanation?.kind!=="CONVERSATION")||
      !result.explanation||typeof result.explanation.text!=="string"||typeof result.explanation.kind!=="string")
      throw new Error("invalid canonical Brain receipt");
    return [{text:row.content,reply:{conversation_id:id,message_id:result.messageId,read_only:true,
-     ranking:result.ranking,shopping_plan:result.shoppingPlan??null,explanation:result.explanation,trace:result.trace??{totalMs:0}}}];
+     ranking:result.ranking,shopping_plan:result.shoppingPlan??null,intent_kind:result.intentKind,
+     explanation:result.explanation,trace:result.trace??{totalMs:0}}}];
  });
  return {conversationId:id,entries};
 }
@@ -190,7 +192,7 @@ export async function createBrainRuntime(options:{
      ?createLlmGroundedResponder(options.provider):undefined;
    const catalog=createCatalog(options.catalogSource??"public");
    const graph=createPersistentResearchGraph({
-     conversations,memory:preferences,
+     conversations,memory:preferences,route:routeBrainMessage,
      retriever:options.rag?verifiedRagRetriever(options.rag,catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
      intent:createIntentPort(providerIntentModel(options.provider,45000),options.rag?.category)

@@ -13,6 +13,7 @@ type LimitedProduct={candidate:ProductCandidate;reasons:string[]};
 type BrainRankingResult={ranked:RankedProduct[];referenceOnly:LimitedProduct[];rejected:LimitedProduct[];evaluatedCount:number};
 type BrainReply={
  conversation_id:string;message_id:string;read_only:true;
+ intent_kind?:string;
  shopping_plan?:{query:string;maxTotalWon:number|null;requiredConditions:string[];revision:number}|null;
  explanation?:{text:string;kind:string;items:{productId:string;evidenceIds:string[]}[];limitations:string[]}|null;
  ranking:BrainRankingResult;
@@ -156,10 +157,10 @@ export function BrainPreview({onClose,onOpenProduct}:{onClose:()=>void;onOpenPro
         {e.reply.shopping_plan&&<p className="muted sm">유지된 구매 조건 · {e.reply.shopping_plan.query} ·  {e.reply.shopping_plan.maxTotalWon===null?"예산 미설정":fmtWon(e.reply.shopping_plan.maxTotalWon)} · {e.reply.shopping_plan.requiredConditions.length?e.reply.shopping_plan.requiredConditions.join(", "):"필수 조건 없음"}</p>}
         {e.reply.explanation&&<p>{e.reply.explanation.text}</p>}
         <p className="muted sm">Brain Graph 처리 시간(서버 측): {Math.round(e.reply.trace.graphWallMs ?? e.reply.trace.totalMs)}ms · 네트워크 전송 시간 제외</p>
-        <BrainRanking ranking={e.reply.ranking} onOpenProduct={onOpenProduct}/>
+        {e.reply.explanation?.kind!=="CONVERSATION"&&<BrainRanking ranking={e.reply.ranking} onOpenProduct={onOpenProduct}/>}
       </>}
     </div>)}
-    {sourceMessage&&conversation&&<div className="state-box">
+    {sourceMessage&&conversation&&entries.at(-1)?.reply?.explanation?.kind!=="CONVERSATION"&&<div className="state-box">
       <b>대화에서 사용할 가격 선호를 장기 기억으로 저장할까요?</b>
       <select value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value as typeof selected);setPending(null);}}>
         <option value="value">가성비 중심</option><option value="balanced">균형</option><option value="performance">성능 중심</option>

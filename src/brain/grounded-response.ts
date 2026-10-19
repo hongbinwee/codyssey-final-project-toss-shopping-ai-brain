@@ -8,7 +8,7 @@ export interface GroundedExplanation {
    evidenceIds:string[];indicators:{aspect:Aspect;score:number}[]}[];
  citations?:{productId:string;variantId:string;sourceId:string;sourceKind:"REAL"|"SYNTHETIC";quote:string}[];
  limitations:string[];
- kind:"VERIFIED_CANDIDATES"|"REFERENCE_ONLY"|"NO_MATCH"|"LLM_GROUNDED"|"EVIDENCE_INSUFFICIENT";
+ kind:"VERIFIED_CANDIDATES"|"REFERENCE_ONLY"|"NO_MATCH"|"LLM_GROUNDED"|"EVIDENCE_INSUFFICIENT"|"CONVERSATION";
 }
 const labels:Record<Aspect,string>={performance:"성능",eye_comfort:"눈 피로 관련",noise:"소음"};
 /**

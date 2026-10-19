@@ -3,11 +3,12 @@ import type {PersistentConversations,PersistentPreferences} from "./persistent-s
 import type {ShoppingPlan} from "./shopping-plan.ts";
 import type {GroundedExplanation} from "./grounded-response.ts";
 import {BrainModelOutputError} from "./intent.ts";
+import type {BrainIntentKind} from "./routing.ts";
 
 export interface BrainGraphPort {
   invoke(input:{actorUserId:string;conversationId:string;requestId:string;clientActionId:string;userMessage:string}):Promise<{
     conversationId:string;messageId:string;ranking:RankingResult;trace:Record<string,number>;
-    shoppingPlan?:ShoppingPlan;explanation?:GroundedExplanation;
+    shoppingPlan?:ShoppingPlan;explanation?:GroundedExplanation;intentKind?:BrainIntentKind;
   }>;
   getOwnedState(actorUserId:string,conversationId:string):Promise<{values?:Record<string,unknown>}>;
 }
@@ -71,7 +72,7 @@ export function createBrainApi(deps:BrainApiDeps) {
           requestId:crypto.randomUUID(),clientActionId:body.client_action_id,userMessage:body.user_message});
         const graphWallMs=performance.now()-started;
         return success({conversation_id:result.conversationId,message_id:result.messageId,
-          ranking:result.ranking,trace:{...result.trace,graphWallMs},read_only:true,
+          ranking:result.ranking,trace:{...result.trace,graphWallMs},read_only:true,intent_kind:result.intentKind,
           shopping_plan:result.shoppingPlan??null,explanation:result.explanation??null});
       }
       const state=path.match(/^\/api\/brain\/conversations\/([a-fA-F0-9-]+)\/state$/);

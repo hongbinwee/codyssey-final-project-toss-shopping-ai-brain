@@ -22,7 +22,7 @@ const digest=(action:Action)=>createHash("sha256").update(JSON.stringify([
 function checkedResult(raw:unknown,conversationId:string):ResearchResult {
   const r=(typeof raw==="string"?JSON.parse(raw):raw) as ResearchResult;
   if(!r||typeof r!=="object"||r.conversationId!==conversationId||
-    typeof r.messageId!=="string"||!r.explanation||!r.shoppingPlan)
+    typeof r.messageId!=="string"||!r.explanation||(!r.shoppingPlan&&r.explanation.kind!=="CONVERSATION"))
     throw new Error("invalid canonical Brain receipt");
   return r;
 }
@@ -78,7 +78,7 @@ export class FencedTurns {
   /** Atomic guarded promotion: stale/failed attempts can never change the public pointer. */
   async publish(action:Action,claim:Extract<FencedClaim,{kind:"run"}>,result:ResearchResult):Promise<void>{
     if(result.conversationId!==action.conversationId||result.clientActionId!==action.clientActionId||
-       !result.explanation||!result.shoppingPlan)throw Error("invalid graph result");
+       !result.explanation||(!result.shoppingPlan&&result.explanation.kind!=="CONVERSATION"))throw Error("invalid graph result");
     await this.db.transaction(async tx=>{
       const owner=await tx.query<{id:string}>(
         "SELECT id FROM shopping_brain.conversations WHERE id=$1 AND actor_user_id=$2 AND closed_at IS NULL FOR SHARE",

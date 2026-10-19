@@ -4,6 +4,7 @@ import {rankProducts} from "./personalization.ts";
 import type {PlanExtraction,ShoppingPlan} from "./shopping-plan.ts";
 import {resolveShoppingPlan} from "./shopping-plan.ts";
 import type {GroundedExplanation} from "./grounded-response.ts";
+import type {BrainRoute,BrainIntentKind} from "./routing.ts";
 
 export type ShoppingIntent=PlanExtraction;
 export interface IntentPort {
@@ -13,11 +14,13 @@ export interface ResearchResult {
  conversationId:string;messageId:string;clientActionId?:string;ranking:RankingResult;
  shoppingPlan?:ShoppingPlan;
  explanation?:GroundedExplanation;
+ intentKind?:BrainIntentKind;
  trace:{memoryMs:number;intentMs:number;retrievalMs:number;rankMs:number;totalMs:number;[key:string]:number}
 }
 export interface ResearchDeps {
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
  memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
+ route?:(message:string,previous?:ShoppingPlan)=>BrainRoute;
 }
 export interface PreparedTurn {
  messageId:string;memories:Preference[];startedAt:number;memoryMs:number

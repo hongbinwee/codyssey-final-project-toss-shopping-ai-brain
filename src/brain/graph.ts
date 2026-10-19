@@ -9,6 +9,7 @@ import {buildGroundedExplanation,type GroundedResponder} from "./grounded-respon
 import type {BrainGraphPort} from "./api.ts";
 import type {TurnLock,TurnLease} from "./turn-lock.ts";
 import type {FencedTurns} from "./fenced-turns.ts";
+import type {BrainRoute} from "./routing.ts";
 
 export type GraphRequest=BrainTrace & {clientActionId:string;userMessage:string};
 const State=Annotation.Root({
@@ -17,6 +18,7 @@ const State=Annotation.Root({
  shoppingPlan:Annotation<ShoppingPlan>(),
  evidence:Annotation<EvidenceRecord[]>(),
  researchResult:Annotation<ResearchResult>()
+ ,intentRoute:Annotation<BrainRoute>()
 });
 /**
  * Four explicit phases, each with a persisted checkpoint. Only a server-owned
@@ -39,6 +41,21 @@ export function createPersistentResearchGraph(
      await verify();
      return {prepared};
    })
+   .addNode("route",async state=>{
+     const route=deps.route?.(state.request.userMessage,state.researchResult?.shoppingPlan)??{kind:"SHOPPING_SEARCH" as const,search:true};
+     await verify();return {intentRoute:route};
+   })
+   .addNode("converse",async state=>{
+     const previous=state.researchResult?.shoppingPlan;
+     const researchResult:ResearchResult={conversationId:state.request.conversationId,messageId:state.prepared.messageId,
+       clientActionId:state.request.clientActionId,intentKind:state.intentRoute.kind,
+       ...(previous?{shoppingPlan:previous}:{}),
+       ranking:{ranked:[],referenceOnly:[],rejected:[],evaluatedCount:0},
+       explanation:{kind:"CONVERSATION",text:state.intentRoute.text??"어떤 상품을 찾으시는지 알려주세요.",items:[],limitations:[]},
+       trace:{memoryMs:state.prepared.memoryMs,intentMs:0,retrievalMs:0,rankMs:0,responseMs:0,
+         totalMs:performance.now()-state.prepared.startedAt}};
+     await verify();return {researchResult,evidence:[]};
+   })
    .addNode("plan",async state=>{
      const shoppingPlan=await resolveTurnPlan(state.request,state.prepared,
        state.researchResult?.explanation ? state.researchResult.shoppingPlan : null,deps);
@@ -49,9 +66,10 @@ export function createPersistentResearchGraph(
      const fetched=await retrieveTurn(state.request,state.prepared,state.shoppingPlan,deps);
      // A lost advisory session must not let stale RAG data finish this node.
      await verify();
-     return {researchResult:fetched.result,evidence:fetched.evidence};
+     return {researchResult:{...fetched.result,intentKind:state.intentRoute.kind},evidence:fetched.evidence};
    })
    .addNode("respond",async state=>{
+     const started=performance.now();
      const researchResult={
        ...state.researchResult,
        explanation:groundedResponder
@@ -59,11 +77,15 @@ export function createPersistentResearchGraph(
            ranking:state.researchResult.ranking,evidence:state.evidence,plan:state.shoppingPlan})
          :buildGroundedExplanation(state.researchResult.ranking,state.evidence,state.shoppingPlan)
      };
+     researchResult.trace={...researchResult.trace,responseMs:performance.now()-started,
+       totalMs:performance.now()-state.prepared.startedAt};
      await verify();
      return {researchResult};
    })
    .addEdge(START,"prepare")
-   .addEdge("prepare","plan")
+   .addEdge("prepare","route")
+   .addConditionalEdges("route",state=>state.intentRoute.search?"plan":"converse",["plan","converse"])
+   .addEdge("converse",END)
    .addEdge("plan","retrieve")
    .addEdge("retrieve","respond")
    .addEdge("respond",END)
