@@ -47,7 +47,7 @@ test("real HTTP actor cookie -> LangGraph -> isolated DB -> Commerce read-only r
   await shop.unsafe(readFileSync(new URL("../../db/migrations/001_catalog_cart_actions.sql",import.meta.url),"utf8"));
   await shop.unsafe("INSERT INTO users(id,auth_subject,display_name,test_address_json) VALUES ('user-http-a','http-a','QA A','{}'::jsonb),('user-http-b','http-b','QA B','{}'::jsonb)");
   await shop.unsafe(`INSERT INTO products(id,name,brand,category,description,image_urls,specs_json)
-      VALUES ('p-http-monitor','Demo Monitor','QA','monitor','CI-only synthetic monitor','[]'::jsonb,'{"resolution":"FHD"}'::jsonb)`);
+      VALUES ('p-http-monitor','Demo Monitor 모니터','QA','monitor','CI-only synthetic monitor','[]'::jsonb,'{"resolution":"FHD"}'::jsonb)`);
   await shop.unsafe(`INSERT INTO product_variants(id,product_id,unit_price_won,stock_qty)
       VALUES ('v-http-monitor','p-http-monitor',190000,4)`);
   await shop.unsafe(`INSERT INTO reviews(id,product_id,rating,body,source_kind,source_ref,written_at)
