@@ -58,7 +58,7 @@ test("test catalog notice identifies simulated prices and explicitly excludes pu
  const Notice=(commerceState as unknown as {CatalogNotice?:()=>ReactElement}).CatalogNotice;
  assert.equal(typeof Notice,"function");if(!Notice)return;
  const html=renderToStaticMarkup(createElement(Notice));
- assert.match(html,/v4 합성 데이터/);
+ assert.match(html,/검증 중인 데이터셋 테스트/);
  assert.match(html,/가격·재고·옵션은 시연용/);
  assert.match(html,/주문·결제할 수 없/);
 });

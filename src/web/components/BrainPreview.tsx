@@ -42,7 +42,7 @@ export function BrainRanking({ranking,onOpenProduct,onExcludeProduct}:{ranking:B
  if(!rows.length)return null;
  return <section className="brain-products" aria-label="상품 비교 결과">
    <p className="muted sm">{ranked.length+references.length>rows.length?`${ranked.length+references.length}개 중 ${rows.length}개 표시`:`${rows.length}개 상품 표시`}</p>
-   {simulated&&<p className="muted sm" role="note">합성 데이터 기반 시연 비교예요. 가격·재고는 시연용이며 실제 주문·결제는 할 수 없어요.</p>}
+   {simulated&&<p className="muted sm" role="note">검증 중인 데이터셋의 시연 비교예요. 리뷰 출처는 구분하며 가격·재고는 시연용입니다. 실제 주문·결제는 할 수 없어요.</p>}
    {rows.map(({candidate:p,reference,recommendationRole,personalizationSignals})=><article key={p.productId} className="brain-product-card">
      <div className="brain-product-image"><span aria-hidden="true">상품 이미지</span>
        {safeImage(p.productImage)&&<img src={safeImage(p.productImage)} alt={p.productName??"상품"} loading="lazy" referrerPolicy="no-referrer" onError={e=>{e.currentTarget.hidden=true;}}/>}</div>

@@ -20,9 +20,10 @@ export interface RagConnection {
   timeoutMs?:number;
   contract?:"brain-rag-v1"|"v4";
   /** Server-only catalog scope. Omitted means public and cannot enable simulated ranking. */
-  catalogSource?:"public"|"test_items";
+  catalogSource?:"public"|"test_items"|"test_items2";
   datasetVersion?:string;
   category?:string;
+  categories?:string[];
 }
 
 export type LocalRagSearch=(body:Record<string,unknown>)=>Promise<unknown>;
@@ -53,7 +54,7 @@ export type ReviewLookup=(input:{product_id:string;review_ids:string[]})=>Promis
 interface ParsedV4Evidence {
   sourceId:string;
   evidenceText:string;
-  variantId:string;
+  variantId:string|null;
   sourceKind:"REAL"|"SYNTHETIC";
   synthetic:boolean;
 }
@@ -109,9 +110,9 @@ export function parseV4Response(raw:unknown,expectedVersion:string):ParsedV4Resp
       const excerpt=entry?.evidence_text;
       if(!entry||!text(entry.source_id,128)||seenSources.has(entry.source_id)||
          typeof excerpt!=="string"||excerpt.length===0||excerpt.length>5000||excerpt.includes("\u0000")||
-         !metadata||!text(metadata.variant_id,128)||
-         sourceKind!=="SYNTHETIC"||synthetic!==true)
-        throw new Error("invalid, duplicate, or non-synthetic RAG v4 review evidence");
+         !metadata||!(metadata.variant_id===null||text(metadata.variant_id,128))||
+         !(sourceKind==="SYNTHETIC"&&synthetic===true||sourceKind==="REAL"&&synthetic===false))
+        throw new Error("invalid, duplicate, or inconsistent RAG review evidence");
       seenSources.add(entry.source_id);
       return [{sourceId:entry.source_id,evidenceText:excerpt,variantId:metadata.variant_id,
         sourceKind,synthetic}];
@@ -150,7 +151,7 @@ function validV4ReviewRows(
 }
 
 const notVerifiedMarker=/(?:미확인|미검증|미확정|unknown|unverified|unconfirmed|mock|historical)/i;
-const specMetadataKey=/(?:price|stock|variant|verified|evidence|source)/i;
+const specMetadataKey=/(?:price|stock|variant|verified|evidence|source|data_version|dataset)/i;
 const negativeSpecValue=/(?:아니요|아니오|없음|불가|미지원|미포함|미적용|지원하지\s*않|불가능|not\s+(?:available|supported|included|verified)|false|no|off)/i;
 function usableCommerceSpec(key:string,value:string):boolean{
   return text(key,160)&&text(value,500)&&!notVerifiedMarker.test(key+" "+value)&&
@@ -190,9 +191,11 @@ async function retrieveV4(
      !text(input.query,250)||!Array.isArray(input.requiredConditions)||
      input.requiredConditions.length>25||!input.requiredConditions.every(x=>text(x,128)))
     throw new Error("invalid RAG v4 request");
-  const category=connection.category??"beauty";
-  if(!text(category,80))throw new Error("invalid RAG v4 category");
-  if(input.category&&input.category!==category)return {candidates:[],evidence:[]};
+  const categories=connection.categories;
+  if(categories&&(!categories.length||categories.length>100||!categories.every(c=>text(c,80))))throw Error("invalid RAG categories");
+  const category=categories?(input.category??connection.category??""):(connection.category??"beauty");
+  if((!categories&&!text(category,80))||categories&&category!==""&&!categories.includes(category))return {candidates:[],evidence:[]};
+  if(!categories&&input.category&&input.category!==category)return {candidates:[],evidence:[]};
   const response=await fetcher(target.toString(),{
     method:"POST",redirect:"error",signal:AbortSignal.timeout(timeout),
     headers:{"content-type":"application/json",...(connection.token?{authorization:"Bearer "+connection.token}:{})},
@@ -207,7 +210,7 @@ async function retrieveV4(
     const got=await getProduct({product_id:item.productId});
     if(!got.ok||got.data.product.id!==item.productId||!got.data.product.active)continue;
     const eligible=item.evidence.filter(e=>got.data.variants.some(v=>
-      v.variant_id===e.variantId&&v.availability==="AVAILABLE"&&v.stock_qty>0));
+      (e.variantId===null||v.variant_id===e.variantId)&&v.availability==="AVAILABLE"&&v.stock_qty>0));
     if(eligible.length===0)continue;
     const reviews=validV4ReviewRows(
       await reviewLookup({product_id:item.productId,review_ids:eligible.map(e=>e.sourceId)}),
@@ -215,8 +218,11 @@ async function retrieveV4(
     );
     const byVariant=new Map<string,ParsedV4Evidence[]>();
     for(const entry of eligible){
-      const group=byVariant.get(entry.variantId)??[];
-      group.push(entry);byVariant.set(entry.variantId,group);
+      for(const variant of got.data.variants.filter(v=>v.availability==="AVAILABLE"&&v.stock_qty>0&&
+        (entry.variantId===null||v.variant_id===entry.variantId))){
+        const group=byVariant.get(variant.variant_id)??[];
+        group.push(entry);byVariant.set(variant.variant_id,group);
+      }
       const source=reviews.get(entry.sourceId);
       if(source)evidence.push({id:source.id,productId:source.product_id,variantId:source.variant_id,rating:source.rating,
         kind:"REVIEW",sourceKind:source.source_kind,sourceRef:source.source_ref,
@@ -228,8 +234,8 @@ async function retrieveV4(
       const hasSynthetic=entries.some(e=>e.synthetic);
       const hasVerifiedSource=entries.some(e=>reviews.has(e.sourceId));
       const catalogContext=got.data.catalog_context;
-      const isSimulated=catalogContext?.source==="test_items"&&catalogContext.read_only===true&&catalogContext.is_simulated===true;
-      const qaRankingEligible=connection.catalogSource==="test_items"&&isSimulated;
+      const isSimulated=(catalogContext?.source==="test_items"||catalogContext?.source==="test_items2")&&catalogContext.read_only===true&&catalogContext.is_simulated===true;
+      const qaRankingEligible=(connection.catalogSource==="test_items"||connection.catalogSource==="test_items2")&&isSimulated;
       const specSourceKind=isSimulated?"SYNTHETIC":"REAL";
       const specs={...got.data.product.specs,...variant.effective_specs};
       const specFacts=Object.entries(specs).filter(([key,value])=>usableCommerceSpec(key,value)).slice(0,20)
@@ -245,7 +251,7 @@ async function retrieveV4(
         if(ids.length)conditions[condition]=ids;
       }
       const ratingRows=entries.map(entry=>reviews.get(entry.sourceId)).filter((row):row is ReviewItem=>
-        !!row&&row.product_id===item.productId&&row.variant_id===variantId&&row.source_kind==="SYNTHETIC"&&
+        !!row&&row.product_id===item.productId&&(row.variant_id===null||row.variant_id===variantId)&&
         Number.isFinite(row.rating)&&row.rating>=1&&row.rating<=5);
       const facets:ProductCandidate["facets"]={};
       if(ratingRows.length)facets.retrieved_review_rating={
@@ -347,7 +353,7 @@ export function verifiedRagRetriever(
     throw new Error("RAG audited dataset ID required");
   if(contract==="v4"&&!text(connection.datasetVersion,128))
     throw new Error("RAG dataset version required");
-  if(connection.catalogSource!==undefined&&connection.catalogSource!=="public"&&connection.catalogSource!=="test_items")
+  if(connection.catalogSource!==undefined&&connection.catalogSource!=="public"&&connection.catalogSource!=="test_items"&&connection.catalogSource!=="test_items2")
     throw new Error("invalid server catalog source");
   if(contract==="v4"&&!reviewLookup)throw new Error("RAG v4 ReviewLookup required");
   const timeout=connection.timeoutMs??8000;

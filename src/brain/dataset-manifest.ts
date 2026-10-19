@@ -4,8 +4,8 @@ import {isAbsolute} from "node:path";
 /** Deployment-owned metadata, never accepted from a shopping request. */
 export interface SearchDatasetManifest {
  schemaVersion:1;datasetId:string;datasetVersion:string;
- dataClass:"SYNTHETIC_PRODUCT"|"AUDITED_REAL";
- catalogSource:"public"|"test_items";categories:string[];
+ dataClass:"SYNTHETIC_PRODUCT"|"AUDITED_REAL"|"CANDIDATE";
+ catalogSource:"public"|"test_items"|"test_items2";categories:string[];
  embedding:{model:string;dimensions:number;queryRevision:string;documentRevision:string|null};
  files:{evidenceSha256:string;indexedProductsSha256:string};
 }
@@ -13,8 +13,8 @@ const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&
 const text=(v:unknown,max:number):v is string=>typeof v==="string"&&v.length>0&&v.length<=max&&!/[\u0000-\u001f]/.test(v);
 export function parseDatasetManifest(raw:unknown):SearchDatasetManifest {
  if(!object(raw)||raw.schemaVersion!==1||!text(raw.datasetId,100)||!text(raw.datasetVersion,128)||
-   !["SYNTHETIC_PRODUCT","AUDITED_REAL"].includes(String(raw.dataClass))||
-   !["public","test_items"].includes(String(raw.catalogSource))||
+   !["SYNTHETIC_PRODUCT","AUDITED_REAL","CANDIDATE"].includes(String(raw.dataClass))||
+   !["public","test_items","test_items2"].includes(String(raw.catalogSource))||
    !Array.isArray(raw.categories)||!raw.categories.length||raw.categories.length>100||
    !raw.categories.every(v=>text(v,80))||new Set(raw.categories).size!==raw.categories.length||
    !object(raw.embedding)||!object(raw.files))throw Error("invalid search dataset manifest");

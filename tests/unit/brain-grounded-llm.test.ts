@@ -42,6 +42,17 @@ const defaultQuote="착용감이 편하고 오래 사용해도 귀가 덜 아팠
 const cite=(productId="p-1",variantId="v-blue",sourceId="review-11",sourceKind="REAL",quote=defaultQuote)=>
  JSON.stringify({sourceKind,productId,variantId,sourceId,quote});
 
+test("mixed REAL and SYNTHETIC product-level reviews retain provenance without inventing a variant mapping",async()=>{
+ const candidate=product("p-1","v-blue",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true});
+ const real=proof("r-real","p-1","v-blue",{variantId:null,rating:4}),synthetic=proof("r-syn","p-1","v-blue",{sourceKind:"SYNTHETIC",rating:3});
+ const claims=[real,synthetic].map(e=>({productId:"p-1",variantId:"v-blue",sourceId:e.sourceId,sourceKind:e.sourceKind,quote:defaultQuote,polarity:"PRO",claim:"착용감이 편하다는 의견입니다."}));
+ const {respond,calls}=create(JSON.stringify({claims}));const result=await respond({...ask(candidate),evidence:[real,synthetic]});
+ assert.equal(result.kind,"LLM_GROUNDED");assert.deepEqual(result.citations?.map(c=>[c.sourceKind,c.sourceVariantId]),[["REAL",null],["SYNTHETIC","v-blue"]]);
+ const prompt=JSON.parse(calls[0].messages[1].content!);assert.equal(prompt.candidates[0].evidence[0].sourceVariantId,null);
+ const forged=await create(JSON.stringify({claims:[{...claims[0],sourceKind:"SYNTHETIC"}]})).respond({...ask(candidate),evidence:[real,synthetic]});
+ assert.equal(forged.kind,"EVIDENCE_INSUFFICIENT");
+});
+
 test("multi-product synthetic answers announce the simulation caveat once",async()=>{
  const candidates=[product("p-1","v-blue",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true}),product("p-2","v-blue",{sourceKind:"SYNTHETIC",isSimulated:true,qaRankingEligible:true})];
  const evidence=[proof("r-1","p-1","v-blue",{sourceKind:"SYNTHETIC",rating:5}),proof("r-2","p-2","v-blue",{sourceKind:"SYNTHETIC",rating:4})];

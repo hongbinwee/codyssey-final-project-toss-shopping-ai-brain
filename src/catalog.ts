@@ -11,14 +11,14 @@ import type { RequestContext } from "./session.ts";
 
 export const FLAT_SHIPPING_FEE_WON = 3000;
 
-export type CatalogSource = "public" | "test_items";
+export type CatalogSource = "public" | "test_items" | "test_items2";
 export function catalogSource(value: unknown): CatalogSource {
   if (value === undefined || value === "" || value === "public") return "public";
-  if (value === "test_items") return value;
+  if (value === "test_items" || value === "test_items2") return value;
   throw new Error("unsupported catalog source");
 }
-const catalogContext = (source: CatalogSource) => source === "test_items"
-  ? { catalog_context: { source: "test_items" as const, read_only: true as const, is_simulated: true as const } }
+const catalogContext = (source: CatalogSource) => source !== "public"
+  ? { catalog_context: { source: source as "test_items"|"test_items2", read_only: true as const, is_simulated: true as const } }
   : {};
 
 // Fixed identifiers, not request input or a global search_path change.

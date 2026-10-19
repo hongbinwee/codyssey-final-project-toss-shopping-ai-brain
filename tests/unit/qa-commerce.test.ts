@@ -4,6 +4,13 @@ import {qaCommerceEnabled,qaCommerceRequestAllowed,QA_COMMERCE_DATABASE,QA_COMME
 import {isCommerceEnabled,isCheckoutEnabled} from "../../src/web/commerce-ui.ts";
 const env={QA_AUTH_ENABLED:"1",QA_COMMERCE_ENABLED:"1",COMMERCE_CATALOG_SOURCE:"test_items",
   DATABASE_URL:`postgres://`+QA_COMMERCE_ROLE+`:fixture@127.0.0.1:15440/`+QA_COMMERCE_DATABASE};
+
+test("test_items2 storage is restricted to its own dedicated role and database",()=>{
+ const t2={...env,COMMERCE_CATALOG_SOURCE:"test_items2",DATABASE_URL:"postgres://commerce_t2_qa:fixture@127.0.0.1:15440/toss_test_items2_qa_20261019"};
+ assert.equal(qaCommerceEnabled(t2),true);
+ assert.throws(()=>qaCommerceEnabled({...t2,DATABASE_URL:env.DATABASE_URL}));
+ assert.throws(()=>qaCommerceEnabled({...env,DATABASE_URL:t2.DATABASE_URL}));
+});
 test("QA Commerce enables only the dedicated authenticated local DB, never the original catalog",()=>{
   assert.equal(qaCommerceEnabled(env),true);
   assert.equal(qaCommerceEnabled({}),false);

@@ -141,6 +141,17 @@ test("indexed category is applied and raw source metadata is not reconstructed",
  });
 });
 
+test("collected and synthetic product-level reviews preserve source kind and null variant",async()=>{
+ const real=chunk({id:"real-null",productId:"p1",type:"review",text:"무선 헤드폰 편해요",embedding:vector(1),sourceId:"real-review",metadata:{source_kind:"REAL",synthetic:false,variant_id:null}});
+ const synthetic=chunk({id:"synthetic-null",productId:"p2",type:"review",text:"무선 헤드폰 착용감",embedding:vector(1),sourceId:"synthetic-review",metadata:{source_kind:"SYNTHETIC",synthetic:true,variant_id:null}});
+ await withSearch(async({search})=>{
+  const result=await search(request());assert.equal(result.items.length,2);
+  for(const item of result.items)assert.equal(item.evidence[0].source_metadata.variant_id,null);
+  assert.deepEqual(new Set(result.items.map((item:any)=>item.evidence[0].source_metadata.source_kind)),new Set(["REAL","SYNTHETIC"]));
+  const parsed=parseV4Response(result,VERSION);assert.equal(parsed.items[0].evidence[0].variantId,null);
+ },[real,synthetic],baseProducts.slice(0,2));
+});
+
 test("manifest selects a different encoder and category, and rejects corpus substitution before embedding",async()=>{
  const dataDir=await mkdtemp(join(tmpdir(),"codyssey-manifest-rag-"));
  try{

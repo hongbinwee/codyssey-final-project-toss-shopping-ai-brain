@@ -36,20 +36,21 @@ function evidenceValid(ids:string[],p:ProductCandidate,idx:Map<string,EvidenceRe
  return ids.length>0&&ids.every(id=>{
   const e=idx.get(id);
   if(!e||duplicates.has(id)||e.productId!==p.productId||
-    (simulated?e.variantId!==p.variantId:e.variantId!==null&&e.variantId!==p.variantId)||
+    (simulated?e.variantId!==p.variantId&&!(e.kind==="REVIEW"&&e.variantId===null):e.variantId!==null&&e.variantId!==p.variantId)||
     (options.condition&&e.kind!=="SPEC"))return false;
   if(simulated){
-    if(e.verified!==true||e.datasetVersion!==p.datasetVersion||e.sourceKind!=="SYNTHETIC")return false;
+    if(e.verified!==true||e.datasetVersion!==p.datasetVersion||
+      (e.kind==="SPEC"?e.sourceKind!=="SYNTHETIC":!["REAL","SYNTHETIC"].includes(e.sourceKind??"")))return false;
     if(e.kind==="REVIEW"&&(!options.ratingFacet||!Number.isFinite(e.rating)||e.rating!<1||e.rating!>5))return false;
   }else if(e.kind==="REVIEW"&&e.sourceKind!=="REAL")return false;
   return true;
  });
 }
 function approvedSimulatedCandidate(p:ProductCandidate,idx:Map<string,EvidenceRecord>,duplicates:Set<string>):boolean{
- if(p.sourceKind!=="SYNTHETIC"||p.isSimulated!==true||p.qaRankingEligible!==true||p.commerceVerified!==true||
+ if(!["REAL","SYNTHETIC"].includes(p.sourceKind??"")||p.isSimulated!==true||p.qaRankingEligible!==true||p.commerceVerified!==true||
    typeof p.datasetVersion!=="string"||!p.datasetVersion)return false;
  return [...idx.values()].some(e=>!duplicates.has(e.id)&&e.productId===p.productId&&
-   e.variantId===p.variantId&&e.kind==="REVIEW"&&e.sourceKind==="SYNTHETIC"&&e.verified===true&&
+   (e.variantId===null||e.variantId===p.variantId)&&e.kind==="REVIEW"&&["REAL","SYNTHETIC"].includes(e.sourceKind??"")&&e.verified===true&&
    e.datasetVersion===p.datasetVersion&&Number.isFinite(e.rating)&&e.rating!>=1&&e.rating!<=5);
 }
 function validRetrievedRatingFacet(f:NonNullable<ProductCandidate["facets"][string]>,p:ProductCandidate,

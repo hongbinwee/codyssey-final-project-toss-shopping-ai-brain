@@ -7,7 +7,7 @@ import {PostgresSaver} from "@langchain/langgraph-checkpoint-postgres";
 import {createCatalog,type CatalogSource} from "../catalog.ts";
 import {sql} from "../db.ts";
 import {readCommerceActivity} from "./commerce-signals.ts";
-import {QA_COMMERCE_DATABASE,QA_COMMERCE_ROLE} from "../qa-commerce.ts";
+import {qaCommerceIdentity} from "../qa-commerce.ts";
 import {assertServiceRole} from "../db.ts";
 import {verifiedRagRetriever,localRagFetcher,type LocalRagSearch,type RagConnection} from "./rag-adapter.ts";
 import {createLocalRagSearch} from "./local-rag.ts";
@@ -27,6 +27,8 @@ import {createIntentPort} from "./intent.ts";
 import {requireBrainV9Schema,type SchemaProbe} from "./schema-guard.ts";
 import {routeBrainMessage} from "./routing.ts";
 import {createFastIntentPort} from "./fast-intent.ts";
+import {currentDatasetResult} from "./dataset-state.ts";
+import type {ResearchResult} from "./read-flow.ts";
 
 /** One offline CPU encoder per runtime. Only query vectors, never corpus re-embedding. */
 export async function createLocalQueryEncoder(
@@ -90,7 +92,7 @@ export const BRAIN_SERVICE_RIGHTS={
 } as const;
 
 /** Latest or selected owned conversation with a bounded transcript; never return raw checkpoints. */
-export async function readBrainHistory(db:SchemaProbe,actorUserId:string,conversationId?:string){
+export async function readBrainHistory(db:SchemaProbe,actorUserId:string,conversationId?:string,datasetVersion?:string){
  if(!actorUserId||actorUserId.length>256)throw new Error("invalid history actor");
  let id:string|undefined;
  if(conversationId!==undefined){
@@ -113,15 +115,16 @@ export async function readBrainHistory(db:SchemaProbe,actorUserId:string,convers
     WHERE c.id=$1 AND c.actor_user_id=$2 AND m.actor_user_id=$2 AND c.closed_at IS NULL
       AND m.role='user' AND r.status='COMPLETED' ORDER BY m.created_at DESC,m.id DESC LIMIT 20`,[id,actorUserId]);
  const entries=rows.reverse().flatMap(row=>{
-   let result;
+   let result:ResearchResult;
    try{result=typeof row.completed_result==="string"?JSON.parse(row.completed_result):row.completed_result;}
    catch{throw new Error("invalid canonical Brain receipt");}
    if(!result||typeof result!=="object"||result.conversationId!==id||result.messageId!==row.message_id||
      result.clientActionId!==row.client_action_id||typeof row.content!=="string"||
-     !result.ranking||!["ranked","referenceOnly","rejected"].every(key=>Array.isArray(result.ranking[key]))||
+     !result.ranking||!(["ranked","referenceOnly","rejected"] as const).every(key=>Array.isArray(result.ranking[key]))||
      (result.shoppingPlan?typeof result.shoppingPlan.query!=="string":result.explanation?.kind!=="CONVERSATION")||
      !result.explanation||typeof result.explanation.text!=="string"||typeof result.explanation.kind!=="string")
      throw new Error("invalid canonical Brain receipt");
+   result=currentDatasetResult(result,datasetVersion);
    return [{clientActionId:row.client_action_id,text:row.content,reply:{conversation_id:id,message_id:result.messageId,read_only:true,
      ranking:result.ranking,shopping_plan:result.shoppingPlan??null,intent_kind:result.intentKind,
      explanation:result.explanation,trace:result.trace??{totalMs:0}}}];
@@ -164,12 +167,12 @@ export async function createBrainRuntime(options:{
  if(options.rag?.mode==="local"){
    if(options.rag.manifestPath&&(options.localRagSearch||options.embedQuery))
      throw Error("dataset manifest cannot use injected search or encoder");
-   if(options.catalogSource!=="test_items")throw new Error("local RAG requires the read-only test_items catalog");
+   if(options.catalogSource!=="test_items"&&options.catalogSource!=="test_items2")throw new Error("local RAG requires the read-only test catalog");
    if(options.rag.contract!=="v4"||!options.rag.dataDir||!isAbsolute(options.rag.dataDir))
      throw new Error("local RAG requires v4 data directory");
    const manifest=options.rag.manifestPath?await loadDatasetManifest(options.rag.manifestPath):undefined;
    if(manifest&&(manifest.catalogSource!==options.catalogSource||manifest.datasetVersion!==options.rag.datasetVersion||
-     !manifest.categories.includes(options.rag.category??"")||manifest.embedding.queryRevision!==options.rag.modelRevision))
+     (options.rag.category?!manifest.categories.includes(options.rag.category):!options.rag.categories?.every(c=>manifest.categories.includes(c)))||manifest.embedding.queryRevision!==options.rag.modelRevision))
      throw Error("dataset manifest does not match runtime settings");
    if(!localSearch){
      let embedQuery=options.embedQuery;
@@ -184,7 +187,7 @@ export async function createBrainRuntime(options:{
      const local=await createLocalRagSearch({dataDir:options.rag.dataDir,embedQuery,manifest});
      if(local.stats.datasetVersion!==options.rag.datasetVersion)throw new Error("local RAG dataset version mismatch");
      if(manifest)verifyDatasetManifest(manifest,{...local.stats,catalogSource:options.catalogSource!,
-       category:options.rag.category!,queryRevision:options.rag.modelRevision!});
+       category:options.rag.category||manifest.categories[0],queryRevision:options.rag.modelRevision!});
      localSearch=local.search;
      }catch(error){encoder?.close();throw error;}
    }
@@ -206,19 +209,22 @@ export async function createBrainRuntime(options:{
      ?createLlmGroundedResponder(options.provider):undefined;
    const catalog=createCatalog(options.catalogSource??"public");
    const trustedCommerce=new URL(options.commerceDatabaseUrl??"postgresql://invalid/");
-   const ownQaCommerce=trustedCommerce.hostname==="127.0.0.1"&&trustedCommerce.port==="15440"&&
-     trustedCommerce.pathname==="/"+QA_COMMERCE_DATABASE&&decodeURIComponent(trustedCommerce.username)===QA_COMMERCE_ROLE;
+   const qaIdentity=qaCommerceIdentity({COMMERCE_CATALOG_SOURCE:options.catalogSource});
+   const ownQaCommerce=(options.catalogSource==="test_items"||options.catalogSource==="test_items2")&&
+     trustedCommerce.hostname==="127.0.0.1"&&trustedCommerce.port==="15440"&&
+     trustedCommerce.pathname==="/"+qaIdentity.database&&decodeURIComponent(trustedCommerce.username)===qaIdentity.role&&
+     !trustedCommerce.search;
    const graph=createPersistentResearchGraph({
-     conversations,memory:preferences,route:routeBrainMessage,fastResponses:true,
+     conversations,memory:preferences,route:routeBrainMessage,fastResponses:true,datasetVersion:options.rag?.datasetVersion,
      ...(ownQaCommerce?{activity:(actorUserId:string)=>readCommerceActivity(sql,actorUserId)}:{}),
      retriever:options.rag?verifiedRagRetriever({...options.rag,catalogSource:options.catalogSource??"public"},catalog.getProduct,
        options.rag.mode==="local"?localRagFetcher(localSearch!):undefined,catalog.getReviewsByIds):commerceRetriever(catalog.searchProducts),
-     intent:createFastIntentPort(createIntentPort(providerIntentModel(options.provider,45000),options.rag?.category))
+     intent:createFastIntentPort(createIntentPort(providerIntentModel(options.provider,45000),options.rag?.categories??options.rag?.category))
    },saver,postgresTurnLock(lockDb,db),new FencedTurns(store),groundedResponder);
    return {
-     handle:createBrainApi({conversations,preferences,graph,recentHistory:actor=>readBrainHistory(db,actor),
+     handle:createBrainApi({conversations,preferences,graph,recentHistory:actor=>readBrainHistory(db,actor,undefined,options.rag?.datasetVersion),
        listConversations:actor=>conversations.list(actor),
-       conversationHistory:(actor,conversationId)=>readBrainHistory(db,actor,conversationId)}),
+       conversationHistory:(actor,conversationId)=>readBrainHistory(db,actor,conversationId,options.rag?.datasetVersion)}),
      close:async()=>{encoder?.close();await Promise.allSettled([db.end(),lockDb.end(),saver!.end()]);}
    };
  }catch(e){
