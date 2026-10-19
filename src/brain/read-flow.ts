@@ -4,6 +4,7 @@ import {rankProducts} from "./personalization.ts";
 import {curateRecommendations,type CommerceActivity} from "./recommendation-strategies.ts";
 import type {PlanExtraction,ShoppingPlan} from "./shopping-plan.ts";
 import {resolveShoppingPlan} from "./shopping-plan.ts";
+import {parseKrwTenThousandBand} from "./price-band.ts";
 import type {GroundedExplanation} from "./grounded-response.ts";
 import type {BrainRoute,BrainIntentKind} from "./routing.ts";
 
@@ -72,7 +73,10 @@ export async function prepareTurn(req:Request,deps:ResearchDeps):Promise<Prepare
 }
 export async function resolveTurnPlan(req:Request,prepared:PreparedTurn,previous:ShoppingPlan|null|undefined,deps:ResearchDeps):Promise<ShoppingPlan>{
  const intent=await deps.intent.extract(req.userMessage,prepared.memories,previous??undefined);
- const plan=resolveShoppingPlan(previous,intent);
+ let plan=resolveShoppingPlan(previous,intent);
+ const explicitBand=parseKrwTenThousandBand(req.userMessage);
+ if(explicitBand)plan={...plan,...explicitBand};
+ else if(intent.budgetMode==="SET")plan={...plan,minTotalWon:undefined};
  if(!plan.query||plan.query.length>200)throw new Error("invalid shopping plan");
  return plan;
 }
