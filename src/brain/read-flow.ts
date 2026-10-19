@@ -1,6 +1,7 @@
 import type {BrainTrace,EvidenceRecord,MemoryRepository,Preference,RankingResult,RetrieverPort} from "./contracts.ts";
 import type {PersistentConversations} from "./persistent-store.ts";
 import {rankProducts} from "./personalization.ts";
+import {curateRecommendations,type CommerceActivity} from "./recommendation-strategies.ts";
 import type {PlanExtraction,ShoppingPlan} from "./shopping-plan.ts";
 import {resolveShoppingPlan} from "./shopping-plan.ts";
 import type {GroundedExplanation} from "./grounded-response.ts";
@@ -21,6 +22,7 @@ export interface ResearchDeps {
  conversations:Pick<PersistentConversations,"assertOwned"|"appendUserMessage">;
  memory:MemoryRepository;retriever:RetrieverPort;intent:IntentPort;
  route?:(message:string,previous?:ShoppingPlan)=>BrainRoute;
+ activity?:(actorUserId:string)=>Promise<CommerceActivity>;
  fastResponses?:boolean;
 }
 export interface PreparedTurn {
@@ -83,7 +85,9 @@ export async function retrieveTurn(req:Request,prepared:PreparedTurn,plan:Shoppi
     fetched.candidates.length>100||fetched.evidence.length>2500)throw new Error("invalid retrieval result");
  const retrievalMs=performance.now()-retrievalStart;
  const rankedAt=performance.now();
- const ranking=rankProducts(fetched.candidates,fetched.evidence,plan,prepared.memories);
+ const baseRanking=rankProducts(fetched.candidates,fetched.evidence,plan,prepared.memories);
+ const activity=deps.activity?await deps.activity(req.actorUserId):undefined;
+ const ranking=deps.activity?curateRecommendations(baseRanking,activity):baseRanking;
  const conditionOnlyReferences=ranking.rejected.filter(item=>
    isConditionOnlySyntheticReference(item,plan.requiredConditions,fetched.evidence));
  if(conditionOnlyReferences.length){
