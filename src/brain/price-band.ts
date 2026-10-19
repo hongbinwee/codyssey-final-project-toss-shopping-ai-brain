@@ -6,8 +6,6 @@ export function parseKrwTenThousandBand(text:string):{minTotalWon:number;maxTota
  const n=Number(found[0][1]);
  if(!Number.isSafeInteger(n)||n<1||n>999)return null;
  // "1만원대" = 10,000–19,999, "15만원대" = 150,000–159,999.
- const digits=String(n).length;
- const step=digits===1?10000:10000; // each "만원대" explicitly denotes one 10,000-won interval
- const min=n*step,max=min+step-1;
+ const min=n*10000,max=min+9999;
  return Number.isSafeInteger(max)?{minTotalWon:min,maxTotalWon:max}:null;
 }
