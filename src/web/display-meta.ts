@@ -138,12 +138,16 @@ const specMatcher = (group: string, ...keys: string[]) =>
   (product: ProductSummary) =>
     groupOf(product.category) === group && hasSpecs(product, keys);
 
-const ORIGINAL_SUBCATEGORY_KEY = "원본 목록 세부 카테고리";
+// Display taxonomy only; dataset IDs and inferred product-name claims are never used.
+const SOURCE_SUBCATEGORY_KEYS = ["sub_category", "원본 목록 세부 카테고리", "type"];
 const sourceSubcategoryMatcher = (group: string, ...values: string[]) =>
   (product: ProductSummary) =>
     groupOf(product.category) === group &&
     product.matched_variants.some((variant) =>
-      values.includes(variant.effective_specs[ORIGINAL_SUBCATEGORY_KEY]?.trim() ?? ""),
+      SOURCE_SUBCATEGORY_KEYS.some(key => {
+        const value=variant.effective_specs[key];
+        return typeof value==="string"&&value.split(">").some(part=>values.includes(part.trim()));
+      }),
     );
 
 export const SUBCATS: Record<string, Subcat[]> = {
@@ -162,9 +166,9 @@ export const SUBCATS: Record<string, Subcat[]> = {
     },
   ],
   beauty: [
-    { id: "sun", label: "선케어", matches: specMatcher("beauty", "spf", "pa", "uv_type") },
+    { id: "sun", label: "선케어", matches: (product) => sourceSubcategoryMatcher("beauty", "선케어")(product) || specMatcher("beauty", "spf", "pa", "uv_type")(product) },
     { id: "skincare", label: "스킨케어", matches: sourceSubcategoryMatcher("beauty", "스킨케어") },
-    { id: "cleansing", label: "클렌징", matches: specMatcher("beauty", "skin", "cleanser_type", "cleansing_type") },
+    { id: "cleansing", label: "클렌징", matches: (product) => sourceSubcategoryMatcher("beauty", "클렌징")(product) || specMatcher("beauty", "skin", "cleanser_type", "cleansing_type")(product) },
     {
       id: "makeup",
       label: "메이크업",
