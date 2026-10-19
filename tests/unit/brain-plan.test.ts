@@ -12,6 +12,18 @@ const intent=(x={})=>({
  currentPreferences:{}},...x
 });
 
+test("planner prompt spells out optional attribute array and source object contracts",async()=>{
+ const model={async complete(system:string){
+  assert.match(system,/"attributePreferences":\["battery_life"\]/);
+  assert.match(system,/Never return null or an object for attributePreferences/);
+  return JSON.stringify({query:"headphones",maxTotalWon:null,requiredConditions:[],currentPreferences:{},category:"audio",attributePreferences:[]});
+ }};
+ const result=await createIntentPort(model).extract("헤드폰 리뷰를 비교해줘",[]);
+ assert.deepEqual(result.context.attributePreferences,[]);
+ for(const attributePreferences of [null,{},"battery_life"])
+  assert.throws(()=>parseShoppingIntent(JSON.stringify({query:"headphones",maxTotalWon:null,requiredConditions:[],currentPreferences:{},category:"audio",attributePreferences})),/attributes/);
+});
+
 test("data-defined soft attributes persist within a category and clear across category changes",()=>{
  const first=parseShoppingIntent(JSON.stringify({query:"headphones",maxTotalWon:100000,requiredConditions:[],currentPreferences:{},
   category:"audio",attributePreferences:["battery_life"],queryMode:"SET",budgetMode:"SET"}));

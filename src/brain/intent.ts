@@ -12,9 +12,14 @@ Required keys: {"query":string,"maxTotalWon":number|null,"requiredConditions":st
 Optional mode keys: {"queryMode":"KEEP"|"SET","budgetMode":"KEEP"|"SET"|"CLEAR",
 "requirementsMode":"KEEP"|"ADD"|"REPLACE"|"CLEAR","preferencesMode":"MERGE"|"CLEAR"}.
 Optional task-local fields: category (a lowercase category identifier), attributePreferences
-(up to 12 lowercase snake_case attribute identifiers explicitly requested by the user).
-For each attributePreferences key provide attributeSources: {key: exact CURRENT user phrase}
-showing the explicit attribute preference. No source means the attribute will be ignored.
+(an array of up to 12 lowercase snake_case attribute identifiers explicitly requested by the user).
+Shape example only: {"category":"audio","attributePreferences":["battery_life"],
+"attributeSources":{"battery_life":"exact CURRENT user phrase"}}.
+Never return null or an object for attributePreferences. If there is no explicit attribute
+preference, omit attributePreferences and attributeSources (or use [] and {}). These fields
+require category. Review comparison alone is not an attribute preference.
+For each identifier in attributePreferences provide its exact CURRENT user phrase in
+attributeSources. No source means the attribute will be ignored.
 These are category-scoped soft preferences, NOT verified product facts or long-term memories.
 Do not turn a soft preference into requiredConditions. Retain them for follow-ups, replace
 them for a new category. Never invent numeric attribute scores. price_priority is common
