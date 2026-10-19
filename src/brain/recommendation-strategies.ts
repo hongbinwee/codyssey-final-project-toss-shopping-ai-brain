@@ -22,8 +22,7 @@ function signalsFor(id:string,activity:CommerceActivity):LabeledCandidate["perso
 export function meetsV07ReviewBar(row:RankedCandidate):boolean {
  const c=row.candidate;
  return c.ratingScale===5&&typeof c.rating==="number"&&Number.isFinite(c.rating)&&c.rating>3.5&&c.rating<=5&&
-  c.wholeReviewCountVerified===true&&Number.isSafeInteger(c.wholeReviewCount)&&
-  c.wholeReviewCount!==null&&c.wholeReviewCount>=10;
+  c.wholeReviewCountVerified===true&&c.wholeReviewCount!==null&&Number.isSafeInteger(c.wholeReviewCount)&&c.wholeReviewCount>=10;
 }
 /** One validated retrieval, two deterministic rankings, one grounded response.
  * All candidates have already passed Commerce/budget/hard-condition/evidence gates.
