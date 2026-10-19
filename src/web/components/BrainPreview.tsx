@@ -36,7 +36,7 @@ export function BrainRanking({ranking,onOpenProduct}:{ranking:BrainRankingResult
    if(seen.has(row.candidate.productId))return false;seen.add(row.candidate.productId);return true;
  });
  const ranked=unique(ranking.ranked),references=unique(ranking.referenceOnly);
- const rows=[...ranked.map(row=>({...row,reference:false})),...references.map(row=>({...row,reference:true}))].slice(0,3);
+ const rows=[...ranked.map(row=>({...row,reference:false})),...references.map(row=>({...row,reference:true,recommendationRole:undefined,personalizationSignals:undefined}))].slice(0,3);
  const simulated=rows.some(({candidate:p})=>p.sourceKind==="SYNTHETIC"||p.isSimulated);
  if(!rows.length)return null;
  return <section className="brain-products" aria-label="상품 비교 결과">
