@@ -14,6 +14,21 @@ const base={
 const request=(api:ReturnType<typeof createBrainApi>)=>api("POST",
  "/api/brain/conversations/"+id+"/turn","owner",
  {client_action_id:"action1",user_message:"50만원 모니터"});
+
+test("intent accepts one whole-response JSON fence without relaxing schema validation",()=>{
+ const valid=JSON.stringify({query:"립",maxTotalWon:50000,requiredConditions:[],currentPreferences:{}});
+ const fenced=(body:string)=>"```json\n"+body+"\n```";
+ assert.deepEqual(parseShoppingIntent(" \r\n"+fenced(valid)+"\r\n "),parseShoppingIntent(valid));
+ assert.deepEqual(parseShoppingIntent("```json\r\n"+valid+"\r\n```"),parseShoppingIntent(valid));
+ for(const raw of [
+  "Here is the JSON:\n"+fenced(valid),fenced(valid)+"\nDone.",
+  fenced(valid)+"\n"+fenced(valid),"```javascript\n"+valid+"\n```",
+  "```json\n"+valid,"```json\n{invalid}\n```",
+  fenced(JSON.stringify({query:"립",maxTotalWon:-1,requiredConditions:[],currentPreferences:{}})),
+  fenced(JSON.stringify({query:"립",maxTotalWon:null,requiredConditions:[],currentPreferences:{},system_override:true})),
+  fenced(JSON.stringify({query:"립",maxTotalWon:null,requiredConditions:[],currentPreferences:{price_priority:"ADMIN"}}))
+ ])assert.throws(()=>parseShoppingIntent(raw),BrainModelOutputError);
+});
 test("M14 malformed JSON or invalid preferences from LLM must not become user HTTP 400",async()=>{
  for(const raw of ["{not json",JSON.stringify({query:"monitor",maxTotalWon:null,
     requiredConditions:[],currentPreferences:{price_priority:"UNAPPROVED"}})]){

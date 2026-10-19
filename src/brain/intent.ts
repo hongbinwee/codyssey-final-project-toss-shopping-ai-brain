@@ -47,6 +47,10 @@ export class BrainModelOutputError extends Error {
 }
 function parseShoppingIntentInner(raw:string):ShoppingIntent {
  if(typeof raw!=='string'||raw.length>6000)throw new Error('invalid intent response');
+ // Some providers wrap JSON despite the prompt. Unwrap only a whole JSON fence;
+ // never extract a JSON fragment from prose or bypass the field checks below.
+ const fenced=/^```json\r?\n([\s\S]*?)\r?\n```$/.exec(raw.trim());
+ if(fenced)raw=fenced[1];
  let data:unknown;
  try{data=JSON.parse(raw);}catch{throw new Error('invalid intent JSON');}
  if(!data||typeof data!=='object'||Array.isArray(data))throw new Error('invalid intent object');
