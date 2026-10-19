@@ -32,7 +32,7 @@ const recommendationLabel=(role:RankedProduct["recommendationRole"])=>role==="PE
 
 export function BrainRanking({ranking,onOpenProduct}:{ranking:BrainRankingResult;onOpenProduct:(id:string,variantId?:string)=>void}){
  const seen=new Set<string>();
- const unique=(rows:{candidate:ProductCandidate}[])=>rows.filter(row=>{
+ const unique=<T extends {candidate:ProductCandidate}>(rows:T[]):T[]=>rows.filter(row=>{
    if(seen.has(row.candidate.productId))return false;seen.add(row.candidate.productId);return true;
  });
  const ranked=unique(ranking.ranked),references=unique(ranking.referenceOnly);
