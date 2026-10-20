@@ -20,3 +20,19 @@ reference/toss-shopping/screenshots/
 reference/toss-shopping/docs/history/
 
 key.md
+
+# Submission: private deployment state and generated artifacts
+*.log
+/tmp_*
+/test-key*.md
+/.worktrees/
+/backups/
+/dumps/
+*.dump
+*.backup
+*.zip
+*.jsonl
+*.pem
+*.key
+*.pfx
+*.p12
