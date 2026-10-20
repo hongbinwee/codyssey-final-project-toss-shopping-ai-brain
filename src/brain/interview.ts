@@ -1,6 +1,7 @@
 import {guardBrainMessage} from './routing.ts';
 import type {ShoppingPlan} from './shopping-plan.ts';
 import type {Preference} from './contracts.ts';
+import {parseKrwTenThousandBand} from './price-band.ts';
 export type InterviewKey='budget'|'purpose'|'product_type';
 export interface InterviewState {answered:InterviewKey[];pending:InterviewKey[];purpose?:string;typeQuestion?:string}
 export interface InterviewQuestion {key:InterviewKey;text:string;choices:string[]}
@@ -15,6 +16,16 @@ export function interviewAnswer(message:string,previous?:ShoppingPlan):ShoppingP
  const state=previous.interview,answered=new Set(state.answered),pending=[...state.pending];
  // Skip applies only to the question actually displayed, never to unrelated conditions.
  if(skip.test(text)){const key=pending[0];answered.add(key);return {...previous,revision:previous.revision+1,interview:{...state,answered:[...answered],pending:pending.slice(1)}};}
+ const budgetText=text.replace(/^(?:예산|가격)(?:은|는)?\s*/,"");
+ const exactBand=/^\d{1,3}\s*만\s*원대[.!?？]*$/.test(budgetText);
+ const exactRange=/^\d{1,3}\s*(?:만\s*)?[~〜～]\s*\d{1,3}\s*만\s*원대[.!?？]*$/.test(budgetText);
+ if(pending.includes('budget')&&(exactBand||exactRange)){
+  const band=parseKrwTenThousandBand(budgetText);
+  if(!band)return;
+  answered.add('budget');
+  return {...previous,...band,revision:previous.revision+1,
+   interview:{...state,answered:[...answered],pending:pending.filter(k=>k!=='budget')}};
+ }
  const match=/^(?:(?:예산|가격)(?:은|는)?\s*)?\d+(?:,\d{3})*\s*(?:만\s*원|원)\s*(?:이하|까지)?[.!?\s]*$/.test(text)&&!/미만|초과|이상|부터|최소|[-~]|만원대|만 원대/.test(text)?text.match(budget):null;
  if(pending.includes('budget')&&match){const value=Number(match[1].replaceAll(',',''))*(match[2].replace(/\s/g,'')==='만원'?10000:1);if(!Number.isSafeInteger(value)||value<0)return;answered.add('budget');return {...previous,maxTotalWon:value,minTotalWon:undefined,revision:previous.revision+1,interview:{...state,answered:[...answered],pending:pending.filter(k=>k!=='budget')}};}
  if(pending.includes('budget')&&/^(?:예산|가격)(?:은|는)?\s*상관없어요[.!?\s]*$/.test(text)){answered.add('budget');return {...previous,maxTotalWon:null,minTotalWon:undefined,revision:previous.revision+1,interview:{...state,answered:[...answered],pending:pending.filter(k=>k!=='budget')}};}
